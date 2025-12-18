@@ -21,10 +21,6 @@ describe('registerSyntheticsTool', () => {
       listTests: vi.fn().mockResolvedValue({
         tests: [{ publicId: 'test-123' }]
       }),
-      getTest: vi.fn().mockResolvedValue({
-        publicId: 'test-123',
-        name: 'Test'
-      }),
       getAPITest: vi.fn().mockResolvedValue({
         publicId: 'test-123',
         name: 'Test'
@@ -44,7 +40,7 @@ describe('registerSyntheticsTool', () => {
       deleteTests: vi.fn().mockResolvedValue({
         deletedTests: [{ publicId: 'test-123' }]
       }),
-      triggerCITests: vi.fn().mockResolvedValue({
+      triggerTests: vi.fn().mockResolvedValue({
         results: []
       }),
       getBrowserTestLatestResults: vi.fn().mockResolvedValue({
@@ -81,7 +77,8 @@ describe('registerSyntheticsTool', () => {
     const result = await registeredHandler({ action: 'get', id: 'test-123' })
 
     expect(result).toBeDefined()
-    expect(mockApi.getTest).toHaveBeenCalledWith({ publicId: 'test-123' })
+    // getTest tries getAPITest first, then getBrowserTest
+    expect(mockApi.getAPITest).toHaveBeenCalledWith({ publicId: 'test-123' })
   })
 
   it('should handle create action', async () => {
@@ -127,7 +124,7 @@ describe('registerSyntheticsTool', () => {
     })
 
     expect(result).toBeDefined()
-    expect(mockApi.triggerCITests).toHaveBeenCalled()
+    expect(mockApi.triggerTests).toHaveBeenCalled()
   })
 
   it('should handle results action', async () => {
