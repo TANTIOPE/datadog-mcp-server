@@ -98,6 +98,19 @@ export function normalizeDashboardConfig(config: Record<string, unknown>): Recor
     throw new Error("Dashboard config requires 'layoutType' (e.g., 'ordered', 'free')")
   }
 
+  // Validate tags if present - Datadog only allows 'team' as the tag key
+  if (normalized.tags && Array.isArray(normalized.tags)) {
+    const invalidTags = normalized.tags.filter((tag: unknown) => {
+      if (typeof tag !== 'string') return true
+      return !tag.startsWith('team:')
+    })
+    if (invalidTags.length > 0) {
+      throw new Error(
+        `Dashboard tags must use 'team:' prefix. Invalid tags: ${invalidTags.join(', ')}. Example: ["team:operations", "team:frontend"]`
+      )
+    }
+  }
+
   return normalized
 }
 
@@ -145,7 +158,7 @@ export function registerDashboardsTool(
 ): void {
   server.tool(
     'dashboards',
-    'Access Datadog dashboards and visualizations. Actions: list (filter by name/tags), get, create, update, delete. Use for: finding existing views, team dashboards, understanding what is monitored.',
+    'Access Datadog dashboards and visualizations. Actions: list (filter by name/tags), get, create, update, delete. Use for: finding existing views, team dashboards, understanding what is monitored. NOTE: Dashboard tags must use "team:" prefix (e.g., ["team:operations"]).',
     InputSchema,
     async ({ action, id, name, tags, limit, config }) => {
       try {

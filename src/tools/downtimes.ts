@@ -95,11 +95,45 @@ export async function getDowntime(api: v2.DowntimesApi, id: string) {
   }
 }
 
+/**
+ * Normalize downtime config to handle date conversions
+ * One-time schedules: convert ISO strings to Date objects
+ * Recurring schedules: keep dates as strings
+ */
+export function normalizeDowntimeConfig(config: Record<string, unknown>): Record<string, unknown> {
+  const normalized = { ...config }
+
+  if (normalized.schedule && typeof normalized.schedule === 'object') {
+    const schedule = { ...(normalized.schedule as Record<string, unknown>) }
+
+    // Detect schedule type:
+    // - Recurring if it has 'duration' and 'rrule' fields
+    // - One-time otherwise
+    const isRecurring = 'duration' in schedule && 'rrule' in schedule
+
+    if (!isRecurring) {
+      // One-time schedule: convert ISO string dates to Date objects
+      if (schedule.start && typeof schedule.start === 'string') {
+        schedule.start = new Date(schedule.start)
+      }
+      if (schedule.end && typeof schedule.end === 'string') {
+        schedule.end = new Date(schedule.end)
+      }
+    }
+    // For recurring schedules, keep dates as strings (no conversion needed)
+
+    normalized.schedule = schedule
+  }
+
+  return normalized
+}
+
 export async function createDowntime(api: v2.DowntimesApi, config: Record<string, unknown>) {
+  const normalizedConfig = normalizeDowntimeConfig(config)
   const body = {
     data: {
       type: 'downtime' as const,
-      attributes: config
+      attributes: normalizedConfig
     }
   } as unknown as v2.DowntimeCreateRequest
 
@@ -115,11 +149,12 @@ export async function updateDowntime(
   id: string,
   config: Record<string, unknown>
 ) {
+  const normalizedConfig = normalizeDowntimeConfig(config)
   const body = {
     data: {
       type: 'downtime' as const,
       id,
-      attributes: config
+      attributes: normalizedConfig
     }
   } as unknown as v2.DowntimeUpdateRequest
 

@@ -133,11 +133,14 @@ export async function searchMonitors(
  * Normalize monitor config to handle snake_case -> camelCase conversion
  * Common fields that users might pass in snake_case
  */
-export function normalizeMonitorConfig(config: Record<string, unknown>): Record<string, unknown> {
+export function normalizeMonitorConfig(
+  config: Record<string, unknown>,
+  isUpdate: boolean = false
+): Record<string, unknown> {
   const normalized = { ...config }
 
-  // Required field validation
-  if (!normalized.name && !normalized.type && !normalized.query) {
+  // Required field validation (only for create, not update)
+  if (!isUpdate && !normalized.name && !normalized.type && !normalized.query) {
     throw new Error("Monitor config requires at least 'name', 'type', and 'query' fields")
   }
 
@@ -211,7 +214,7 @@ export async function updateMonitor(
   config: Record<string, unknown>
 ) {
   const monitorId = Number.parseInt(id, 10)
-  const body = normalizeMonitorConfig(config) as unknown as v1.MonitorUpdateRequest
+  const body = normalizeMonitorConfig(config, true) as unknown as v1.MonitorUpdateRequest
   const monitor = await api.updateMonitor({ monitorId, body })
   return {
     success: true,
