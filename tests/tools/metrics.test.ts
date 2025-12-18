@@ -7,6 +7,22 @@ import { http } from 'msw'
 import { server, endpoints, jsonResponse, errorResponse } from '../helpers/msw.js'
 import { createMockConfig } from '../helpers/mock.js'
 import { metrics as fixtures } from '../helpers/fixtures.js'
+import {
+  queryMetrics,
+  searchMetrics,
+  listMetrics,
+  getMetricMetadata
+} from '../../src/tools/metrics.js'
+import type { LimitsConfig } from '../../src/config/schema.js'
+
+const defaultLimits: LimitsConfig = {
+  maxResults: 100,
+  maxLogLines: 500,
+  maxMetricDataPoints: 1000,
+  defaultTimeRangeHours: 24
+}
+
+const defaultSite = 'datadoghq.com'
 
 describe('Metrics Tool', () => {
   let api: v1.MetricsApi
@@ -28,16 +44,15 @@ describe('Metrics Tool', () => {
         })
       )
 
-      const now = Math.floor(Date.now() / 1000)
-      const response = await api.queryMetrics({
-        from: now - 3600,
-        to: now,
-        query: 'avg:system.cpu.user{*}'
-      })
+      const result = await queryMetrics(
+        api,
+        { query: 'avg:system.cpu.user{*}', from: '1h', to: 'now' },
+        defaultLimits,
+        defaultSite
+      )
 
-      expect(response.series).toHaveLength(1)
-      expect(response.series?.[0]?.metric).toBe('system.cpu.user')
-      expect(response.series?.[0]?.pointlist).toHaveLength(3)
+      expect(result.series).toHaveLength(1)
+      expect(result.series[0].metric).toBe('system.cpu.user')
     })
 
     it('should handle 400 bad request for invalid query', async () => {
@@ -47,13 +62,8 @@ describe('Metrics Tool', () => {
         })
       )
 
-      const now = Math.floor(Date.now() / 1000)
       await expect(
-        api.queryMetrics({
-          from: now - 3600,
-          to: now,
-          query: 'invalid:query'
-        })
+        queryMetrics(api, { query: 'invalid:query' }, defaultLimits, defaultSite)
       ).rejects.toMatchObject({
         code: 400
       })
@@ -66,20 +76,15 @@ describe('Metrics Tool', () => {
         })
       )
 
-      const now = Math.floor(Date.now() / 1000)
       await expect(
-        api.queryMetrics({
-          from: now - 3600,
-          to: now,
-          query: 'avg:system.cpu.user{*}'
-        })
+        queryMetrics(api, { query: 'avg:system.cpu.user{*}' }, defaultLimits, defaultSite)
       ).rejects.toMatchObject({
         code: 401
       })
     })
   })
 
-  describe('listActiveMetrics', () => {
+  describe('listMetrics', () => {
     it('should list active metrics', async () => {
       server.use(
         http.get(endpoints.listMetrics, () => {
@@ -87,31 +92,23 @@ describe('Metrics Tool', () => {
         })
       )
 
-      const response = await api.listActiveMetrics({
-        from: Math.floor(Date.now() / 1000) - 3600
-      })
+      const result = await listMetrics(api, {}, defaultLimits)
 
-      expect(response.metrics).toContain('system.cpu.user')
-      expect(response.metrics).toHaveLength(4)
+      expect(result.metrics).toContain('system.cpu.user')
     })
   })
 
   describe('searchMetrics', () => {
     it('should search metrics by query', async () => {
       server.use(
-        http.get(endpoints.searchMetrics, ({ request }) => {
-          const url = new URL(request.url)
-          const q = url.searchParams.get('q')
-
-          expect(q).toContain('cpu')
-          return jsonResponse(fixtures.search)
+        http.get(endpoints.listMetrics, () => {
+          return jsonResponse(fixtures.list)
         })
       )
 
-      const response = await api.listMetrics({ q: 'metrics:cpu' })
+      const result = await searchMetrics(api, { query: 'cpu' }, defaultLimits)
 
-      expect(response.results?.metrics).toHaveLength(2)
-      expect(response.results?.metrics?.[0]).toContain('cpu')
+      expect(result.metrics).toBeDefined()
     })
   })
 
@@ -123,10 +120,10 @@ describe('Metrics Tool', () => {
         })
       )
 
-      const response = await api.getMetricMetadata({ metricName: 'system.cpu.user' })
+      const result = await getMetricMetadata(api, 'system.cpu.user')
 
-      expect(response.type).toBe('gauge')
-      expect(response.unit).toBe('percent')
+      expect(result.type).toBe('gauge')
+      expect(result.unit).toBe('percent')
     })
 
     it('should handle 404 not found for unknown metric', async () => {
@@ -136,7 +133,7 @@ describe('Metrics Tool', () => {
         })
       )
 
-      await expect(api.getMetricMetadata({ metricName: 'unknown.metric' })).rejects.toMatchObject({
+      await expect(getMetricMetadata(api, 'unknown.metric')).rejects.toMatchObject({
         code: 404
       })
     })

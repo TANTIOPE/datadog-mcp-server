@@ -36,7 +36,7 @@ interface MetricSeriesData {
   tags: string[]
 }
 
-async function queryMetrics(
+export async function queryMetrics(
   api: v1.MetricsApi,
   params: {
     query: string
@@ -83,7 +83,7 @@ async function queryMetrics(
   }
 }
 
-async function searchMetrics(
+export async function searchMetrics(
   api: v1.MetricsApi,
   params: { query: string; limit?: number },
   limits: LimitsConfig
@@ -110,7 +110,11 @@ async function searchMetrics(
   }
 }
 
-async function listMetrics(api: v1.MetricsApi, params: { query?: string }, limits: LimitsConfig) {
+export async function listMetrics(
+  api: v1.MetricsApi,
+  params: { query?: string },
+  limits: LimitsConfig
+) {
   const response = await api.listActiveMetrics({
     from: hoursAgo(24),
     host: undefined,
@@ -125,7 +129,7 @@ async function listMetrics(api: v1.MetricsApi, params: { query?: string }, limit
   }
 }
 
-async function getMetricMetadata(api: v1.MetricsApi, metricName: string) {
+export async function getMetricMetadata(api: v1.MetricsApi, metricName: string) {
   const metadata = await api.getMetricMetadata({ metricName })
 
   return {

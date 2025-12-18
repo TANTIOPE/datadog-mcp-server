@@ -44,7 +44,7 @@ interface IncidentSummary {
   timeToRepair: number | null
 }
 
-function formatIncident(i: v2.IncidentResponseData): IncidentSummary {
+export function formatIncident(i: v2.IncidentResponseData): IncidentSummary {
   const attrs = i.attributes
   const commander = i.relationships?.commanderUser?.data
   return {
@@ -68,7 +68,7 @@ function formatIncident(i: v2.IncidentResponseData): IncidentSummary {
   }
 }
 
-async function listIncidents(
+export async function listIncidents(
   api: v2.IncidentsApi,
   params: { status?: 'active' | 'stable' | 'resolved'; limit?: number },
   limits: LimitsConfig
@@ -96,14 +96,14 @@ async function listIncidents(
   }
 }
 
-async function getIncident(api: v2.IncidentsApi, id: string) {
+export async function getIncident(api: v2.IncidentsApi, id: string) {
   const response = await api.getIncident({ incidentId: id })
   return {
     incident: response.data ? formatIncident(response.data) : null
   }
 }
 
-async function searchIncidents(api: v2.IncidentsApi, query: string, limits: LimitsConfig) {
+export async function searchIncidents(api: v2.IncidentsApi, query: string, limits: LimitsConfig) {
   const response = await api.searchIncidents({
     query,
     pageSize: limits.maxResults
@@ -123,7 +123,7 @@ async function searchIncidents(api: v2.IncidentsApi, query: string, limits: Limi
   }
 }
 
-async function createIncident(api: v2.IncidentsApi, config: Record<string, unknown>) {
+export async function createIncident(api: v2.IncidentsApi, config: Record<string, unknown>) {
   const body = {
     data: {
       type: 'incidents' as const,
@@ -138,7 +138,11 @@ async function createIncident(api: v2.IncidentsApi, config: Record<string, unkno
   }
 }
 
-async function updateIncident(api: v2.IncidentsApi, id: string, config: Record<string, unknown>) {
+export async function updateIncident(
+  api: v2.IncidentsApi,
+  id: string,
+  config: Record<string, unknown>
+) {
   const body = {
     data: {
       type: 'incidents' as const,
@@ -154,7 +158,7 @@ async function updateIncident(api: v2.IncidentsApi, id: string, config: Record<s
   }
 }
 
-async function deleteIncident(api: v2.IncidentsApi, id: string) {
+export async function deleteIncident(api: v2.IncidentsApi, id: string) {
   await api.deleteIncident({ incidentId: id })
   return {
     success: true,

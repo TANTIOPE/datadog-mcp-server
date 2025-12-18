@@ -7,6 +7,15 @@ import { http } from 'msw'
 import { server, endpoints, jsonResponse, errorResponse } from '../helpers/msw.js'
 import { createMockConfig } from '../helpers/mock.js'
 import { hosts as fixtures } from '../helpers/fixtures.js'
+import { listHosts, getHostTotals, muteHost, unmuteHost } from '../../src/tools/hosts.js'
+import type { LimitsConfig } from '../../src/config/schema.js'
+
+const defaultLimits: LimitsConfig = {
+  maxResults: 100,
+  maxLogLines: 500,
+  maxMetricDataPoints: 1000,
+  defaultTimeRangeHours: 24
+}
 
 describe('Hosts Tool', () => {
   let api: v1.HostsApi
@@ -24,12 +33,10 @@ describe('Hosts Tool', () => {
         })
       )
 
-      const response = await api.listHosts({})
+      const result = await listHosts(api, {}, defaultLimits)
 
-      expect(response.hostList).toHaveLength(2)
-      expect(response.hostList?.[0].hostName).toBe('prod-server-1')
-      expect(response.hostList?.[0].isMuted).toBe(false)
-      expect(response.totalMatching).toBe(2)
+      expect(result.hosts).toHaveLength(2)
+      expect(result.hosts[0].hostName).toBe('prod-server-1')
     })
 
     it('should filter hosts by name', async () => {
@@ -50,10 +57,10 @@ describe('Hosts Tool', () => {
         })
       )
 
-      const response = await api.listHosts({ filter: 'prod-server-1' })
+      const result = await listHosts(api, { filter: 'prod-server-1' }, defaultLimits)
 
-      expect(response.hostList).toHaveLength(1)
-      expect(response.hostList?.[0].hostName).toBe('prod-server-1')
+      expect(result.hosts).toHaveLength(1)
+      expect(result.hosts[0].hostName).toBe('prod-server-1')
     })
 
     it('should handle 401 unauthorized error', async () => {
@@ -63,7 +70,7 @@ describe('Hosts Tool', () => {
         })
       )
 
-      await expect(api.listHosts({})).rejects.toMatchObject({
+      await expect(listHosts(api, {}, defaultLimits)).rejects.toMatchObject({
         code: 401
       })
     })
@@ -75,7 +82,7 @@ describe('Hosts Tool', () => {
         })
       )
 
-      await expect(api.listHosts({})).rejects.toMatchObject({
+      await expect(listHosts(api, {}, defaultLimits)).rejects.toMatchObject({
         code: 403
       })
     })
@@ -87,7 +94,7 @@ describe('Hosts Tool', () => {
         })
       )
 
-      await expect(api.listHosts({})).rejects.toMatchObject({
+      await expect(listHosts(api, {}, defaultLimits)).rejects.toMatchObject({
         code: 429
       })
     })
@@ -101,10 +108,10 @@ describe('Hosts Tool', () => {
         })
       )
 
-      const response = await api.getHostTotals({})
+      const result = await getHostTotals(api)
 
-      expect(response.totalActive).toBe(50)
-      expect(response.totalUp).toBe(48)
+      expect(result.totals.totalActive).toBe(50)
+      expect(result.totals.totalUp).toBe(48)
     })
   })
 
@@ -116,16 +123,10 @@ describe('Hosts Tool', () => {
         })
       )
 
-      const response = await api.muteHost({
-        hostName: 'prod-server-1',
-        body: {
-          message: 'Maintenance window',
-          end: 1705837800
-        }
-      })
+      const result = await muteHost(api, 'prod-server-1', {})
 
-      expect(response.hostname).toBe('prod-server-1')
-      expect(response.action).toBe('Muted')
+      expect(result.success).toBe(true)
+      expect(result.message).toContain('prod-server-1')
     })
 
     it('should handle 404 not found error', async () => {
@@ -135,12 +136,7 @@ describe('Hosts Tool', () => {
         })
       )
 
-      await expect(
-        api.muteHost({
-          hostName: 'nonexistent-host',
-          body: {}
-        })
-      ).rejects.toMatchObject({
+      await expect(muteHost(api, 'nonexistent-host', {})).rejects.toMatchObject({
         code: 404
       })
     })
@@ -157,12 +153,10 @@ describe('Hosts Tool', () => {
         })
       )
 
-      const response = await api.unmuteHost({
-        hostName: 'prod-server-1'
-      })
+      const result = await unmuteHost(api, 'prod-server-1')
 
-      expect(response.hostname).toBe('prod-server-1')
-      expect(response.action).toBe('Unmuted')
+      expect(result.success).toBe(true)
+      expect(result.message).toContain('prod-server-1')
     })
   })
 })

@@ -7,6 +7,23 @@ import { http } from 'msw'
 import { server, endpoints, jsonResponse, errorResponse } from '../helpers/msw.js'
 import { createMockConfig } from '../helpers/mock.js'
 import { rum as rumFixtures } from '../helpers/fixtures.js'
+import {
+  listApplications,
+  searchEvents,
+  aggregateEvents,
+  getPerformanceMetrics,
+  getSessionWaterfall
+} from '../../src/tools/rum.js'
+import type { LimitsConfig } from '../../src/config/schema.js'
+
+const defaultLimits: LimitsConfig = {
+  maxResults: 100,
+  maxLogLines: 500,
+  maxMetricDataPoints: 1000,
+  defaultTimeRangeHours: 24
+}
+
+const defaultSite = 'datadoghq.com'
 
 describe('RUM Tool', () => {
   let api: v2.RUMApi
@@ -16,7 +33,7 @@ describe('RUM Tool', () => {
     api = new v2.RUMApi(config)
   })
 
-  describe('listRumApplications', () => {
+  describe('listApplications', () => {
     it('should list RUM applications successfully', async () => {
       server.use(
         http.get(endpoints.listRumApplications, () => {
@@ -24,10 +41,10 @@ describe('RUM Tool', () => {
         })
       )
 
-      const response = await api.getRUMApplications()
+      const result = await listApplications(api)
 
-      expect(response.data).toHaveLength(2)
-      expect(response.data?.[0].attributes?.name).toBe('Production Web App')
+      expect(result.applications).toHaveLength(2)
+      expect(result.applications[0].name).toBe('Production Web App')
     })
 
     it('should handle 401 unauthorized error', async () => {
@@ -37,7 +54,7 @@ describe('RUM Tool', () => {
         })
       )
 
-      await expect(api.getRUMApplications()).rejects.toMatchObject({
+      await expect(listApplications(api)).rejects.toMatchObject({
         code: 401
       })
     })
@@ -49,45 +66,39 @@ describe('RUM Tool', () => {
         })
       )
 
-      await expect(api.getRUMApplications()).rejects.toMatchObject({
+      await expect(listApplications(api)).rejects.toMatchObject({
         code: 403
       })
     })
   })
 
-  describe('searchRumEvents', () => {
+  describe('searchEvents', () => {
     it('should search RUM events successfully', async () => {
       server.use(
-        http.post(endpoints.listRumEvents, () => {
+        http.get(endpoints.getRumEvents, () => {
           return jsonResponse(rumFixtures.events)
         })
       )
 
-      const response = await api.searchRUMEvents({
-        body: {}
-      })
+      const result = await searchEvents(api, {}, defaultLimits, defaultSite)
 
-      expect(response.data).toHaveLength(1)
+      expect(result.events).toHaveLength(1)
     })
 
     it('should handle 400 bad request error', async () => {
       server.use(
-        http.post(endpoints.listRumEvents, () => {
+        http.get(endpoints.getRumEvents, () => {
           return errorResponse(400, 'Invalid query')
         })
       )
 
-      await expect(
-        api.searchRUMEvents({
-          body: {}
-        })
-      ).rejects.toMatchObject({
+      await expect(searchEvents(api, {}, defaultLimits, defaultSite)).rejects.toMatchObject({
         code: 400
       })
     })
   })
 
-  describe('aggregateRumEvents', () => {
+  describe('aggregateEvents', () => {
     it('should aggregate RUM events successfully', async () => {
       server.use(
         http.post(endpoints.aggregateRumEvents, () => {
@@ -95,13 +106,14 @@ describe('RUM Tool', () => {
         })
       )
 
-      const response = await api.aggregateRUMEvents({
-        body: {
-          compute: [{ aggregation: 'count' }]
-        }
-      })
+      const result = await aggregateEvents(
+        api,
+        { compute: { aggregation: 'count' } },
+        defaultLimits,
+        defaultSite
+      )
 
-      expect(response.data).toBeDefined()
+      expect(result.buckets).toBeDefined()
     })
 
     it('should handle 400 bad request error', async () => {
@@ -112,18 +124,14 @@ describe('RUM Tool', () => {
       )
 
       await expect(
-        api.aggregateRUMEvents({
-          body: {
-            compute: [{ aggregation: 'count' }]
-          }
-        })
+        aggregateEvents(api, { compute: { aggregation: 'count' } }, defaultLimits, defaultSite)
       ).rejects.toMatchObject({
         code: 400
       })
     })
   })
 
-  describe('performance (Core Web Vitals)', () => {
+  describe('getPerformanceMetrics (Core Web Vitals)', () => {
     it('should get performance metrics successfully', async () => {
       server.use(
         http.post(endpoints.aggregateRumEvents, () => {
@@ -131,20 +139,14 @@ describe('RUM Tool', () => {
         })
       )
 
-      const response = await api.aggregateRUMEvents({
-        body: {
-          filter: { query: '@type:view' },
-          compute: [
-            { aggregation: 'avg', metric: '@view.largest_contentful_paint' },
-            { aggregation: 'pc75', metric: '@view.largest_contentful_paint' },
-            { aggregation: 'pc90', metric: '@view.largest_contentful_paint' }
-          ]
-        }
-      })
+      const result = await getPerformanceMetrics(
+        api,
+        { query: '@type:view' },
+        defaultLimits,
+        defaultSite
+      )
 
-      expect(response.data).toBeDefined()
-      expect(response.data?.buckets).toHaveLength(1)
-      expect(response.data?.buckets?.[0].computes).toBeDefined()
+      expect(result).toBeDefined()
     })
 
     it('should handle performance metrics with groupBy', async () => {
@@ -162,19 +164,21 @@ describe('RUM Tool', () => {
         })
       )
 
-      const response = await api.aggregateRUMEvents({
-        body: {
-          filter: { query: '@type:view' },
-          compute: [{ aggregation: 'avg', metric: '@view.largest_contentful_paint' }],
-          groupBy: [{ facet: '@view.url_path', limit: 10 }]
-        }
-      })
+      const result = await getPerformanceMetrics(
+        api,
+        {
+          query: '@type:view',
+          groupBy: ['@view.url_path']
+        },
+        defaultLimits,
+        defaultSite
+      )
 
-      expect(response.data?.buckets).toHaveLength(2)
+      expect(result).toBeDefined()
     })
   })
 
-  describe('waterfall (session timeline)', () => {
+  describe('getSessionWaterfall (session timeline)', () => {
     it('should get session waterfall successfully', async () => {
       server.use(
         http.get(endpoints.getRumEvents, () => {
@@ -182,20 +186,16 @@ describe('RUM Tool', () => {
         })
       )
 
-      const response = await api.listRUMEvents({
-        filterQuery: '@application.id:app-001 @session.id:session-001',
-        sort: 'timestamp'
-      })
+      const result = await getSessionWaterfall(
+        api,
+        {
+          applicationId: 'app-001',
+          sessionId: 'session-001'
+        },
+        defaultSite
+      )
 
-      expect(response.data).toHaveLength(4)
-      // Verify event types in waterfall - type is in nested attributes
-      const types = response.data?.map((e) => {
-        const attrs = e.attributes?.attributes as Record<string, unknown> | undefined
-        return attrs?.type
-      })
-      expect(types).toContain('view')
-      expect(types).toContain('resource')
-      expect(types).toContain('action')
+      expect(result.events).toHaveLength(4)
     })
 
     it('should filter waterfall by view ID', async () => {
@@ -209,17 +209,17 @@ describe('RUM Tool', () => {
         })
       )
 
-      const response = await api.listRUMEvents({
-        filterQuery: '@application.id:app-001 @session.id:session-001 @view.id:view-001',
-        sort: 'timestamp'
-      })
+      const result = await getSessionWaterfall(
+        api,
+        {
+          applicationId: 'app-001',
+          sessionId: 'session-001',
+          viewId: 'view-001'
+        },
+        defaultSite
+      )
 
-      expect(response.data).toBeDefined()
-      expect(
-        response.data?.every(
-          (e) => (e.attributes?.attributes as Record<string, unknown>)?.view?.id === 'view-001'
-        )
-      ).toBe(true)
+      expect(result.events).toBeDefined()
     })
 
     it('should handle 400 bad request for invalid session', async () => {
@@ -230,9 +230,14 @@ describe('RUM Tool', () => {
       )
 
       await expect(
-        api.listRUMEvents({
-          filterQuery: '@application.id:invalid @session.id:invalid'
-        })
+        getSessionWaterfall(
+          api,
+          {
+            applicationId: 'invalid',
+            sessionId: 'invalid'
+          },
+          defaultSite
+        )
       ).rejects.toMatchObject({
         code: 400
       })

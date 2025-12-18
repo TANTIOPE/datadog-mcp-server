@@ -7,18 +7,42 @@ import { http } from 'msw'
 import { server, endpoints, jsonResponse, errorResponse } from '../helpers/msw.js'
 import { createMockConfig } from '../helpers/mock.js'
 import { auth as fixtures, users as userFixtures } from '../helpers/fixtures.js'
+import { validateCredentials } from '../../src/tools/auth.js'
+import type { DatadogClients } from '../../src/config/datadog.js'
 
 describe('Auth Tool', () => {
-  let authApi: v1.AuthenticationApi
-  let usersApi: v2.UsersApi
+  let clients: DatadogClients
 
   beforeEach(() => {
     const config = createMockConfig()
-    authApi = new v1.AuthenticationApi(config)
-    usersApi = new v2.UsersApi(config)
+    clients = {
+      monitors: new v1.MonitorsApi(config),
+      dashboards: new v1.DashboardsApi(config),
+      dashboardLists: new v1.DashboardListsApi(config),
+      logs: new v2.LogsApi(config),
+      metricsV1: new v1.MetricsApi(config),
+      metricsV2: new v2.MetricsApi(config),
+      eventsV1: new v1.EventsApi(config),
+      eventsV2: new v2.EventsApi(config),
+      incidents: new v2.IncidentsApi(config),
+      downtimes: new v2.DowntimesApi(config),
+      hosts: new v1.HostsApi(config),
+      slo: new v1.ServiceLevelObjectivesApi(config),
+      synthetics: new v1.SyntheticsApi(config),
+      rum: new v2.RUMApi(config),
+      security: new v2.SecurityMonitoringApi(config),
+      notebooks: new v1.NotebooksApi(config),
+      users: new v2.UsersApi(config),
+      teams: new v2.TeamsApi(config),
+      tags: new v1.TagsApi(config),
+      usage: new v1.UsageMeteringApi(config),
+      spans: new v2.SpansApi(config),
+      services: new v2.ServiceDefinitionApi(config),
+      auth: new v1.AuthenticationApi(config)
+    }
   })
 
-  describe('validate', () => {
+  describe('validateCredentials', () => {
     it('should return valid when both API key and App key are valid', async () => {
       // Setup successful responses for both API key validation and user list
       server.use(
@@ -30,13 +54,9 @@ describe('Auth Tool', () => {
         })
       )
 
-      // Validate API key
-      const authResult = await authApi.validate()
-      expect(authResult.valid).toBe(true)
-
-      // App key validation via users list
-      const usersResult = await usersApi.listUsers({ pageSize: 1 })
-      expect(usersResult.data).toBeDefined()
+      const result = await validateCredentials(clients)
+      expect(result.apiKeyValid).toBe(true)
+      expect(result.appKeyValid).toBe(true)
     })
 
     it('should handle invalid API key', async () => {
@@ -46,8 +66,8 @@ describe('Auth Tool', () => {
         })
       )
 
-      const result = await authApi.validate()
-      expect(result.valid).toBe(false)
+      const result = await validateCredentials(clients)
+      expect(result.apiKeyValid).toBe(false)
     })
 
     it('should handle 401 unauthorized for API key validation', async () => {
@@ -57,7 +77,7 @@ describe('Auth Tool', () => {
         })
       )
 
-      await expect(authApi.validate()).rejects.toMatchObject({
+      await expect(validateCredentials(clients)).rejects.toMatchObject({
         code: 401
       })
     })
@@ -72,14 +92,9 @@ describe('Auth Tool', () => {
         })
       )
 
-      // API key validation should succeed
-      const authResult = await authApi.validate()
-      expect(authResult.valid).toBe(true)
-
-      // App key validation via users list should fail
-      await expect(usersApi.listUsers({ pageSize: 1 })).rejects.toMatchObject({
-        code: 403
-      })
+      const result = await validateCredentials(clients)
+      expect(result.apiKeyValid).toBe(true)
+      expect(result.appKeyValid).toBe(false)
     })
 
     it('should detect invalid App key when API key is valid but users call fails with 401', async () => {
@@ -92,14 +107,9 @@ describe('Auth Tool', () => {
         })
       )
 
-      // API key validation should succeed
-      const authResult = await authApi.validate()
-      expect(authResult.valid).toBe(true)
-
-      // App key validation via users list should fail
-      await expect(usersApi.listUsers({ pageSize: 1 })).rejects.toMatchObject({
-        code: 401
-      })
+      const result = await validateCredentials(clients)
+      expect(result.apiKeyValid).toBe(true)
+      expect(result.appKeyValid).toBe(false)
     })
   })
 })

@@ -7,6 +7,22 @@ import { http } from 'msw'
 import { server, endpoints, jsonResponse, errorResponse } from '../helpers/msw.js'
 import { createMockConfig } from '../helpers/mock.js'
 import { downtimes as fixtures } from '../helpers/fixtures.js'
+import {
+  listDowntimes,
+  getDowntime,
+  createDowntime,
+  updateDowntime,
+  cancelDowntime,
+  listMonitorDowntimes
+} from '../../src/tools/downtimes.js'
+import type { LimitsConfig } from '../../src/config/schema.js'
+
+const defaultLimits: LimitsConfig = {
+  maxResults: 100,
+  maxLogLines: 500,
+  maxMetricDataPoints: 1000,
+  defaultTimeRangeHours: 24
+}
 
 describe('Downtimes Tool', () => {
   let api: v2.DowntimesApi
@@ -24,11 +40,11 @@ describe('Downtimes Tool', () => {
         })
       )
 
-      const response = await api.listDowntimes({})
+      const result = await listDowntimes(api, {}, defaultLimits)
 
-      expect(response.data).toHaveLength(2)
-      expect(response.data?.[0].id).toBe('dt-001')
-      expect(response.data?.[0].attributes?.status).toBe('active')
+      expect(result.downtimes).toHaveLength(2)
+      expect(result.downtimes[0].id).toBe('dt-001')
+      expect(result.downtimes[0].status).toBe('active')
     })
 
     it('should filter by currentOnly', async () => {
@@ -46,10 +62,10 @@ describe('Downtimes Tool', () => {
         })
       )
 
-      const response = await api.listDowntimes({ currentOnly: true })
+      const result = await listDowntimes(api, { currentOnly: true }, defaultLimits)
 
-      expect(response.data).toHaveLength(1)
-      expect(response.data?.[0].attributes?.status).toBe('active')
+      expect(result.downtimes).toHaveLength(1)
+      expect(result.downtimes[0].status).toBe('active')
     })
 
     it('should handle 401 unauthorized error', async () => {
@@ -59,7 +75,7 @@ describe('Downtimes Tool', () => {
         })
       )
 
-      await expect(api.listDowntimes({})).rejects.toMatchObject({
+      await expect(listDowntimes(api, {}, defaultLimits)).rejects.toMatchObject({
         code: 401
       })
     })
@@ -71,7 +87,7 @@ describe('Downtimes Tool', () => {
         })
       )
 
-      await expect(api.listDowntimes({})).rejects.toMatchObject({
+      await expect(listDowntimes(api, {}, defaultLimits)).rejects.toMatchObject({
         code: 403
       })
     })
@@ -83,7 +99,7 @@ describe('Downtimes Tool', () => {
         })
       )
 
-      await expect(api.listDowntimes({})).rejects.toMatchObject({
+      await expect(listDowntimes(api, {}, defaultLimits)).rejects.toMatchObject({
         code: 429
       })
     })
@@ -97,10 +113,10 @@ describe('Downtimes Tool', () => {
         })
       )
 
-      const response = await api.getDowntime({ downtimeId: 'dt-001' })
+      const result = await getDowntime(api, 'dt-001')
 
-      expect(response.data?.id).toBe('dt-001')
-      expect(response.data?.attributes?.scope).toBe('env:production')
+      expect(result.downtime.id).toBe('dt-001')
+      expect(result.downtime.scope).toBe('env:production')
     })
 
     it('should handle 404 not found error', async () => {
@@ -110,7 +126,7 @@ describe('Downtimes Tool', () => {
         })
       )
 
-      await expect(api.getDowntime({ downtimeId: 'nonexistent' })).rejects.toMatchObject({
+      await expect(getDowntime(api, 'nonexistent')).rejects.toMatchObject({
         code: 404
       })
     })
@@ -124,25 +140,19 @@ describe('Downtimes Tool', () => {
         })
       )
 
-      const response = await api.createDowntime({
-        body: {
-          data: {
-            type: 'downtime',
-            attributes: {
-              scope: 'env:staging',
-              monitorIdentifier: {
-                monitorTags: ['env:staging']
-              },
-              schedule: {
-                start: new Date().toISOString()
-              }
-            }
-          }
+      const result = await createDowntime(api, {
+        scope: 'env:staging',
+        monitorIdentifier: {
+          monitorTags: ['env:staging']
+        },
+        schedule: {
+          start: new Date().toISOString()
         }
       })
 
-      expect(response.data?.id).toBe('dt-003')
-      expect(response.data?.attributes?.scope).toBe('env:staging')
+      expect(result.success).toBe(true)
+      expect(result.downtime.id).toBe('dt-003')
+      expect(result.downtime.scope).toBe('env:staging')
     })
 
     it('should handle 400 bad request error', async () => {
@@ -153,17 +163,10 @@ describe('Downtimes Tool', () => {
       )
 
       await expect(
-        api.createDowntime({
-          body: {
-            data: {
-              type: 'downtime',
-              attributes: {
-                scope: 'invalid',
-                monitorIdentifier: {
-                  monitorTags: ['invalid']
-                }
-              }
-            }
+        createDowntime(api, {
+          scope: 'invalid',
+          monitorIdentifier: {
+            monitorTags: ['invalid']
           }
         })
       ).rejects.toMatchObject({
@@ -175,8 +178,7 @@ describe('Downtimes Tool', () => {
   describe('updateDowntime', () => {
     it('should update an existing downtime', async () => {
       server.use(
-        http.patch(endpoints.updateDowntime('dt-001'), async ({ request }) => {
-          const _body = (await request.json()) as Record<string, unknown>
+        http.patch(endpoints.updateDowntime('dt-001'), async () => {
           return jsonResponse({
             data: {
               ...fixtures.single.data,
@@ -189,20 +191,11 @@ describe('Downtimes Tool', () => {
         })
       )
 
-      const response = await api.updateDowntime({
-        downtimeId: 'dt-001',
-        body: {
-          data: {
-            type: 'downtime',
-            id: 'dt-001',
-            attributes: {
-              message: 'Updated message'
-            }
-          }
-        }
+      const result = await updateDowntime(api, 'dt-001', {
+        message: 'Updated message'
       })
 
-      expect(response.data?.attributes?.message).toBe('Updated message')
+      expect(result.success).toBe(true)
     })
   })
 
@@ -214,8 +207,10 @@ describe('Downtimes Tool', () => {
         })
       )
 
-      // cancelDowntime returns void on success
-      await expect(api.cancelDowntime({ downtimeId: 'dt-001' })).resolves.not.toThrow()
+      const result = await cancelDowntime(api, 'dt-001')
+
+      expect(result.success).toBe(true)
+      expect(result.message).toContain('dt-001')
     })
 
     it('should handle 404 not found error', async () => {
@@ -225,7 +220,7 @@ describe('Downtimes Tool', () => {
         })
       )
 
-      await expect(api.cancelDowntime({ downtimeId: 'nonexistent' })).rejects.toMatchObject({
+      await expect(cancelDowntime(api, 'nonexistent')).rejects.toMatchObject({
         code: 404
       })
     })
@@ -241,10 +236,10 @@ describe('Downtimes Tool', () => {
         })
       )
 
-      const response = await api.listMonitorDowntimes({ monitorId: 12345 })
+      const result = await listMonitorDowntimes(api, 12345, defaultLimits)
 
-      expect(response.data).toHaveLength(1)
-      expect(response.data?.[0].id).toBe('dt-001')
+      expect(result.downtimes).toHaveLength(1)
+      expect(result.downtimes[0].id).toBe('dt-001')
     })
   })
 })

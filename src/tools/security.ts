@@ -58,7 +58,7 @@ interface SecuritySignalSummary {
   }
 }
 
-function formatRule(rule: v2.SecurityMonitoringRuleResponse): SecurityRuleSummary {
+export function formatRule(rule: v2.SecurityMonitoringRuleResponse): SecurityRuleSummary {
   // Handle union type - SecurityMonitoringRuleResponse can be various rule types
   const ruleData = rule as Record<string, unknown>
 
@@ -82,7 +82,7 @@ function formatRule(rule: v2.SecurityMonitoringRuleResponse): SecurityRuleSummar
   }
 }
 
-function formatSignal(signal: v2.SecurityMonitoringSignal): SecuritySignalSummary {
+export function formatSignal(signal: v2.SecurityMonitoringSignal): SecuritySignalSummary {
   const attrs = signal.attributes ?? {}
   // Custom attributes are in the additionalProperties
   const customAttrs = attrs as Record<string, unknown>
@@ -101,7 +101,7 @@ function formatSignal(signal: v2.SecurityMonitoringSignal): SecuritySignalSummar
   }
 }
 
-async function listRules(
+export async function listRules(
   api: v2.SecurityMonitoringApi,
   params: {
     pageSize?: number
@@ -124,7 +124,7 @@ async function listRules(
   }
 }
 
-async function getRule(api: v2.SecurityMonitoringApi, ruleId: string) {
+export async function getRule(api: v2.SecurityMonitoringApi, ruleId: string) {
   const response = await api.getSecurityMonitoringRule({ ruleId })
 
   return {
@@ -132,7 +132,7 @@ async function getRule(api: v2.SecurityMonitoringApi, ruleId: string) {
   }
 }
 
-async function searchSignals(
+export async function searchSignals(
   api: v2.SecurityMonitoringApi,
   params: {
     query?: string
@@ -190,7 +190,7 @@ async function searchSignals(
   }
 }
 
-async function listFindings(
+export async function listFindings(
   api: v2.SecurityMonitoringApi,
   params: {
     query?: string

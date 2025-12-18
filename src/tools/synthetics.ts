@@ -41,7 +41,7 @@ interface SyntheticTestSummary {
   monitorId: number | null
 }
 
-function formatTest(t: v1.SyntheticsTestDetails): SyntheticTestSummary {
+export function formatTest(t: v1.SyntheticsTestDetails): SyntheticTestSummary {
   return {
     publicId: t.publicId ?? '',
     name: t.name ?? '',
@@ -55,7 +55,7 @@ function formatTest(t: v1.SyntheticsTestDetails): SyntheticTestSummary {
   }
 }
 
-async function listTests(
+export async function listTests(
   api: v1.SyntheticsApi,
   params: { locations?: string[]; tags?: string[]; limit?: number },
   limits: LimitsConfig
@@ -92,7 +92,7 @@ async function listTests(
   return { tests, summary }
 }
 
-async function getTest(api: v1.SyntheticsApi, id: string) {
+export async function getTest(api: v1.SyntheticsApi, id: string) {
   // Try API test first, then browser
   try {
     const response = await api.getAPITest({ publicId: id })
@@ -106,11 +106,11 @@ async function getTest(api: v1.SyntheticsApi, id: string) {
 /**
  * Recursively convert snake_case keys to camelCase in an object
  */
-function snakeToCamel(str: string): string {
+export function snakeToCamel(str: string): string {
   return str.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase())
 }
 
-function normalizeConfigKeys(obj: unknown): unknown {
+export function normalizeConfigKeys(obj: unknown): unknown {
   if (obj === null || obj === undefined) return obj
   if (Array.isArray(obj)) return obj.map(normalizeConfigKeys)
   if (typeof obj !== 'object') return obj
@@ -126,7 +126,9 @@ function normalizeConfigKeys(obj: unknown): unknown {
 /**
  * Normalize synthetics test config to handle snake_case -> camelCase
  */
-function normalizeSyntheticsConfig(config: Record<string, unknown>): Record<string, unknown> {
+export function normalizeSyntheticsConfig(
+  config: Record<string, unknown>
+): Record<string, unknown> {
   // Recursively convert all snake_case keys to camelCase
   const normalized = normalizeConfigKeys(config) as Record<string, unknown>
 
@@ -145,7 +147,7 @@ function normalizeSyntheticsConfig(config: Record<string, unknown>): Record<stri
   return normalized
 }
 
-async function createTest(
+export async function createTest(
   api: v1.SyntheticsApi,
   config: Record<string, unknown>,
   testType?: 'api' | 'browser'
@@ -170,7 +172,11 @@ async function createTest(
   }
 }
 
-async function updateTest(api: v1.SyntheticsApi, id: string, config: Record<string, unknown>) {
+export async function updateTest(
+  api: v1.SyntheticsApi,
+  id: string,
+  config: Record<string, unknown>
+) {
   // Normalize config first
   const normalizedConfig = normalizeConfigKeys(config) as Record<string, unknown>
 
@@ -200,7 +206,7 @@ async function updateTest(api: v1.SyntheticsApi, id: string, config: Record<stri
   }
 }
 
-async function deleteTests(api: v1.SyntheticsApi, ids: string[]) {
+export async function deleteTests(api: v1.SyntheticsApi, ids: string[]) {
   await api.deleteTests({
     body: { publicIds: ids }
   })
@@ -210,7 +216,7 @@ async function deleteTests(api: v1.SyntheticsApi, ids: string[]) {
   }
 }
 
-async function triggerTests(api: v1.SyntheticsApi, ids: string[]) {
+export async function triggerTests(api: v1.SyntheticsApi, ids: string[]) {
   const response = await api.triggerTests({
     body: {
       tests: ids.map((id) => ({ publicId: id }))
@@ -230,7 +236,7 @@ async function triggerTests(api: v1.SyntheticsApi, ids: string[]) {
   }
 }
 
-async function getTestResults(api: v1.SyntheticsApi, id: string) {
+export async function getTestResults(api: v1.SyntheticsApi, id: string) {
   // Try API test results first, then browser
   try {
     const response = await api.getAPITestLatestResults({ publicId: id })

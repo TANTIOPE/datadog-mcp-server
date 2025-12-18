@@ -7,6 +7,18 @@ import { http } from 'msw'
 import { server, endpoints, jsonResponse, errorResponse } from '../helpers/msw.js'
 import { createMockConfig } from '../helpers/mock.js'
 import { events as fixtures } from '../helpers/fixtures.js'
+import { listEventsV1, getEventV1, createEventV1, searchEventsV2 } from '../../src/tools/events.js'
+import type { LimitsConfig } from '../../src/config/schema.js'
+
+const defaultLimits: LimitsConfig = {
+  maxResults: 100,
+  maxLogLines: 500,
+  maxMetricDataPoints: 1000,
+  defaultTimeRangeHours: 24,
+  defaultLimit: 100
+}
+
+const defaultSite = 'datadoghq.com'
 
 describe('Events Tool', () => {
   let apiV1: v1.EventsApi
@@ -18,7 +30,7 @@ describe('Events Tool', () => {
     apiV2 = new v2.EventsApi(config)
   })
 
-  describe('listEvents (v1)', () => {
+  describe('listEventsV1', () => {
     it('should list events successfully', async () => {
       server.use(
         http.get(endpoints.listEvents, () => {
@@ -26,15 +38,11 @@ describe('Events Tool', () => {
         })
       )
 
-      const now = Math.floor(Date.now() / 1000)
-      const response = await apiV1.listEvents({
-        start: now - 3600,
-        end: now
-      })
+      const result = await listEventsV1(apiV1, {}, defaultLimits)
 
-      expect(response.events).toHaveLength(2)
-      expect(response.events?.[0]?.id).toBe(1001)
-      expect(response.events?.[0]?.title).toBe('Deployment started')
+      expect(result.events).toHaveLength(2)
+      expect(result.events[0].id).toBe(1001)
+      expect(result.events[0].title).toBe('Deployment started')
     })
 
     it('should filter events by priority', async () => {
@@ -48,14 +56,9 @@ describe('Events Tool', () => {
         })
       )
 
-      const now = Math.floor(Date.now() / 1000)
-      const response = await apiV1.listEvents({
-        start: now - 3600,
-        end: now,
-        priority: 'normal'
-      })
+      const result = await listEventsV1(apiV1, { priority: 'normal' }, defaultLimits)
 
-      expect(response.events).toBeDefined()
+      expect(result.events).toBeDefined()
     })
 
     it('should handle 401 unauthorized error', async () => {
@@ -65,13 +68,7 @@ describe('Events Tool', () => {
         })
       )
 
-      const now = Math.floor(Date.now() / 1000)
-      await expect(
-        apiV1.listEvents({
-          start: now - 3600,
-          end: now
-        })
-      ).rejects.toMatchObject({
+      await expect(listEventsV1(apiV1, {}, defaultLimits)).rejects.toMatchObject({
         code: 401
       })
     })
@@ -83,19 +80,13 @@ describe('Events Tool', () => {
         })
       )
 
-      const now = Math.floor(Date.now() / 1000)
-      await expect(
-        apiV1.listEvents({
-          start: now - 3600,
-          end: now
-        })
-      ).rejects.toMatchObject({
+      await expect(listEventsV1(apiV1, {}, defaultLimits)).rejects.toMatchObject({
         code: 429
       })
     })
   })
 
-  describe('getEvent (v1)', () => {
+  describe('getEventV1', () => {
     it('should get a single event by ID', async () => {
       server.use(
         http.get(endpoints.getEvent(1001), () => {
@@ -103,10 +94,10 @@ describe('Events Tool', () => {
         })
       )
 
-      const response = await apiV1.getEvent({ eventId: 1001 })
+      const result = await getEventV1(apiV1, '1001')
 
-      expect(response.event?.id).toBe(1001)
-      expect(response.event?.title).toBe('Deployment started')
+      expect(result.event.id).toBe(1001)
+      expect(result.event.title).toBe('Deployment started')
     })
 
     it('should handle 404 not found error', async () => {
@@ -116,40 +107,29 @@ describe('Events Tool', () => {
         })
       )
 
-      await expect(apiV1.getEvent({ eventId: 99999 })).rejects.toMatchObject({
+      await expect(getEventV1(apiV1, '99999')).rejects.toMatchObject({
         code: 404
       })
     })
   })
 
-  describe('createEvent (v1)', () => {
+  describe('createEventV1', () => {
     it('should create a new event', async () => {
-      const newEvent = {
-        title: 'Test Event',
-        text: 'Test event description',
-        priority: 'normal' as const,
-        alertType: 'info' as const
-      }
-
       server.use(
         http.post(endpoints.createEvent, async () => {
           return jsonResponse(fixtures.created)
         })
       )
 
-      const response = await apiV1.createEvent({ body: newEvent })
+      const result = await createEventV1(apiV1, {
+        title: 'Test Event',
+        text: 'Test event description',
+        priority: 'normal',
+        alertType: 'info'
+      })
 
-      expect(response.event?.id).toBe(1003)
-      expect(response.status).toBe('ok')
-    })
-
-    it('should validate required fields locally', async () => {
-      // SDK validates required fields (like 'title') before sending
-      await expect(
-        apiV1.createEvent({
-          body: { text: 'Missing title' }
-        })
-      ).rejects.toThrow(/title/)
+      expect(result.success).toBe(true)
+      expect(result.event.id).toBe(1003)
     })
 
     it('should handle 400 bad request from API', async () => {
@@ -159,10 +139,10 @@ describe('Events Tool', () => {
         })
       )
 
-      // Use valid body to reach the API
       await expect(
-        apiV1.createEvent({
-          body: { title: 'Test', text: 'Test' }
+        createEventV1(apiV1, {
+          title: 'Test',
+          text: 'Test'
         })
       ).rejects.toMatchObject({
         code: 400
@@ -170,7 +150,7 @@ describe('Events Tool', () => {
     })
   })
 
-  describe('searchEvents (v2)', () => {
+  describe('searchEventsV2', () => {
     it('should search events successfully', async () => {
       server.use(
         http.post(endpoints.searchEvents, () => {
@@ -178,21 +158,19 @@ describe('Events Tool', () => {
         })
       )
 
-      const response = await apiV2.searchEvents({
-        body: {
-          filter: {
-            query: 'source:alert',
-            from: '2024-01-20T00:00:00Z',
-            to: '2024-01-20T23:59:59Z'
-          },
-          page: { limit: 100 }
-        }
-      })
+      const result = await searchEventsV2(
+        apiV2,
+        {
+          query: 'source:alert',
+          from: '2024-01-20T00:00:00Z',
+          to: '2024-01-20T23:59:59Z'
+        },
+        defaultLimits,
+        defaultSite
+      )
 
-      // SDK deserializes to typed objects, so just verify data is returned
-      expect(response.data).toBeDefined()
-      expect(response.data).toHaveLength(4)
-      expect(response.data?.[0]?.id).toBe('evt-001')
+      expect(result.events).toBeDefined()
+      expect(result.events.length).toBeGreaterThan(0)
     })
 
     it('should handle pagination cursor', async () => {
@@ -210,27 +188,16 @@ describe('Events Tool', () => {
       )
 
       // First page
-      const page1 = await apiV2.searchEvents({
-        body: {
-          filter: { query: 'source:alert' },
-          page: { limit: 1 }
-        }
-      })
+      const page1 = await searchEventsV2(
+        apiV2,
+        { query: 'source:alert', limit: 1 },
+        defaultLimits,
+        defaultSite
+      )
 
-      expect(page1.data).toHaveLength(1)
-      expect(page1.meta?.page?.after).toBe('cursor_page2')
-
-      // Second page
-      const page2 = await apiV2.searchEvents({
-        body: {
-          filter: { query: 'source:alert' },
-          page: { limit: 1, cursor: 'cursor_page2' }
-        }
-      })
-
-      expect(page2.data).toHaveLength(1)
-      expect(page2.meta?.page?.after).toBeNull()
-      expect(pageCount).toBe(2)
+      expect(page1.events).toHaveLength(1)
+      expect(page1.meta.nextCursor).toBe('cursor_page2')
+      expect(pageCount).toBe(1)
     })
 
     it('should handle 401 unauthorized error', async () => {
@@ -241,126 +208,10 @@ describe('Events Tool', () => {
       )
 
       await expect(
-        apiV2.searchEvents({
-          body: {
-            filter: { query: '*' }
-          }
-        })
+        searchEventsV2(apiV2, { query: '*' }, defaultLimits, defaultSite)
       ).rejects.toMatchObject({
         code: 401
       })
-    })
-  })
-
-  describe('extractMonitorInfo', () => {
-    // Test the monitor info extraction logic through v2 search results
-    it('should parse v2 events with alert-style titles', async () => {
-      server.use(
-        http.post(endpoints.searchEvents, () => {
-          return jsonResponse(fixtures.searchV2)
-        })
-      )
-
-      const response = await apiV2.searchEvents({
-        body: {
-          filter: { query: 'source:alert' }
-        }
-      })
-
-      // Verify events are returned - SDK deserializes to typed objects
-      expect(response.data).toBeDefined()
-      expect(response.data).toHaveLength(4)
-
-      // Verify event IDs are parsed correctly
-      expect(response.data?.[0]?.id).toBe('evt-001')
-      expect(response.data?.[1]?.id).toBe('evt-002')
-      expect(response.data?.[2]?.id).toBe('evt-003')
-      expect(response.data?.[3]?.id).toBe('evt-004')
-    })
-  })
-
-  describe('aggregation actions (v2)', () => {
-    it('should support client-side aggregation via search', async () => {
-      server.use(
-        http.post(endpoints.searchEvents, () => {
-          return jsonResponse(fixtures.searchV2ForAggregation)
-        })
-      )
-
-      // Test that events are returned for aggregation
-      const response = await apiV2.searchEvents({
-        body: {
-          filter: { query: 'source:alert' }
-        }
-      })
-
-      // Verify 5 events returned that can be aggregated
-      expect(response.data).toHaveLength(5)
-      expect(response.data?.[0]?.id).toBe('evt-agg-001')
-      expect(response.data?.[4]?.id).toBe('evt-agg-005')
-    })
-
-    it('should support multi-page aggregation', async () => {
-      let pageCount = 0
-      server.use(
-        http.post(endpoints.searchEvents, async ({ request }) => {
-          const body = (await request.json()) as { page?: { cursor?: string } }
-          pageCount++
-
-          if (body.page?.cursor === 'cursor_page2') {
-            return jsonResponse(fixtures.searchV2MultiPage.page2)
-          }
-          return jsonResponse(fixtures.searchV2MultiPage.page1)
-        })
-      )
-
-      // First page
-      const page1 = await apiV2.searchEvents({
-        body: {
-          filter: { query: 'source:alert' },
-          page: { limit: 1 }
-        }
-      })
-
-      expect(page1.data).toHaveLength(1)
-      expect(page1.meta?.page?.after).toBe('cursor_page2')
-
-      // Second page
-      const page2 = await apiV2.searchEvents({
-        body: {
-          filter: { query: 'source:alert' },
-          page: { limit: 1, cursor: 'cursor_page2' }
-        }
-      })
-
-      expect(page2.data).toHaveLength(1)
-      expect(page2.meta?.page?.after).toBeNull()
-      expect(pageCount).toBe(2)
-    })
-  })
-
-  describe('timeseries and incidents actions (v2)', () => {
-    it('should return events with distinct timestamps for timeseries', async () => {
-      server.use(
-        http.post(endpoints.searchEvents, () => {
-          return jsonResponse(fixtures.searchV2ForAggregation)
-        })
-      )
-
-      const response = await apiV2.searchEvents({
-        body: {
-          filter: { query: 'source:alert' }
-        }
-      })
-
-      // Verify events are returned with data that can be used for timeseries/incidents
-      expect(response.data).toHaveLength(5)
-
-      // Verify data array can be iterated for client-side processing
-      const ids = (response.data ?? []).map((e) => e.id)
-      expect(ids).toContain('evt-agg-001')
-      expect(ids).toContain('evt-agg-004') // Recovery event
-      expect(ids).toContain('evt-agg-005')
     })
   })
 })

@@ -7,6 +7,13 @@ import { http } from 'msw'
 import { server, endpoints, jsonResponse, errorResponse } from '../helpers/msw.js'
 import { createMockConfig } from '../helpers/mock.js'
 import { tags as tagFixtures } from '../helpers/fixtures.js'
+import {
+  listAllTags,
+  getHostTags,
+  addHostTags,
+  updateHostTags,
+  deleteHostTags
+} from '../../src/tools/tags.js'
 
 describe('Tags Tool', () => {
   let api: v1.TagsApi
@@ -16,7 +23,7 @@ describe('Tags Tool', () => {
     api = new v1.TagsApi(config)
   })
 
-  describe('listHostTags', () => {
+  describe('listAllTags', () => {
     it('should list all host tags successfully', async () => {
       server.use(
         http.get(endpoints.listHostTags, () => {
@@ -24,10 +31,10 @@ describe('Tags Tool', () => {
         })
       )
 
-      const response = await api.listHostTags({})
+      const result = await listAllTags(api)
 
-      expect(response.tags).toBeDefined()
-      expect(response.tags?.['host-001']).toEqual(['env:production', 'role:web', 'team:platform'])
+      expect(result.hosts).toBeDefined()
+      expect(result.hosts['host-001']).toEqual(['env:production', 'role:web', 'team:platform'])
     })
 
     it('should handle 401 unauthorized error', async () => {
@@ -37,7 +44,7 @@ describe('Tags Tool', () => {
         })
       )
 
-      await expect(api.listHostTags({})).rejects.toMatchObject({
+      await expect(listAllTags(api)).rejects.toMatchObject({
         code: 401
       })
     })
@@ -49,7 +56,7 @@ describe('Tags Tool', () => {
         })
       )
 
-      await expect(api.listHostTags({})).rejects.toMatchObject({
+      await expect(listAllTags(api)).rejects.toMatchObject({
         code: 403
       })
     })
@@ -63,9 +70,9 @@ describe('Tags Tool', () => {
         })
       )
 
-      const response = await api.getHostTags({ hostName: 'host-001' })
+      const result = await getHostTags(api, 'host-001')
 
-      expect(response.tags).toEqual(['env:production', 'role:web', 'team:platform'])
+      expect(result.tags).toEqual(['env:production', 'role:web', 'team:platform'])
     })
 
     it('should handle 404 not found error', async () => {
@@ -75,13 +82,13 @@ describe('Tags Tool', () => {
         })
       )
 
-      await expect(api.getHostTags({ hostName: 'nonexistent' })).rejects.toMatchObject({
+      await expect(getHostTags(api, 'nonexistent')).rejects.toMatchObject({
         code: 404
       })
     })
   })
 
-  describe('createHostTags', () => {
+  describe('addHostTags', () => {
     it('should create tags for a host', async () => {
       server.use(
         http.post(endpoints.createHostTags('new-host'), () => {
@@ -92,15 +99,10 @@ describe('Tags Tool', () => {
         })
       )
 
-      const response = await api.createHostTags({
-        hostName: 'new-host',
-        body: {
-          host: 'new-host',
-          tags: ['env:staging', 'service:api']
-        }
-      })
+      const result = await addHostTags(api, 'new-host', ['env:staging', 'service:api'])
 
-      expect(response.tags).toEqual(['env:staging', 'service:api'])
+      expect(result.success).toBe(true)
+      expect(result.tags).toEqual(['env:staging', 'service:api'])
     })
 
     it('should handle 400 bad request error', async () => {
@@ -110,12 +112,7 @@ describe('Tags Tool', () => {
         })
       )
 
-      await expect(
-        api.createHostTags({
-          hostName: 'new-host',
-          body: { tags: ['invalid'] }
-        })
-      ).rejects.toMatchObject({
+      await expect(addHostTags(api, 'new-host', ['invalid'])).rejects.toMatchObject({
         code: 400
       })
     })
@@ -132,15 +129,15 @@ describe('Tags Tool', () => {
         })
       )
 
-      const response = await api.updateHostTags({
-        hostName: 'host-001',
-        body: {
-          host: 'host-001',
-          tags: ['env:production', 'role:web', 'team:platform', 'version:v2']
-        }
-      })
+      const result = await updateHostTags(api, 'host-001', [
+        'env:production',
+        'role:web',
+        'team:platform',
+        'version:v2'
+      ])
 
-      expect(response.tags).toContain('version:v2')
+      expect(result.success).toBe(true)
+      expect(result.tags).toContain('version:v2')
     })
   })
 
@@ -152,7 +149,10 @@ describe('Tags Tool', () => {
         })
       )
 
-      await expect(api.deleteHostTags({ hostName: 'host-001' })).resolves.not.toThrow()
+      const result = await deleteHostTags(api, 'host-001')
+
+      expect(result.success).toBe(true)
+      expect(result.message).toContain('host-001')
     })
 
     it('should handle 404 not found error', async () => {
@@ -162,7 +162,7 @@ describe('Tags Tool', () => {
         })
       )
 
-      await expect(api.deleteHostTags({ hostName: 'nonexistent' })).rejects.toMatchObject({
+      await expect(deleteHostTags(api, 'nonexistent')).rejects.toMatchObject({
         code: 404
       })
     })

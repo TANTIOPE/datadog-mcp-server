@@ -34,7 +34,7 @@ interface DowntimeSummary {
   modifiedAt: string
 }
 
-function extractMonitorIdentifier(mi?: v2.DowntimeMonitorIdentifier): {
+export function extractMonitorIdentifier(mi?: v2.DowntimeMonitorIdentifier): {
   monitorId: number | null
   monitorTags: string[]
 } {
@@ -53,7 +53,7 @@ function extractMonitorIdentifier(mi?: v2.DowntimeMonitorIdentifier): {
   return { monitorId: null, monitorTags: [] }
 }
 
-function formatDowntime(d: v2.DowntimeResponseData): DowntimeSummary {
+export function formatDowntime(d: v2.DowntimeResponseData): DowntimeSummary {
   const attrs = d.attributes
   const status = attrs?.status
   return {
@@ -69,7 +69,7 @@ function formatDowntime(d: v2.DowntimeResponseData): DowntimeSummary {
   }
 }
 
-async function listDowntimes(
+export async function listDowntimes(
   api: v2.DowntimesApi,
   params: { currentOnly?: boolean; limit?: number },
   limits: LimitsConfig
@@ -88,14 +88,14 @@ async function listDowntimes(
   }
 }
 
-async function getDowntime(api: v2.DowntimesApi, id: string) {
+export async function getDowntime(api: v2.DowntimesApi, id: string) {
   const response = await api.getDowntime({ downtimeId: id })
   return {
     downtime: response.data ? formatDowntime(response.data) : null
   }
 }
 
-async function createDowntime(api: v2.DowntimesApi, config: Record<string, unknown>) {
+export async function createDowntime(api: v2.DowntimesApi, config: Record<string, unknown>) {
   const body = {
     data: {
       type: 'downtime' as const,
@@ -110,7 +110,11 @@ async function createDowntime(api: v2.DowntimesApi, config: Record<string, unkno
   }
 }
 
-async function updateDowntime(api: v2.DowntimesApi, id: string, config: Record<string, unknown>) {
+export async function updateDowntime(
+  api: v2.DowntimesApi,
+  id: string,
+  config: Record<string, unknown>
+) {
   const body = {
     data: {
       type: 'downtime' as const,
@@ -126,7 +130,7 @@ async function updateDowntime(api: v2.DowntimesApi, id: string, config: Record<s
   }
 }
 
-async function cancelDowntime(api: v2.DowntimesApi, id: string) {
+export async function cancelDowntime(api: v2.DowntimesApi, id: string) {
   await api.cancelDowntime({ downtimeId: id })
   return {
     success: true,
@@ -141,7 +145,9 @@ interface MonitorDowntimeSummary {
   end: string | null
 }
 
-function formatMonitorDowntime(d: v2.MonitorDowntimeMatchResponseData): MonitorDowntimeSummary {
+export function formatMonitorDowntime(
+  d: v2.MonitorDowntimeMatchResponseData
+): MonitorDowntimeSummary {
   const attrs = d.attributes
   return {
     id: d.id ?? '',
@@ -151,7 +157,11 @@ function formatMonitorDowntime(d: v2.MonitorDowntimeMatchResponseData): MonitorD
   }
 }
 
-async function listMonitorDowntimes(api: v2.DowntimesApi, monitorId: number, limits: LimitsConfig) {
+export async function listMonitorDowntimes(
+  api: v2.DowntimesApi,
+  monitorId: number,
+  limits: LimitsConfig
+) {
   const response = await api.listMonitorDowntimes({ monitorId })
   const downtimes = (response.data ?? []).slice(0, limits.maxResults).map(formatMonitorDowntime)
 

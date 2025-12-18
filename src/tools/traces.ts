@@ -118,7 +118,7 @@ interface SpanSummary {
   tags: string[]
 }
 
-function formatSpan(span: v2.Span): SpanSummary {
+export function formatSpan(span: v2.Span): SpanSummary {
   const attrs = span.attributes ?? {}
   const tags = (attrs.tags as string[]) ?? []
   const nestedAttrs = (attrs.attributes ?? {}) as Record<string, unknown>
@@ -175,7 +175,7 @@ function formatSpan(span: v2.Span): SpanSummary {
 /**
  * Build a Datadog APM trace query from filter parameters
  */
-function buildTraceQuery(params: {
+export function buildTraceQuery(params: {
   query?: string
   service?: string
   operation?: string
@@ -269,7 +269,7 @@ function buildTraceQuery(params: {
   return parts.length > 0 ? parts.join(' ') : '*'
 }
 
-async function searchTraces(
+export async function searchTraces(
   api: v2.SpansApi,
   params: {
     query?: string
@@ -349,7 +349,7 @@ async function searchTraces(
   }
 }
 
-async function aggregateTraces(
+export async function aggregateTraces(
   api: v2.SpansApi,
   params: {
     query?: string
@@ -430,7 +430,7 @@ async function aggregateTraces(
   }
 }
 
-async function listApmServices(
+export async function listApmServices(
   api: v2.SpansApi,
   params: { env?: string; from?: string; to?: string },
   limits: LimitsConfig

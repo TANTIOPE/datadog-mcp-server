@@ -7,6 +7,18 @@ import { http } from 'msw'
 import { server, endpoints, jsonResponse, errorResponse } from '../helpers/msw.js'
 import { createMockConfig } from '../helpers/mock.js'
 import { logs as fixtures } from '../helpers/fixtures.js'
+import { searchLogs, aggregateLogs } from '../../src/tools/logs.js'
+import type { LimitsConfig } from '../../src/config/schema.js'
+
+const defaultLimits: LimitsConfig = {
+  maxResults: 100,
+  maxLogLines: 500,
+  maxMetricDataPoints: 1000,
+  defaultTimeRangeHours: 24,
+  defaultLimit: 100
+}
+
+const defaultSite = 'datadoghq.com'
 
 describe('Logs Tool', () => {
   let api: v2.LogsApi
@@ -16,7 +28,7 @@ describe('Logs Tool', () => {
     api = new v2.LogsApi(config)
   })
 
-  describe('listLogs (search)', () => {
+  describe('searchLogs', () => {
     it('should search logs successfully', async () => {
       server.use(
         http.post(endpoints.listLogs, () => {
@@ -24,20 +36,20 @@ describe('Logs Tool', () => {
         })
       )
 
-      const response = await api.listLogs({
-        body: {
-          filter: {
-            query: 'service:web-api status:error',
-            from: '2024-01-20T00:00:00Z',
-            to: '2024-01-20T23:59:59Z'
-          },
-          page: { limit: 100 }
-        }
-      })
+      const result = await searchLogs(
+        api,
+        {
+          query: 'service:web-api status:error',
+          from: '2024-01-20T00:00:00Z',
+          to: '2024-01-20T23:59:59Z'
+        },
+        defaultLimits,
+        defaultSite
+      )
 
-      expect(response.data).toHaveLength(2)
-      expect(response.data?.[0]?.id).toBe('log-001')
-      expect(response.data?.[0]?.attributes?.status).toBe('error')
+      expect(result.logs).toHaveLength(2)
+      expect(result.logs[0].id).toBe('log-001')
+      expect(result.logs[0].status).toBe('error')
     })
 
     it('should search logs with keyword filter', async () => {
@@ -52,17 +64,18 @@ describe('Logs Tool', () => {
         })
       )
 
-      const response = await api.listLogs({
-        body: {
-          filter: {
-            query: '"timeout"',
-            from: '2024-01-20T00:00:00Z',
-            to: '2024-01-20T23:59:59Z'
-          }
-        }
-      })
+      const result = await searchLogs(
+        api,
+        {
+          keyword: 'timeout',
+          from: '2024-01-20T00:00:00Z',
+          to: '2024-01-20T23:59:59Z'
+        },
+        defaultLimits,
+        defaultSite
+      )
 
-      expect(response.data).toBeDefined()
+      expect(result.logs).toBeDefined()
     })
 
     it('should handle 401 unauthorized error', async () => {
@@ -73,9 +86,7 @@ describe('Logs Tool', () => {
       )
 
       await expect(
-        api.listLogs({
-          body: { filter: { query: '*' } }
-        })
+        searchLogs(api, { query: '*' }, defaultLimits, defaultSite)
       ).rejects.toMatchObject({
         code: 401
       })
@@ -89,9 +100,7 @@ describe('Logs Tool', () => {
       )
 
       await expect(
-        api.listLogs({
-          body: { filter: { query: '*' } }
-        })
+        searchLogs(api, { query: '*' }, defaultLimits, defaultSite)
       ).rejects.toMatchObject({
         code: 429
       })
@@ -106,19 +115,19 @@ describe('Logs Tool', () => {
         })
       )
 
-      const response = await api.aggregateLogs({
-        body: {
-          filter: {
-            query: 'status:error',
-            from: '2024-01-20T00:00:00Z',
-            to: '2024-01-20T23:59:59Z'
-          },
-          compute: [{ aggregation: 'count' }],
-          groupBy: [{ facet: 'service', limit: 10, sort: { aggregation: 'count', order: 'desc' } }]
-        }
-      })
+      const result = await aggregateLogs(
+        api,
+        {
+          query: 'status:error',
+          from: '2024-01-20T00:00:00Z',
+          to: '2024-01-20T23:59:59Z',
+          groupBy: ['service']
+        },
+        defaultLimits,
+        defaultSite
+      )
 
-      expect(response.data?.buckets).toHaveLength(2)
+      expect(result.buckets).toHaveLength(2)
     })
 
     it('should handle 400 bad request for invalid query', async () => {
@@ -129,12 +138,15 @@ describe('Logs Tool', () => {
       )
 
       await expect(
-        api.aggregateLogs({
-          body: {
-            filter: { query: 'invalid[query' },
-            compute: [{ aggregation: 'count' }]
-          }
-        })
+        aggregateLogs(
+          api,
+          {
+            query: 'invalid[query',
+            groupBy: ['service']
+          },
+          defaultLimits,
+          defaultSite
+        )
       ).rejects.toMatchObject({
         code: 400
       })

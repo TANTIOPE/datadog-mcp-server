@@ -111,7 +111,7 @@ interface RumEventSummary {
   }
 }
 
-function formatApplication(app: v2.RUMApplicationList): RumApplicationSummary {
+export function formatApplication(app: v2.RUMApplicationList): RumApplicationSummary {
   const attrs = app.attributes ?? {}
 
   return {
@@ -125,7 +125,7 @@ function formatApplication(app: v2.RUMApplicationList): RumApplicationSummary {
   }
 }
 
-function formatEvent(event: v2.RUMEvent): RumEventSummary {
+export function formatEvent(event: v2.RUMEvent): RumEventSummary {
   const attrs = event.attributes ?? {}
   const appAttrs = (attrs.attributes ?? {}) as Record<string, unknown>
 
@@ -187,7 +187,7 @@ function formatEvent(event: v2.RUMEvent): RumEventSummary {
   }
 }
 
-async function listApplications(api: v2.RUMApi) {
+export async function listApplications(api: v2.RUMApi) {
   const response = await api.getRUMApplications()
   const applications = (response.data ?? []).map(formatApplication)
 
@@ -197,7 +197,7 @@ async function listApplications(api: v2.RUMApi) {
   }
 }
 
-async function searchEvents(
+export async function searchEvents(
   api: v2.RUMApi,
   params: {
     query?: string
@@ -245,7 +245,7 @@ async function searchEvents(
   }
 }
 
-async function aggregateEvents(
+export async function aggregateEvents(
   api: v2.RUMApi,
   params: {
     query?: string
@@ -354,7 +354,7 @@ const METRIC_CONFIGS: Record<string, { field: string; aggregations: v2.RUMAggreg
     }
   }
 
-async function getPerformanceMetrics(
+export async function getPerformanceMetrics(
   api: v2.RUMApi,
   params: {
     query?: string
@@ -491,7 +491,7 @@ interface WaterfallEvent {
   }
 }
 
-function formatWaterfallEvent(event: v2.RUMEvent): WaterfallEvent {
+export function formatWaterfallEvent(event: v2.RUMEvent): WaterfallEvent {
   const attrs = event.attributes ?? {}
   const appAttrs = (attrs.attributes ?? {}) as Record<string, unknown>
 
@@ -546,7 +546,7 @@ function formatWaterfallEvent(event: v2.RUMEvent): WaterfallEvent {
   }
 }
 
-async function getSessionWaterfall(
+export async function getSessionWaterfall(
   api: v2.RUMApi,
   params: {
     applicationId: string

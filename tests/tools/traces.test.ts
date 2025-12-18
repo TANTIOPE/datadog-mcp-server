@@ -7,6 +7,17 @@ import { http } from 'msw'
 import { server, endpoints, jsonResponse, errorResponse } from '../helpers/msw.js'
 import { createMockConfig } from '../helpers/mock.js'
 import { traces as fixtures } from '../helpers/fixtures.js'
+import { searchTraces, aggregateTraces } from '../../src/tools/traces.js'
+import type { LimitsConfig } from '../../src/config/schema.js'
+
+const defaultLimits: LimitsConfig = {
+  maxResults: 100,
+  maxLogLines: 500,
+  maxMetricDataPoints: 1000,
+  defaultTimeRangeHours: 24
+}
+
+const defaultSite = 'datadoghq.com'
 
 describe('Traces Tool', () => {
   let api: v2.SpansApi
@@ -16,7 +27,7 @@ describe('Traces Tool', () => {
     api = new v2.SpansApi(config)
   })
 
-  describe('listSpans (search)', () => {
+  describe('searchTraces', () => {
     it('should search spans successfully', async () => {
       server.use(
         http.post(endpoints.listSpans, () => {
@@ -24,24 +35,19 @@ describe('Traces Tool', () => {
         })
       )
 
-      const response = await api.listSpans({
-        body: {
-          data: {
-            type: 'search_request',
-            attributes: {
-              filter: {
-                query: 'service:web-api',
-                from: '2024-01-20T00:00:00Z',
-                to: '2024-01-20T23:59:59Z'
-              },
-              page: { limit: 100 }
-            }
-          }
-        }
-      })
+      const result = await searchTraces(
+        api,
+        {
+          query: 'service:web-api',
+          from: '2024-01-20T00:00:00Z',
+          to: '2024-01-20T23:59:59Z'
+        },
+        defaultLimits,
+        defaultSite
+      )
 
-      expect(response.data).toHaveLength(2)
-      expect(response.data?.[0]?.id).toBe('span-001')
+      expect(result.spans).toHaveLength(2)
+      expect(result.spans[0].traceId).toBeDefined()
     })
 
     it('should filter spans by duration', async () => {
@@ -58,22 +64,19 @@ describe('Traces Tool', () => {
         })
       )
 
-      const response = await api.listSpans({
-        body: {
-          data: {
-            type: 'search_request',
-            attributes: {
-              filter: {
-                query: 'service:web-api @duration:>100000000',
-                from: '2024-01-20T00:00:00Z',
-                to: '2024-01-20T23:59:59Z'
-              }
-            }
-          }
-        }
-      })
+      const result = await searchTraces(
+        api,
+        {
+          query: 'service:web-api',
+          minDuration: '100ms',
+          from: '2024-01-20T00:00:00Z',
+          to: '2024-01-20T23:59:59Z'
+        },
+        defaultLimits,
+        defaultSite
+      )
 
-      expect(response.data).toBeDefined()
+      expect(result.spans).toBeDefined()
     })
 
     it('should filter spans by status', async () => {
@@ -91,22 +94,18 @@ describe('Traces Tool', () => {
         })
       )
 
-      const response = await api.listSpans({
-        body: {
-          data: {
-            type: 'search_request',
-            attributes: {
-              filter: {
-                query: 'status:error',
-                from: '2024-01-20T00:00:00Z',
-                to: '2024-01-20T23:59:59Z'
-              }
-            }
-          }
-        }
-      })
+      const result = await searchTraces(
+        api,
+        {
+          status: 'error',
+          from: '2024-01-20T00:00:00Z',
+          to: '2024-01-20T23:59:59Z'
+        },
+        defaultLimits,
+        defaultSite
+      )
 
-      expect(response.data).toHaveLength(1)
+      expect(result.spans).toHaveLength(1)
     })
 
     it('should handle 401 unauthorized error', async () => {
@@ -117,16 +116,7 @@ describe('Traces Tool', () => {
       )
 
       await expect(
-        api.listSpans({
-          body: {
-            data: {
-              type: 'search_request',
-              attributes: {
-                filter: { query: '*' }
-              }
-            }
-          }
-        })
+        searchTraces(api, { query: '*' }, defaultLimits, defaultSite)
       ).rejects.toMatchObject({
         code: 401
       })
@@ -140,23 +130,14 @@ describe('Traces Tool', () => {
       )
 
       await expect(
-        api.listSpans({
-          body: {
-            data: {
-              type: 'search_request',
-              attributes: {
-                filter: { query: '*' }
-              }
-            }
-          }
-        })
+        searchTraces(api, { query: '*' }, defaultLimits, defaultSite)
       ).rejects.toMatchObject({
         code: 429
       })
     })
   })
 
-  describe('aggregateSpans', () => {
+  describe('aggregateTraces', () => {
     it('should aggregate spans by service', async () => {
       server.use(
         http.post(endpoints.aggregateSpans, () => {
@@ -184,27 +165,19 @@ describe('Traces Tool', () => {
         })
       )
 
-      const response = await api.aggregateSpans({
-        body: {
-          data: {
-            type: 'aggregate_request',
-            attributes: {
-              filter: {
-                query: '*',
-                from: '2024-01-20T00:00:00Z',
-                to: '2024-01-20T23:59:59Z'
-              },
-              compute: [{ aggregation: 'count' }],
-              groupBy: [
-                { facet: 'service', limit: 10, sort: { aggregation: 'count', order: 'desc' } }
-              ]
-            }
-          }
-        }
-      })
+      const result = await aggregateTraces(
+        api,
+        {
+          query: '*',
+          from: '2024-01-20T00:00:00Z',
+          to: '2024-01-20T23:59:59Z',
+          groupBy: ['service']
+        },
+        defaultLimits,
+        defaultSite
+      )
 
-      expect(response.data).toHaveLength(2)
-      expect(response.data?.[0]?.attributes?.by?.service).toBe('web-api')
+      expect(result.data).toHaveLength(2)
     })
   })
 })

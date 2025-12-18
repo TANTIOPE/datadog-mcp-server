@@ -27,7 +27,7 @@ interface DashboardSummary {
   authorHandle: string
 }
 
-function formatDashboardSummary(d: v1.DashboardSummaryDefinition): DashboardSummary {
+export function formatDashboardSummary(d: v1.DashboardSummaryDefinition): DashboardSummary {
   return {
     id: d.id ?? '',
     title: d.title ?? '',
@@ -40,7 +40,7 @@ function formatDashboardSummary(d: v1.DashboardSummaryDefinition): DashboardSumm
   }
 }
 
-async function listDashboards(
+export async function listDashboards(
   api: v1.DashboardsApi,
   params: { name?: string; tags?: string[]; limit?: number },
   limits: LimitsConfig
@@ -67,7 +67,7 @@ async function listDashboards(
   }
 }
 
-async function getDashboard(api: v1.DashboardsApi, id: string) {
+export async function getDashboard(api: v1.DashboardsApi, id: string) {
   const dashboard = await api.getDashboard({ dashboardId: id })
   return {
     dashboard: {
@@ -101,7 +101,7 @@ function normalizeDashboardConfig(config: Record<string, unknown>): Record<strin
   return normalized
 }
 
-async function createDashboard(api: v1.DashboardsApi, config: Record<string, unknown>) {
+export async function createDashboard(api: v1.DashboardsApi, config: Record<string, unknown>) {
   const body = normalizeDashboardConfig(config) as unknown as v1.Dashboard
   const dashboard = await api.createDashboard({ body })
   return {
@@ -114,7 +114,11 @@ async function createDashboard(api: v1.DashboardsApi, config: Record<string, unk
   }
 }
 
-async function updateDashboard(api: v1.DashboardsApi, id: string, config: Record<string, unknown>) {
+export async function updateDashboard(
+  api: v1.DashboardsApi,
+  id: string,
+  config: Record<string, unknown>
+) {
   const body = normalizeDashboardConfig(config) as unknown as v1.Dashboard
   const dashboard = await api.updateDashboard({ dashboardId: id, body })
   return {
@@ -127,7 +131,7 @@ async function updateDashboard(api: v1.DashboardsApi, id: string, config: Record
   }
 }
 
-async function deleteDashboard(api: v1.DashboardsApi, id: string) {
+export async function deleteDashboard(api: v1.DashboardsApi, id: string) {
   await api.deleteDashboard({ dashboardId: id })
   return { success: true, message: `Dashboard ${id} deleted` }
 }

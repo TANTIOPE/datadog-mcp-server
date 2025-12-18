@@ -7,6 +7,21 @@ import { http } from 'msw'
 import { server, endpoints, jsonResponse, errorResponse } from '../helpers/msw.js'
 import { createMockConfig } from '../helpers/mock.js'
 import { notebooks as notebookFixtures } from '../helpers/fixtures.js'
+import {
+  listNotebooks,
+  getNotebook,
+  createNotebook,
+  updateNotebook,
+  deleteNotebook
+} from '../../src/tools/notebooks.js'
+import type { LimitsConfig } from '../../src/config/schema.js'
+
+const defaultLimits: LimitsConfig = {
+  maxResults: 100,
+  maxLogLines: 500,
+  maxMetricDataPoints: 1000,
+  defaultTimeRangeHours: 24
+}
 
 describe('Notebooks Tool', () => {
   let api: v1.NotebooksApi
@@ -24,10 +39,10 @@ describe('Notebooks Tool', () => {
         })
       )
 
-      const response = await api.listNotebooks({})
+      const result = await listNotebooks(api, {}, defaultLimits)
 
-      expect(response.data).toHaveLength(2)
-      expect(response.data?.[0].attributes?.name).toBe('Incident Runbook')
+      expect(result.notebooks).toHaveLength(2)
+      expect(result.notebooks[0].name).toBe('Incident Runbook')
     })
 
     it('should handle 401 unauthorized error', async () => {
@@ -37,7 +52,7 @@ describe('Notebooks Tool', () => {
         })
       )
 
-      await expect(api.listNotebooks({})).rejects.toMatchObject({
+      await expect(listNotebooks(api, {}, defaultLimits)).rejects.toMatchObject({
         code: 401
       })
     })
@@ -49,7 +64,7 @@ describe('Notebooks Tool', () => {
         })
       )
 
-      await expect(api.listNotebooks({})).rejects.toMatchObject({
+      await expect(listNotebooks(api, {}, defaultLimits)).rejects.toMatchObject({
         code: 403
       })
     })
@@ -63,11 +78,11 @@ describe('Notebooks Tool', () => {
         })
       )
 
-      const response = await api.getNotebook({ notebookId: 1001 })
+      const result = await getNotebook(api, 1001)
 
-      expect(response.data?.id).toBe(1001)
-      expect(response.data?.attributes?.name).toBe('Incident Runbook')
-      expect(response.data?.attributes?.status).toBe('published')
+      expect(result.notebook.id).toBe(1001)
+      expect(result.notebook.name).toBe('Incident Runbook')
+      expect(result.notebook.status).toBe('published')
     })
 
     it('should handle 404 not found error', async () => {
@@ -77,7 +92,7 @@ describe('Notebooks Tool', () => {
         })
       )
 
-      await expect(api.getNotebook({ notebookId: 99999 })).rejects.toMatchObject({
+      await expect(getNotebook(api, 99999)).rejects.toMatchObject({
         code: 404
       })
     })
@@ -91,22 +106,14 @@ describe('Notebooks Tool', () => {
         })
       )
 
-      const response = await api.createNotebook({
-        body: {
-          data: {
-            type: 'notebooks',
-            attributes: {
-              name: 'New Notebook',
-              cells: [],
-              time: {
-                liveSpan: '1h'
-              }
-            }
-          }
-        }
+      const result = await createNotebook(api, {
+        name: 'New Notebook',
+        cells: [],
+        time: { liveSpan: '1h' }
       })
 
-      expect(response.data?.attributes?.name).toBe('New Notebook')
+      expect(result.success).toBe(true)
+      expect(result.notebook.name).toBe('New Notebook')
     })
 
     it('should handle 400 bad request error', async () => {
@@ -117,17 +124,10 @@ describe('Notebooks Tool', () => {
       )
 
       await expect(
-        api.createNotebook({
-          body: {
-            data: {
-              type: 'notebooks',
-              attributes: {
-                name: '',
-                cells: [],
-                time: { liveSpan: '1h' }
-              }
-            }
-          }
+        createNotebook(api, {
+          name: '',
+          cells: [],
+          time: { liveSpan: '1h' }
         })
       ).rejects.toMatchObject({
         code: 400
@@ -138,48 +138,38 @@ describe('Notebooks Tool', () => {
   describe('updateNotebook', () => {
     it('should update an existing notebook', async () => {
       server.use(
+        // updateNotebook first GETs the existing notebook
+        http.get(endpoints.getNotebook(1001), () => {
+          return jsonResponse(notebookFixtures.single)
+        }),
         http.put(endpoints.updateNotebook(1001), () => {
           return jsonResponse(notebookFixtures.updated)
         })
       )
 
-      const response = await api.updateNotebook({
-        notebookId: 1001,
-        body: {
-          data: {
-            type: 'notebooks',
-            attributes: {
-              name: 'Updated Notebook',
-              cells: [],
-              time: { liveSpan: '1h' }
-            }
-          }
-        }
+      const result = await updateNotebook(api, 1001, {
+        name: 'Updated Notebook',
+        cells: [],
+        time: { liveSpan: '1h' }
       })
 
-      expect(response.data?.attributes?.name).toBe('Updated Notebook')
+      expect(result.success).toBe(true)
+      expect(result.notebook.name).toBe('Updated Notebook')
     })
 
     it('should handle 404 not found error', async () => {
       server.use(
-        http.put(endpoints.updateNotebook(99999), () => {
+        // updateNotebook first GETs the existing notebook - return 404 here
+        http.get(endpoints.getNotebook(99999), () => {
           return errorResponse(404, 'Notebook not found')
         })
       )
 
       await expect(
-        api.updateNotebook({
-          notebookId: 99999,
-          body: {
-            data: {
-              type: 'notebooks',
-              attributes: {
-                name: 'Test',
-                cells: [],
-                time: { liveSpan: '1h' }
-              }
-            }
-          }
+        updateNotebook(api, 99999, {
+          name: 'Test',
+          cells: [],
+          time: { liveSpan: '1h' }
         })
       ).rejects.toMatchObject({
         code: 404
@@ -195,7 +185,10 @@ describe('Notebooks Tool', () => {
         })
       )
 
-      await expect(api.deleteNotebook({ notebookId: 1001 })).resolves.not.toThrow()
+      const result = await deleteNotebook(api, 1001)
+
+      expect(result.success).toBe(true)
+      expect(result.message).toContain('1001')
     })
 
     it('should handle 404 not found error', async () => {
@@ -205,7 +198,7 @@ describe('Notebooks Tool', () => {
         })
       )
 
-      await expect(api.deleteNotebook({ notebookId: 99999 })).rejects.toMatchObject({
+      await expect(deleteNotebook(api, 99999)).rejects.toMatchObject({
         code: 404
       })
     })

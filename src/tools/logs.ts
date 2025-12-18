@@ -75,7 +75,7 @@ interface LogEntry {
   attributes: Record<string, unknown>
 }
 
-function formatLog(log: v2.Log): LogEntry {
+export function formatLog(log: v2.Log): LogEntry {
   const attrs = log.attributes ?? {}
   // Handle timestamp which can be Date or string
   let timestamp = ''
@@ -116,7 +116,7 @@ interface CompactLogEntry {
 
 type FormattedLog = LogEntry | CompactLogEntry
 
-function formatLogCompact(log: v2.Log): CompactLogEntry {
+export function formatLogCompact(log: v2.Log): CompactLogEntry {
   const attrs = log.attributes ?? {}
   const nestedAttrs = (attrs.attributes as Record<string, unknown>) ?? {}
 
@@ -177,7 +177,7 @@ function formatLogCompact(log: v2.Log): CompactLogEntry {
  * Normalize a log message to a pattern by replacing variable parts
  * Used for diverse sampling to identify distinct error patterns
  */
-function normalizeToPattern(message: string): string {
+export function normalizeToPattern(message: string): string {
   return (
     message
       // UUIDs (universal format)
@@ -200,7 +200,7 @@ function normalizeToPattern(message: string): string {
 /**
  * Spread sample: evenly distributed across the array
  */
-function spreadSample<T>(items: T[], limit: number): T[] {
+export function spreadSample<T>(items: T[], limit: number): T[] {
   if (items.length <= limit) return items
   const step = items.length / limit
   return Array.from({ length: limit }, (_, i) => items[Math.floor(i * step)] as T)
@@ -209,7 +209,7 @@ function spreadSample<T>(items: T[], limit: number): T[] {
 /**
  * Diverse sample: deduplicate by message pattern to get distinct error types
  */
-function diverseSample<T extends { message: string }>(
+export function diverseSample<T extends { message: string }>(
   items: T[],
   limit: number
 ): { samples: T[]; patterns: number } {
@@ -232,7 +232,7 @@ function diverseSample<T extends { message: string }>(
 /**
  * Build a Datadog log query from various filter parameters
  */
-function buildLogQuery(params: {
+export function buildLogQuery(params: {
   query?: string
   keyword?: string
   pattern?: string
@@ -280,7 +280,7 @@ function buildLogQuery(params: {
   return parts.length > 0 ? parts.join(' ') : '*'
 }
 
-async function searchLogs(
+export async function searchLogs(
   api: v2.LogsApi,
   params: {
     query?: string
@@ -385,7 +385,7 @@ async function searchLogs(
   }
 }
 
-async function aggregateLogs(
+export async function aggregateLogs(
   api: v2.LogsApi,
   params: {
     query: string
