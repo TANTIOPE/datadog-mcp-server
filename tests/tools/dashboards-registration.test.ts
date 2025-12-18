@@ -73,7 +73,7 @@ describe('registerDashboardsTool', () => {
 
     const result = await registeredHandler({
       action: 'create',
-      config: { title: 'New Dashboard' }
+      config: { title: 'New Dashboard', layoutType: 'ordered' }
     })
 
     expect(result).toBeDefined()
@@ -86,7 +86,7 @@ describe('registerDashboardsTool', () => {
     const result = await registeredHandler({
       action: 'update',
       id: 'dash-123',
-      config: { title: 'Updated' }
+      config: { title: 'Updated', layoutType: 'ordered' }
     })
 
     expect(result).toBeDefined()

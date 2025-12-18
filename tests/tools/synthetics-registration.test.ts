@@ -25,6 +25,14 @@ describe('registerSyntheticsTool', () => {
         publicId: 'test-123',
         name: 'Test'
       }),
+      getAPITest: vi.fn().mockResolvedValue({
+        publicId: 'test-123',
+        name: 'Test'
+      }),
+      getBrowserTest: vi.fn().mockResolvedValue({
+        publicId: 'test-123',
+        name: 'Test'
+      }),
       createSyntheticsAPITest: vi.fn().mockResolvedValue({
         publicId: 'test-new',
         name: 'New Test'
@@ -81,7 +89,7 @@ describe('registerSyntheticsTool', () => {
 
     const result = await registeredHandler({
       action: 'create',
-      config: { name: 'New Test', type: 'api' }
+      config: { name: 'New Test', type: 'api', locations: ['aws:us-east-1'] }
     })
 
     expect(result).toBeDefined()
@@ -94,7 +102,7 @@ describe('registerSyntheticsTool', () => {
     const result = await registeredHandler({
       action: 'update',
       id: 'test-123',
-      config: { name: 'Updated' }
+      config: { name: 'Updated', locations: ['aws:us-east-1'] }
     })
 
     expect(result).toBeDefined()
