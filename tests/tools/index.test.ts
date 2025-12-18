@@ -58,27 +58,27 @@ describe('Tool Registration', () => {
     // Create mock objects
     mockServer = {} as McpServer
     mockClients = {
-      monitors: {} as any,
-      dashboards: {} as any,
-      logs: {} as any,
-      metricsV1: {} as any,
-      metricsV2: {} as any,
-      spans: {} as any,
-      services: {} as any,
-      eventsV1: {} as any,
-      eventsV2: {} as any,
-      incidents: {} as any,
-      slo: {} as any,
-      synthetics: {} as any,
-      hosts: {} as any,
-      downtimes: {} as any,
-      rum: {} as any,
-      security: {} as any,
-      notebooks: {} as any,
-      users: {} as any,
-      teams: {} as any,
-      tags: {} as any,
-      usage: {} as any
+      monitors: {} as unknown,
+      dashboards: {} as unknown,
+      logs: {} as unknown,
+      metricsV1: {} as unknown,
+      metricsV2: {} as unknown,
+      spans: {} as unknown,
+      services: {} as unknown,
+      eventsV1: {} as unknown,
+      eventsV2: {} as unknown,
+      incidents: {} as unknown,
+      slo: {} as unknown,
+      synthetics: {} as unknown,
+      hosts: {} as unknown,
+      downtimes: {} as unknown,
+      rum: {} as unknown,
+      security: {} as unknown,
+      notebooks: {} as unknown,
+      users: {} as unknown,
+      teams: {} as unknown,
+      tags: {} as unknown,
+      usage: {} as unknown
     }
     mockLimits = {
       maxResults: 100,
@@ -160,12 +160,7 @@ describe('Tool Registration', () => {
       false,
       'datadoghq.com'
     )
-    expect(registerHostsTool).toHaveBeenCalledWith(
-      mockServer,
-      mockClients.hosts,
-      mockLimits,
-      false
-    )
+    expect(registerHostsTool).toHaveBeenCalledWith(mockServer, mockClients.hosts, mockLimits, false)
     expect(registerDowntimesTool).toHaveBeenCalledWith(
       mockServer,
       mockClients.downtimes,
@@ -188,12 +183,7 @@ describe('Tool Registration', () => {
     )
     expect(registerUsersTool).toHaveBeenCalledWith(mockServer, mockClients.users, mockLimits)
     expect(registerTeamsTool).toHaveBeenCalledWith(mockServer, mockClients.teams, mockLimits)
-    expect(registerTagsTool).toHaveBeenCalledWith(
-      mockServer,
-      mockClients.tags,
-      mockLimits,
-      false
-    )
+    expect(registerTagsTool).toHaveBeenCalledWith(mockServer, mockClients.tags, mockLimits, false)
     expect(registerUsageTool).toHaveBeenCalledWith(mockServer, mockClients.usage, mockLimits)
     expect(registerAuthTool).toHaveBeenCalledWith(mockServer, mockClients)
   })

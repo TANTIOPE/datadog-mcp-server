@@ -179,7 +179,9 @@ describe('Monitors Async Functions', () => {
 
       const mockApi = {
         getMonitor: vi.fn().mockResolvedValue(mockMonitor),
-        updateMonitor: vi.fn().mockResolvedValue({...mockMonitor, options: {...mockMonitor.options, silenced: {}}})
+        updateMonitor: vi
+          .fn()
+          .mockResolvedValue({ ...mockMonitor, options: { ...mockMonitor.options, silenced: {} } })
       } as unknown as v1.MonitorsApi
 
       const result = await unmuteMonitor(mockApi, '123')

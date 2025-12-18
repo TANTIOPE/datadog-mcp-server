@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { loadConfig, ALL_TOOLS } from '../../src/config/index.js'
 
 describe('Config Loading', () => {

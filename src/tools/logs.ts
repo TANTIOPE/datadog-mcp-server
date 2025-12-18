@@ -1,7 +1,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
 import { v2 } from '@datadog/datadog-api-client'
-import { handleDatadogError, requireParam } from '../errors/datadog.js'
+import { handleDatadogError } from '../errors/datadog.js'
 import { toolResult } from '../utils/format.js'
 import { hoursAgo, now, parseTime, ensureValidTimeRange } from '../utils/time.js'
 import { buildLogsUrl } from '../utils/urls.js'

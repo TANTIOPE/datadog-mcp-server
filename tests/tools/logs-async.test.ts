@@ -2,7 +2,7 @@
  * Comprehensive async tests for logs.ts
  * Tests all async functions with focus on edge cases, pagination, error handling
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { v2 } from '@datadog/datadog-api-client'
 import { searchLogs, aggregateLogs } from '../../src/tools/logs.js'
 import type { LimitsConfig } from '../../src/config/schema.js'
@@ -124,12 +124,7 @@ describe('Logs Async Functions', () => {
         })
       } as unknown as v2.LogsApi
 
-      await searchLogs(
-        mockApi,
-        { pattern: 'ERROR.*timeout' },
-        defaultLimits,
-        'datadoghq.com'
-      )
+      await searchLogs(mockApi, { pattern: 'ERROR.*timeout' }, defaultLimits, 'datadoghq.com')
 
       const call = mockApi.listLogs.mock.calls[0][0]
       expect(call.body.filter?.query).toBeDefined()
@@ -143,12 +138,7 @@ describe('Logs Async Functions', () => {
         })
       } as unknown as v2.LogsApi
 
-      await searchLogs(
-        mockApi,
-        { service: 'web-api' },
-        defaultLimits,
-        'datadoghq.com'
-      )
+      await searchLogs(mockApi, { service: 'web-api' }, defaultLimits, 'datadoghq.com')
 
       const call = mockApi.listLogs.mock.calls[0][0]
       expect(call.body.filter?.query).toContain('service:web-api')
@@ -162,12 +152,7 @@ describe('Logs Async Functions', () => {
         })
       } as unknown as v2.LogsApi
 
-      await searchLogs(
-        mockApi,
-        { host: 'web-1' },
-        defaultLimits,
-        'datadoghq.com'
-      )
+      await searchLogs(mockApi, { host: 'web-1' }, defaultLimits, 'datadoghq.com')
 
       const call = mockApi.listLogs.mock.calls[0][0]
       expect(call.body.filter?.query).toContain('host:web-1')
@@ -181,12 +166,7 @@ describe('Logs Async Functions', () => {
         })
       } as unknown as v2.LogsApi
 
-      await searchLogs(
-        mockApi,
-        { status: 'error' },
-        defaultLimits,
-        'datadoghq.com'
-      )
+      await searchLogs(mockApi, { status: 'error' }, defaultLimits, 'datadoghq.com')
 
       const call = mockApi.listLogs.mock.calls[0][0]
       expect(call.body.filter?.query).toContain('status:error')
@@ -238,12 +218,7 @@ describe('Logs Async Functions', () => {
         })
       } as unknown as v2.LogsApi
 
-      await searchLogs(
-        mockApi,
-        { indexes: ['main', 'archive'] },
-        defaultLimits,
-        'datadoghq.com'
-      )
+      await searchLogs(mockApi, { indexes: ['main', 'archive'] }, defaultLimits, 'datadoghq.com')
 
       const call = mockApi.listLogs.mock.calls[0][0]
       expect(call.body.filter?.indexes).toEqual(['main', 'archive'])
@@ -257,12 +232,7 @@ describe('Logs Async Functions', () => {
         })
       } as unknown as v2.LogsApi
 
-      await searchLogs(
-        mockApi,
-        { sort: '-timestamp' },
-        defaultLimits,
-        'datadoghq.com'
-      )
+      await searchLogs(mockApi, { sort: '-timestamp' }, defaultLimits, 'datadoghq.com')
 
       const call = mockApi.listLogs.mock.calls[0][0]
       expect(call.body.sort).toBe('-timestamp')
@@ -276,12 +246,7 @@ describe('Logs Async Functions', () => {
         })
       } as unknown as v2.LogsApi
 
-      await searchLogs(
-        mockApi,
-        { limit: 50 },
-        defaultLimits,
-        'datadoghq.com'
-      )
+      await searchLogs(mockApi, { limit: 50 }, defaultLimits, 'datadoghq.com')
 
       const call = mockApi.listLogs.mock.calls[0][0]
       expect(call.body.page?.limit).toBe(50)
@@ -295,7 +260,12 @@ describe('Logs Async Functions', () => {
         })
       } as unknown as v2.LogsApi
 
-      const result = await searchLogs(mockApi, { query: 'nonexistent' }, defaultLimits, 'datadoghq.com')
+      const result = await searchLogs(
+        mockApi,
+        { query: 'nonexistent' },
+        defaultLimits,
+        'datadoghq.com'
+      )
 
       expect(result.logs).toHaveLength(0)
       expect(result.meta.count).toBe(0)

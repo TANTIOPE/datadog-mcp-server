@@ -449,7 +449,7 @@ describe('Events Helper Functions', () => {
       const event: v2.EventResponse = {
         id: 'evt-123',
         attributes: {
-          timestamp: '2024-01-15T12:00:00Z' as any
+          timestamp: '2024-01-15T12:00:00Z' as unknown as Date
         }
       }
 

@@ -16,7 +16,8 @@ describe('Logs Helper Functions', () => {
     })
 
     it('should replace multiple UUIDs', () => {
-      const message = 'Trace 123e4567-e89b-12d3-a456-426614174000 span 987fbc97-4bed-5078-9f07-9141ba07c9f3'
+      const message =
+        'Trace 123e4567-e89b-12d3-a456-426614174000 span 987fbc97-4bed-5078-9f07-9141ba07c9f3'
       const result = normalizeToPattern(message)
 
       expect(result).toBe('Trace {UUID} span {UUID}')
@@ -86,7 +87,8 @@ describe('Logs Helper Functions', () => {
     })
 
     it('should handle complex message with multiple patterns', () => {
-      const message = 'Request 550e8400-e29b-41d4-a716-446655440000 from 192.168.1.100 at 2024-01-15T12:00:00Z failed with error a1b2c3d4'
+      const message =
+        'Request 550e8400-e29b-41d4-a716-446655440000 from 192.168.1.100 at 2024-01-15T12:00:00Z failed with error a1b2c3d4'
       const result = normalizeToPattern(message)
 
       expect(result).toBe('Request {UUID} from {IP} at {TS} failed with error {ID}')
@@ -185,11 +187,7 @@ describe('Logs Helper Functions', () => {
 
   describe('diverseSample', () => {
     it('should return all items if unique patterns <= limit', () => {
-      const items = [
-        { message: 'Error A' },
-        { message: 'Error B' },
-        { message: 'Error C' }
-      ]
+      const items = [{ message: 'Error A' }, { message: 'Error B' }, { message: 'Error C' }]
       const result = diverseSample(items, 10)
 
       expect(result.samples).toEqual(items)
@@ -274,11 +272,7 @@ describe('Logs Helper Functions', () => {
     })
 
     it('should handle limit of 1', () => {
-      const items = [
-        { message: 'Error A' },
-        { message: 'Error B' },
-        { message: 'Error C' }
-      ]
+      const items = [{ message: 'Error A' }, { message: 'Error B' }, { message: 'Error C' }]
       const result = diverseSample(items, 1)
 
       expect(result.samples.length).toBe(1)

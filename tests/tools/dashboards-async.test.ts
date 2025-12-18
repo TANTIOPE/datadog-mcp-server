@@ -90,7 +90,10 @@ describe('Dashboards Async Functions', () => {
         updateDashboard: vi.fn().mockResolvedValue(mockDashboard)
       } as unknown as v1.DashboardsApi
 
-      const result = await updateDashboard(mockApi, 'empty-123', { layoutType: 'ordered', widgets: [] })
+      const result = await updateDashboard(mockApi, 'empty-123', {
+        layoutType: 'ordered',
+        widgets: []
+      })
 
       expect(result.success).toBe(true)
       expect(result.dashboard.id).toBe('empty-123')
