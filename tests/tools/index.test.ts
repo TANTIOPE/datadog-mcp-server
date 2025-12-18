@@ -160,12 +160,7 @@ describe('Tool Registration', () => {
       false,
       'datadoghq.com'
     )
-    expect(registerHostsTool).toHaveBeenCalledWith(
-      mockServer,
-      mockClients.hosts,
-      mockLimits,
-      false
-    )
+    expect(registerHostsTool).toHaveBeenCalledWith(mockServer, mockClients.hosts, mockLimits, false)
     expect(registerDowntimesTool).toHaveBeenCalledWith(
       mockServer,
       mockClients.downtimes,
@@ -188,12 +183,7 @@ describe('Tool Registration', () => {
     )
     expect(registerUsersTool).toHaveBeenCalledWith(mockServer, mockClients.users, mockLimits)
     expect(registerTeamsTool).toHaveBeenCalledWith(mockServer, mockClients.teams, mockLimits)
-    expect(registerTagsTool).toHaveBeenCalledWith(
-      mockServer,
-      mockClients.tags,
-      mockLimits,
-      false
-    )
+    expect(registerTagsTool).toHaveBeenCalledWith(mockServer, mockClients.tags, mockLimits, false)
     expect(registerUsageTool).toHaveBeenCalledWith(mockServer, mockClients.usage, mockLimits)
     expect(registerAuthTool).toHaveBeenCalledWith(mockServer, mockClients)
   })

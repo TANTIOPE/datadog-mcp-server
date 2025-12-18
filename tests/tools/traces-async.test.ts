@@ -60,11 +60,7 @@ describe('Traces Async Functions', () => {
         })
       } as unknown as v2.SpansApi
 
-      const result = await listApmServices(
-        mockApi,
-        { env: 'production' },
-        defaultLimits
-      )
+      const result = await listApmServices(mockApi, { env: 'production' }, defaultLimits)
 
       const call = mockApi.aggregateSpans.mock.calls[0][0]
       expect(call.body.data?.attributes?.filter?.query).toBe('env:production')
@@ -270,7 +266,7 @@ describe('Traces Async Functions', () => {
       expect(result.total).toBe(3)
 
       // Verify all services are present
-      const serviceNames = result.services.map(s => s.name)
+      const serviceNames = result.services.map((s) => s.name)
       expect(serviceNames).toContain('web-api')
       expect(serviceNames).toContain('auth-service')
       expect(serviceNames).toContain('payment-service')

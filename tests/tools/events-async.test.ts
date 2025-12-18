@@ -370,12 +370,7 @@ describe('Events V2 API Functions', () => {
         searchEvents: vi.fn().mockResolvedValue({ data: [], meta: { page: {} } })
       } as unknown as v2.EventsApi
 
-      await searchEventsV2(
-        mockApi,
-        { sources: ['alert', 'monitor'] },
-        limits,
-        'datadoghq.com'
-      )
+      await searchEventsV2(mockApi, { sources: ['alert', 'monitor'] }, limits, 'datadoghq.com')
 
       expect(mockApi.searchEvents).toHaveBeenCalledWith({
         body: expect.objectContaining({
@@ -655,12 +650,7 @@ describe('Events V2 API Functions', () => {
         })
       } as unknown as v2.EventsApi
 
-      const result = await timeseriesEventsV2(
-        mockApi,
-        { interval: '1h' },
-        limits,
-        'datadoghq.com'
-      )
+      const result = await timeseriesEventsV2(mockApi, { interval: '1h' }, limits, 'datadoghq.com')
 
       expect(result.timeseries).toBeDefined()
       expect(result.timeseries.length).toBeGreaterThan(0)
@@ -673,12 +663,7 @@ describe('Events V2 API Functions', () => {
         searchEvents: vi.fn().mockResolvedValue({ data: [], meta: { page: {} } })
       } as unknown as v2.EventsApi
 
-      const result = await timeseriesEventsV2(
-        mockApi,
-        { interval: '4h' },
-        limits,
-        'datadoghq.com'
-      )
+      const result = await timeseriesEventsV2(mockApi, { interval: '4h' }, limits, 'datadoghq.com')
 
       expect(result.meta.intervalMs).toBe(14400000) // 4 hours in ms
     })
@@ -914,7 +899,11 @@ describe('Events V2 API Functions', () => {
 
   describe('enrichWithMonitorMetadata', () => {
     it('should enrich events with monitor metadata', async () => {
-      const events = [createMockEventSummary({ monitorInfo: { name: 'Test Monitor', status: 'triggered', scope: '' } })]
+      const events = [
+        createMockEventSummary({
+          monitorInfo: { name: 'Test Monitor', status: 'triggered', scope: '' }
+        })
+      ]
 
       const mockMonitorsApi = {
         listMonitors: vi.fn().mockResolvedValue([
@@ -967,8 +956,12 @@ describe('Events V2 API Functions', () => {
 
     it('should cache monitors by name', async () => {
       const events = [
-        createMockEventSummary({ monitorInfo: { name: 'Monitor A', status: 'triggered', scope: '' } }),
-        createMockEventSummary({ monitorInfo: { name: 'Monitor A', status: 'triggered', scope: '' } })
+        createMockEventSummary({
+          monitorInfo: { name: 'Monitor A', status: 'triggered', scope: '' }
+        }),
+        createMockEventSummary({
+          monitorInfo: { name: 'Monitor A', status: 'triggered', scope: '' }
+        })
       ]
 
       const mockMonitorsApi = {
