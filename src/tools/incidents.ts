@@ -138,7 +138,11 @@ export async function createIncident(api: v2.IncidentsApi, config: Record<string
   }
 }
 
-export async function updateIncident(api: v2.IncidentsApi, id: string, config: Record<string, unknown>) {
+export async function updateIncident(
+  api: v2.IncidentsApi,
+  id: string,
+  config: Record<string, unknown>
+) {
   const body = {
     data: {
       type: 'incidents' as const,

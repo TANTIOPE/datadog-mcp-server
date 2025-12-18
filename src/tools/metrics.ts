@@ -110,7 +110,11 @@ export async function searchMetrics(
   }
 }
 
-export async function listMetrics(api: v1.MetricsApi, params: { query?: string }, limits: LimitsConfig) {
+export async function listMetrics(
+  api: v1.MetricsApi,
+  params: { query?: string },
+  limits: LimitsConfig
+) {
   const response = await api.listActiveMetrics({
     from: hoursAgo(24),
     host: undefined,

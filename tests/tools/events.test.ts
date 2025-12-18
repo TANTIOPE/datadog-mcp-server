@@ -7,12 +7,7 @@ import { http } from 'msw'
 import { server, endpoints, jsonResponse, errorResponse } from '../helpers/msw.js'
 import { createMockConfig } from '../helpers/mock.js'
 import { events as fixtures } from '../helpers/fixtures.js'
-import {
-  listEventsV1,
-  getEventV1,
-  createEventV1,
-  searchEventsV2
-} from '../../src/tools/events.js'
+import { listEventsV1, getEventV1, createEventV1, searchEventsV2 } from '../../src/tools/events.js'
 import type { LimitsConfig } from '../../src/config/schema.js'
 
 const defaultLimits: LimitsConfig = {
@@ -61,11 +56,7 @@ describe('Events Tool', () => {
         })
       )
 
-      const result = await listEventsV1(
-        apiV1,
-        { priority: 'normal' },
-        defaultLimits
-      )
+      const result = await listEventsV1(apiV1, { priority: 'normal' }, defaultLimits)
 
       expect(result.events).toBeDefined()
     })

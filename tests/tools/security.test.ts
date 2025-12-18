@@ -114,9 +114,7 @@ describe('Security Tool', () => {
         })
       )
 
-      await expect(
-        searchSignals(api, {}, defaultLimits, defaultSite)
-      ).rejects.toMatchObject({
+      await expect(searchSignals(api, {}, defaultLimits, defaultSite)).rejects.toMatchObject({
         code: 400
       })
     })

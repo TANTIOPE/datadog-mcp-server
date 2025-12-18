@@ -92,9 +92,7 @@ describe('RUM Tool', () => {
         })
       )
 
-      await expect(
-        searchEvents(api, {}, defaultLimits, defaultSite)
-      ).rejects.toMatchObject({
+      await expect(searchEvents(api, {}, defaultLimits, defaultSite)).rejects.toMatchObject({
         code: 400
       })
     })
@@ -126,12 +124,7 @@ describe('RUM Tool', () => {
       )
 
       await expect(
-        aggregateEvents(
-          api,
-          { compute: { aggregation: 'count' } },
-          defaultLimits,
-          defaultSite
-        )
+        aggregateEvents(api, { compute: { aggregation: 'count' } }, defaultLimits, defaultSite)
       ).rejects.toMatchObject({
         code: 400
       })

@@ -64,7 +64,12 @@ export async function getHostTags(
   }
 }
 
-export async function addHostTags(api: v1.TagsApi, hostName: string, tags: string[], source?: string) {
+export async function addHostTags(
+  api: v1.TagsApi,
+  hostName: string,
+  tags: string[],
+  source?: string
+) {
   const response = await api.createHostTags({
     hostName,
     body: {
@@ -82,7 +87,12 @@ export async function addHostTags(api: v1.TagsApi, hostName: string, tags: strin
   }
 }
 
-export async function updateHostTags(api: v1.TagsApi, hostName: string, tags: string[], source?: string) {
+export async function updateHostTags(
+  api: v1.TagsApi,
+  hostName: string,
+  tags: string[],
+  source?: string
+) {
   const response = await api.updateHostTags({
     hostName,
     body: {

@@ -126,7 +126,9 @@ export function normalizeConfigKeys(obj: unknown): unknown {
 /**
  * Normalize synthetics test config to handle snake_case -> camelCase
  */
-export function normalizeSyntheticsConfig(config: Record<string, unknown>): Record<string, unknown> {
+export function normalizeSyntheticsConfig(
+  config: Record<string, unknown>
+): Record<string, unknown> {
   // Recursively convert all snake_case keys to camelCase
   const normalized = normalizeConfigKeys(config) as Record<string, unknown>
 
@@ -170,7 +172,11 @@ export async function createTest(
   }
 }
 
-export async function updateTest(api: v1.SyntheticsApi, id: string, config: Record<string, unknown>) {
+export async function updateTest(
+  api: v1.SyntheticsApi,
+  id: string,
+  config: Record<string, unknown>
+) {
   // Normalize config first
   const normalizedConfig = normalizeConfigKeys(config) as Record<string, unknown>
 

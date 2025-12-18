@@ -135,7 +135,10 @@ export function normalizeSloConfig(config: Record<string, unknown>): Record<stri
   return normalized
 }
 
-export async function createSlo(api: v1.ServiceLevelObjectivesApi, config: Record<string, unknown>) {
+export async function createSlo(
+  api: v1.ServiceLevelObjectivesApi,
+  config: Record<string, unknown>
+) {
   const body = normalizeSloConfig(config) as unknown as v1.ServiceLevelObjectiveRequest
   const response = await api.createSLO({ body })
   return {

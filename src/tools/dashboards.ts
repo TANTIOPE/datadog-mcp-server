@@ -114,7 +114,11 @@ export async function createDashboard(api: v1.DashboardsApi, config: Record<stri
   }
 }
 
-export async function updateDashboard(api: v1.DashboardsApi, id: string, config: Record<string, unknown>) {
+export async function updateDashboard(
+  api: v1.DashboardsApi,
+  id: string,
+  config: Record<string, unknown>
+) {
   const body = normalizeDashboardConfig(config) as unknown as v1.Dashboard
   const dashboard = await api.updateDashboard({ dashboardId: id, body })
   return {

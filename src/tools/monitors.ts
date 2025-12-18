@@ -205,7 +205,11 @@ export async function createMonitor(api: v1.MonitorsApi, config: Record<string, 
   }
 }
 
-export async function updateMonitor(api: v1.MonitorsApi, id: string, config: Record<string, unknown>) {
+export async function updateMonitor(
+  api: v1.MonitorsApi,
+  id: string,
+  config: Record<string, unknown>
+) {
   const monitorId = Number.parseInt(id, 10)
   const body = normalizeMonitorConfig(config) as unknown as v1.MonitorUpdateRequest
   const monitor = await api.updateMonitor({ monitorId, body })

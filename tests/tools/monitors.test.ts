@@ -190,9 +190,7 @@ describe('Monitors Tool', () => {
     })
 
     it('should validate required fields', async () => {
-      await expect(createMonitor(api, {})).rejects.toThrow(
-        /requires at least/
-      )
+      await expect(createMonitor(api, {})).rejects.toThrow(/requires at least/)
     })
 
     it('should handle 400 bad request from API', async () => {
