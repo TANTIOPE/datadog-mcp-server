@@ -719,7 +719,7 @@ export async function timeseriesEventsV2(
   const fullQuery = buildEventQuery({
     query: params.query ?? 'source:alert',
     sources: params.sources,
-    tags: params.tags ?? ['source:alert']
+    tags: params.tags
   })
 
   const intervalMs = parseIntervalToMs(params.interval)
@@ -847,7 +847,7 @@ export async function incidentsEventsV2(
   const fullQuery = buildEventQuery({
     query: params.query ?? 'source:alert',
     sources: params.sources,
-    tags: params.tags ?? ['source:alert']
+    tags: params.tags
   })
 
   // Parse dedupe window (default 5 minutes)

@@ -499,7 +499,7 @@ TOKEN TIP: Use compact:true to reduce payload size (strips heavy fields) when qu
           }
 
           case 'aggregate': {
-            const aggregateQuery = requireParam(query, 'query', 'aggregate')
+            const aggregateQuery = query ?? '*'
             return toolResult(
               await aggregateLogs(
                 api,
