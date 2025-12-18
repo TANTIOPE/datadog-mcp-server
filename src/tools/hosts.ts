@@ -36,7 +36,7 @@ interface HostSummary {
   }
 }
 
-function formatHost(h: v1.Host): HostSummary {
+export function formatHost(h: v1.Host): HostSummary {
   return {
     hostName: h.hostName ?? '',
     aliases: h.aliases ?? [],
@@ -54,7 +54,7 @@ function formatHost(h: v1.Host): HostSummary {
   }
 }
 
-async function listHosts(
+export async function listHosts(
   api: v1.HostsApi,
   params: {
     filter?: string
@@ -82,7 +82,7 @@ async function listHosts(
   }
 }
 
-async function getHostTotals(api: v1.HostsApi) {
+export async function getHostTotals(api: v1.HostsApi) {
   const response = await api.getHostTotals({})
   return {
     totals: {
@@ -92,7 +92,7 @@ async function getHostTotals(api: v1.HostsApi) {
   }
 }
 
-async function muteHost(
+export async function muteHost(
   api: v1.HostsApi,
   hostName: string,
   params: { message?: string; end?: number; override?: boolean }
@@ -114,7 +114,7 @@ async function muteHost(
   }
 }
 
-async function unmuteHost(api: v1.HostsApi, hostName: string) {
+export async function unmuteHost(api: v1.HostsApi, hostName: string) {
   await api.unmuteHost({ hostName })
   return {
     success: true,

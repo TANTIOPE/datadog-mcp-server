@@ -75,7 +75,7 @@ interface NotebookDetail extends NotebookSummary {
   }
 }
 
-function formatNotebookSummary(nb: v1.NotebooksResponseData): NotebookSummary {
+export function formatNotebookSummary(nb: v1.NotebooksResponseData): NotebookSummary {
   const attrs = nb.attributes ?? {}
 
   return {
@@ -96,7 +96,7 @@ function formatNotebookSummary(nb: v1.NotebooksResponseData): NotebookSummary {
   }
 }
 
-function formatNotebookDetail(nb: v1.NotebookResponseData): NotebookDetail {
+export function formatNotebookDetail(nb: v1.NotebookResponseData): NotebookDetail {
   const attrs = nb.attributes ?? {}
 
   return {
@@ -127,7 +127,7 @@ function formatNotebookDetail(nb: v1.NotebookResponseData): NotebookDetail {
   }
 }
 
-async function listNotebooks(
+export async function listNotebooks(
   api: v1.NotebooksApi,
   params: {
     query?: string
@@ -159,7 +159,7 @@ async function listNotebooks(
   }
 }
 
-async function getNotebook(api: v1.NotebooksApi, notebookId: number) {
+export async function getNotebook(api: v1.NotebooksApi, notebookId: number) {
   const response = await api.getNotebook({ notebookId })
 
   if (!response.data) {
@@ -171,7 +171,7 @@ async function getNotebook(api: v1.NotebooksApi, notebookId: number) {
   }
 }
 
-async function createNotebook(
+export async function createNotebook(
   api: v1.NotebooksApi,
   params: {
     name: string
@@ -248,7 +248,7 @@ async function createNotebook(
   }
 }
 
-async function updateNotebook(
+export async function updateNotebook(
   api: v1.NotebooksApi,
   notebookId: number,
   params: {
@@ -330,7 +330,7 @@ async function updateNotebook(
   }
 }
 
-async function deleteNotebook(api: v1.NotebooksApi, notebookId: number) {
+export async function deleteNotebook(api: v1.NotebooksApi, notebookId: number) {
   await api.deleteNotebook({ notebookId })
 
   return {

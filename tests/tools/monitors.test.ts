@@ -7,6 +7,24 @@ import { http } from 'msw'
 import { server, endpoints, jsonResponse, errorResponse } from '../helpers/msw.js'
 import { createMockConfig } from '../helpers/mock.js'
 import { monitors as fixtures } from '../helpers/fixtures.js'
+import {
+  listMonitors,
+  getMonitor,
+  searchMonitors,
+  createMonitor,
+  updateMonitor,
+  deleteMonitor
+} from '../../src/tools/monitors.js'
+import type { LimitsConfig } from '../../src/config/schema.js'
+
+const defaultLimits: LimitsConfig = {
+  maxResults: 100,
+  maxLogLines: 500,
+  maxMetricDataPoints: 1000,
+  defaultTimeRangeHours: 24
+}
+
+const defaultSite = 'datadoghq.com'
 
 describe('Monitors Tool', () => {
   let api: v1.MonitorsApi
@@ -24,12 +42,13 @@ describe('Monitors Tool', () => {
         })
       )
 
-      const response = await api.listMonitors({})
+      const result = await listMonitors(api, {}, defaultLimits, defaultSite)
 
-      expect(response).toHaveLength(2)
-      expect(response[0].id).toBe(12345)
-      expect(response[0].name).toBe('High CPU Usage')
-      expect(response[0].overallState).toBe('Alert')
+      expect(result.monitors).toHaveLength(2)
+      expect(result.monitors[0].id).toBe(12345)
+      expect(result.monitors[0].name).toBe('High CPU Usage')
+      expect(result.monitors[0].status).toBe('Alert')
+      expect(result.summary.total).toBe(2)
     })
 
     it('should filter monitors by name', async () => {
@@ -45,10 +64,10 @@ describe('Monitors Tool', () => {
         })
       )
 
-      const response = await api.listMonitors({ name: 'CPU' })
+      const result = await listMonitors(api, { name: 'CPU' }, defaultLimits, defaultSite)
 
-      expect(response).toHaveLength(1)
-      expect(response[0].name).toContain('CPU')
+      expect(result.monitors).toHaveLength(1)
+      expect(result.monitors[0].name).toContain('CPU')
     })
 
     it('should handle 401 unauthorized error', async () => {
@@ -58,7 +77,7 @@ describe('Monitors Tool', () => {
         })
       )
 
-      await expect(api.listMonitors({})).rejects.toMatchObject({
+      await expect(listMonitors(api, {}, defaultLimits, defaultSite)).rejects.toMatchObject({
         code: 401
       })
     })
@@ -70,7 +89,7 @@ describe('Monitors Tool', () => {
         })
       )
 
-      await expect(api.listMonitors({})).rejects.toMatchObject({
+      await expect(listMonitors(api, {}, defaultLimits, defaultSite)).rejects.toMatchObject({
         code: 403
       })
     })
@@ -82,7 +101,7 @@ describe('Monitors Tool', () => {
         })
       )
 
-      await expect(api.listMonitors({})).rejects.toMatchObject({
+      await expect(listMonitors(api, {}, defaultLimits, defaultSite)).rejects.toMatchObject({
         code: 429
       })
     })
@@ -96,11 +115,12 @@ describe('Monitors Tool', () => {
         })
       )
 
-      const response = await api.getMonitor({ monitorId: 12345 })
+      const result = await getMonitor(api, '12345', defaultSite)
 
-      expect(response.id).toBe(12345)
-      expect(response.name).toBe('High CPU Usage')
-      expect(response.query).toContain('system.cpu.user')
+      expect(result.monitor.id).toBe(12345)
+      expect(result.monitor.name).toBe('High CPU Usage')
+      expect(result.monitor.query).toContain('system.cpu.user')
+      expect(result.datadog_url).toContain('datadoghq.com')
     })
 
     it('should handle 404 not found error', async () => {
@@ -110,9 +130,13 @@ describe('Monitors Tool', () => {
         })
       )
 
-      await expect(api.getMonitor({ monitorId: 99999 })).rejects.toMatchObject({
+      await expect(getMonitor(api, '99999', defaultSite)).rejects.toMatchObject({
         code: 404
       })
+    })
+
+    it('should handle invalid monitor ID', async () => {
+      await expect(getMonitor(api, 'invalid', defaultSite)).rejects.toThrow('Invalid monitor ID')
     })
   })
 
@@ -128,11 +152,11 @@ describe('Monitors Tool', () => {
         })
       )
 
-      const response = await api.searchMonitors({ query: 'cpu' })
+      const result = await searchMonitors(api, 'cpu', defaultLimits, defaultSite)
 
-      expect(response.monitors).toHaveLength(1)
-      // Note: metadata might not be present in all SDK versions
-      expect(response.monitors?.[0]?.id).toBe(12345)
+      expect(result.monitors).toHaveLength(1)
+      expect(result.monitors[0].id).toBe(12345)
+      expect(result.metadata.totalCount).toBeDefined()
     })
   })
 
@@ -140,7 +164,7 @@ describe('Monitors Tool', () => {
     it('should create a new monitor', async () => {
       const newMonitor = {
         name: 'New Test Monitor',
-        type: 'metric alert' as const,
+        type: 'metric alert',
         query: 'avg(last_5m):avg:system.cpu.user{*} > 95',
         message: 'CPU is very high'
       }
@@ -158,35 +182,33 @@ describe('Monitors Tool', () => {
         })
       )
 
-      const response = await api.createMonitor({ body: newMonitor })
+      const result = await createMonitor(api, newMonitor)
 
-      expect(response.id).toBe(12347)
-      expect(response.name).toBe('New Test Monitor')
+      expect(result.success).toBe(true)
+      expect(result.monitor.id).toBe(12347)
+      expect(result.monitor.name).toBe('New Test Monitor')
     })
 
-    it('should validate required fields locally', async () => {
-      // The Datadog SDK validates required fields (like 'query') before sending
-      // This test verifies that local validation works
-      await expect(api.createMonitor({ body: {} as v1.Monitor })).rejects.toThrow(
-        /missing required property/
+    it('should validate required fields', async () => {
+      await expect(createMonitor(api, {})).rejects.toThrow(
+        /requires at least/
       )
     })
 
     it('should handle 400 bad request from API', async () => {
-      // For API-level 400 errors (e.g., invalid query syntax)
       server.use(
         http.post(endpoints.listMonitors, () => {
           return errorResponse(400, 'Invalid query syntax')
         })
       )
 
-      const validBody = {
+      const validConfig = {
         name: 'Test Monitor',
-        type: 'metric alert' as const,
+        type: 'metric alert',
         query: 'invalid query that API rejects'
       }
 
-      await expect(api.createMonitor({ body: validBody })).rejects.toMatchObject({
+      await expect(createMonitor(api, validConfig)).rejects.toMatchObject({
         code: 400
       })
     })
@@ -204,12 +226,14 @@ describe('Monitors Tool', () => {
         })
       )
 
-      const response = await api.updateMonitor({
-        monitorId: 12345,
-        body: { name: 'Updated Monitor Name' }
+      const result = await updateMonitor(api, '12345', {
+        name: 'Updated Monitor Name',
+        type: 'metric alert',
+        query: 'test'
       })
 
-      expect(response.name).toBe('Updated Monitor Name')
+      expect(result.success).toBe(true)
+      expect(result.monitor.name).toBe('Updated Monitor Name')
     })
   })
 
@@ -221,9 +245,10 @@ describe('Monitors Tool', () => {
         })
       )
 
-      const response = await api.deleteMonitor({ monitorId: 12345 })
+      const result = await deleteMonitor(api, '12345')
 
-      expect(response.deletedMonitorId).toBe(12345)
+      expect(result.success).toBe(true)
+      expect(result.message).toContain('12345')
     })
   })
 })

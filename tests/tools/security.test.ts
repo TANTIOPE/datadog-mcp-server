@@ -7,6 +7,17 @@ import { http } from 'msw'
 import { server, endpoints, jsonResponse, errorResponse } from '../helpers/msw.js'
 import { createMockConfig } from '../helpers/mock.js'
 import { security as securityFixtures } from '../helpers/fixtures.js'
+import { listRules, getRule, searchSignals } from '../../src/tools/security.js'
+import type { LimitsConfig } from '../../src/config/schema.js'
+
+const defaultLimits: LimitsConfig = {
+  maxResults: 100,
+  maxLogLines: 500,
+  maxMetricDataPoints: 1000,
+  defaultTimeRangeHours: 24
+}
+
+const defaultSite = 'datadoghq.com'
 
 describe('Security Tool', () => {
   let api: v2.SecurityMonitoringApi
@@ -16,7 +27,7 @@ describe('Security Tool', () => {
     api = new v2.SecurityMonitoringApi(config)
   })
 
-  describe('listSecurityRules', () => {
+  describe('listRules', () => {
     it('should list security rules successfully', async () => {
       server.use(
         http.get(endpoints.listSecurityRules, () => {
@@ -24,10 +35,10 @@ describe('Security Tool', () => {
         })
       )
 
-      const response = await api.listSecurityMonitoringRules({})
+      const result = await listRules(api, {}, defaultLimits)
 
-      expect(response.data).toHaveLength(2)
-      expect(response.data?.[0].name).toBe('Brute Force Detection')
+      expect(result.rules).toHaveLength(2)
+      expect(result.rules[0].name).toBe('Brute Force Detection')
     })
 
     it('should handle 401 unauthorized error', async () => {
@@ -37,7 +48,7 @@ describe('Security Tool', () => {
         })
       )
 
-      await expect(api.listSecurityMonitoringRules({})).rejects.toMatchObject({
+      await expect(listRules(api, {}, defaultLimits)).rejects.toMatchObject({
         code: 401
       })
     })
@@ -49,13 +60,13 @@ describe('Security Tool', () => {
         })
       )
 
-      await expect(api.listSecurityMonitoringRules({})).rejects.toMatchObject({
+      await expect(listRules(api, {}, defaultLimits)).rejects.toMatchObject({
         code: 403
       })
     })
   })
 
-  describe('getSecurityRule', () => {
+  describe('getRule', () => {
     it('should get a single security rule by ID', async () => {
       server.use(
         http.get(endpoints.getSecurityRule('rule-001'), () => {
@@ -63,11 +74,11 @@ describe('Security Tool', () => {
         })
       )
 
-      const response = await api.getSecurityMonitoringRule({ ruleId: 'rule-001' })
+      const result = await getRule(api, 'rule-001')
 
-      expect(response.id).toBe('rule-001')
-      expect(response.name).toBe('Brute Force Detection')
-      expect(response.isEnabled).toBe(true)
+      expect(result.rule.id).toBe('rule-001')
+      expect(result.rule.name).toBe('Brute Force Detection')
+      expect(result.rule.isEnabled).toBe(true)
     })
 
     it('should handle 404 not found error', async () => {
@@ -77,13 +88,13 @@ describe('Security Tool', () => {
         })
       )
 
-      await expect(api.getSecurityMonitoringRule({ ruleId: 'nonexistent' })).rejects.toMatchObject({
+      await expect(getRule(api, 'nonexistent')).rejects.toMatchObject({
         code: 404
       })
     })
   })
 
-  describe('searchSecuritySignals', () => {
+  describe('searchSignals', () => {
     it('should search security signals successfully', async () => {
       server.use(
         http.post(endpoints.searchSecuritySignals, () => {
@@ -91,13 +102,9 @@ describe('Security Tool', () => {
         })
       )
 
-      const response = await api.searchSecurityMonitoringSignals({})
+      const result = await searchSignals(api, {}, defaultLimits, defaultSite)
 
-      expect(response.data).toHaveLength(2)
-      // The SDK may return UnparsedObject for enum values
-      const type = response.data?.[0].type
-      const typeValue = (type as { _data?: string })?._data ?? type
-      expect(typeValue).toBe('security_signal')
+      expect(result.signals).toHaveLength(2)
     })
 
     it('should handle 400 bad request error', async () => {
@@ -107,7 +114,9 @@ describe('Security Tool', () => {
         })
       )
 
-      await expect(api.searchSecurityMonitoringSignals({})).rejects.toMatchObject({
+      await expect(
+        searchSignals(api, {}, defaultLimits, defaultSite)
+      ).rejects.toMatchObject({
         code: 400
       })
     })
@@ -119,9 +128,9 @@ describe('Security Tool', () => {
         })
       )
 
-      const response = await api.searchSecurityMonitoringSignals({})
+      const result = await searchSignals(api, {}, defaultLimits, defaultSite)
 
-      expect(response.data).toHaveLength(0)
+      expect(result.signals).toHaveLength(0)
     })
   })
 })

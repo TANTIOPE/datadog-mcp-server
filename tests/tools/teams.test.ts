@@ -7,6 +7,15 @@ import { http } from 'msw'
 import { server, endpoints, jsonResponse, errorResponse } from '../helpers/msw.js'
 import { createMockConfig } from '../helpers/mock.js'
 import { teams as fixtures } from '../helpers/fixtures.js'
+import { listTeams, getTeam, getTeamMembers } from '../../src/tools/teams.js'
+import type { LimitsConfig } from '../../src/config/schema.js'
+
+const defaultLimits: LimitsConfig = {
+  maxResults: 100,
+  maxLogLines: 500,
+  maxMetricDataPoints: 1000,
+  defaultTimeRangeHours: 24
+}
 
 describe('Teams Tool', () => {
   let api: v2.TeamsApi
@@ -24,11 +33,11 @@ describe('Teams Tool', () => {
         })
       )
 
-      const response = await api.listTeams({})
+      const result = await listTeams(api, {}, defaultLimits)
 
-      expect(response.data).toHaveLength(2)
-      expect(response.data?.[0].attributes?.name).toBe('Platform Team')
-      expect(response.data?.[0].attributes?.handle).toBe('platform-team')
+      expect(result.teams).toHaveLength(2)
+      expect(result.teams[0].name).toBe('Platform Team')
+      expect(result.teams[0].handle).toBe('platform-team')
     })
 
     it('should handle 401 unauthorized error', async () => {
@@ -38,7 +47,7 @@ describe('Teams Tool', () => {
         })
       )
 
-      await expect(api.listTeams({})).rejects.toMatchObject({
+      await expect(listTeams(api, {}, defaultLimits)).rejects.toMatchObject({
         code: 401
       })
     })
@@ -50,7 +59,7 @@ describe('Teams Tool', () => {
         })
       )
 
-      await expect(api.listTeams({})).rejects.toMatchObject({
+      await expect(listTeams(api, {}, defaultLimits)).rejects.toMatchObject({
         code: 403
       })
     })
@@ -64,11 +73,11 @@ describe('Teams Tool', () => {
         })
       )
 
-      const response = await api.getTeam({ teamId: 'team-001' })
+      const result = await getTeam(api, 'team-001')
 
-      expect(response.data?.id).toBe('team-001')
-      expect(response.data?.attributes?.name).toBe('Platform Team')
-      expect(response.data?.attributes?.description).toBe('Core platform engineering team')
+      expect(result.team.id).toBe('team-001')
+      expect(result.team.name).toBe('Platform Team')
+      expect(result.team.description).toBe('Core platform engineering team')
     })
 
     it('should handle 404 not found error', async () => {
@@ -78,7 +87,7 @@ describe('Teams Tool', () => {
         })
       )
 
-      await expect(api.getTeam({ teamId: 'nonexistent' })).rejects.toMatchObject({
+      await expect(getTeam(api, 'nonexistent')).rejects.toMatchObject({
         code: 404
       })
     })
@@ -92,9 +101,9 @@ describe('Teams Tool', () => {
         })
       )
 
-      const response = await api.getTeamMemberships({ teamId: 'team-001' })
+      const result = await getTeamMembers(api, 'team-001', defaultLimits)
 
-      expect(response.data).toHaveLength(2)
+      expect(result.members).toHaveLength(2)
     })
 
     it('should handle 404 not found error for team members', async () => {
@@ -104,7 +113,7 @@ describe('Teams Tool', () => {
         })
       )
 
-      await expect(api.getTeamMemberships({ teamId: 'nonexistent' })).rejects.toMatchObject({
+      await expect(getTeamMembers(api, 'nonexistent', defaultLimits)).rejects.toMatchObject({
         code: 404
       })
     })

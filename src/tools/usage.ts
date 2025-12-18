@@ -93,7 +93,7 @@ interface SpansUsage {
   }>
 }
 
-function parseDate(dateStr: string | undefined, defaultDate: Date): Date {
+export function parseDate(dateStr: string | undefined, defaultDate: Date): Date {
   if (!dateStr) return defaultDate
 
   // Check if it's a relative date
@@ -111,7 +111,7 @@ function parseDate(dateStr: string | undefined, defaultDate: Date): Date {
   return defaultDate
 }
 
-async function getUsageSummary(
+export async function getUsageSummary(
   api: v1.UsageMeteringApi,
   params: {
     from?: string
@@ -147,7 +147,7 @@ async function getUsageSummary(
   }
 }
 
-async function getHostsUsage(
+export async function getHostsUsage(
   api: v1.UsageMeteringApi,
   params: {
     from?: string
@@ -177,7 +177,7 @@ async function getHostsUsage(
   }
 }
 
-async function getLogsUsage(
+export async function getLogsUsage(
   api: v1.UsageMeteringApi,
   params: {
     from?: string
@@ -205,7 +205,7 @@ async function getLogsUsage(
   }
 }
 
-async function getCustomMetricsUsage(
+export async function getCustomMetricsUsage(
   api: v1.UsageMeteringApi,
   params: {
     from?: string
@@ -231,7 +231,7 @@ async function getCustomMetricsUsage(
   }
 }
 
-async function getIndexedSpansUsage(
+export async function getIndexedSpansUsage(
   api: v1.UsageMeteringApi,
   params: {
     from?: string
@@ -257,7 +257,7 @@ async function getIndexedSpansUsage(
   }
 }
 
-async function getIngestedSpansUsage(
+export async function getIngestedSpansUsage(
   api: v1.UsageMeteringApi,
   params: {
     from?: string

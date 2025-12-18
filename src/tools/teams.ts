@@ -38,7 +38,7 @@ interface TeamMemberSummary {
   }
 }
 
-function formatTeam(team: v2.Team): TeamSummary {
+export function formatTeam(team: v2.Team): TeamSummary {
   const attrs = team.attributes ?? {}
 
   return {
@@ -54,7 +54,7 @@ function formatTeam(team: v2.Team): TeamSummary {
   }
 }
 
-function formatTeamMember(member: v2.UserTeam): TeamMemberSummary {
+export function formatTeamMember(member: v2.UserTeam): TeamMemberSummary {
   const attrs = member.attributes ?? {}
   const relationships = member.relationships ?? {}
 
@@ -70,7 +70,7 @@ function formatTeamMember(member: v2.UserTeam): TeamMemberSummary {
   }
 }
 
-async function listTeams(
+export async function listTeams(
   api: v2.TeamsApi,
   params: {
     filter?: string
@@ -95,7 +95,7 @@ async function listTeams(
   }
 }
 
-async function getTeam(api: v2.TeamsApi, teamId: string) {
+export async function getTeam(api: v2.TeamsApi, teamId: string) {
   const response = await api.getTeam({ teamId })
 
   if (!response.data) {
@@ -107,7 +107,7 @@ async function getTeam(api: v2.TeamsApi, teamId: string) {
   }
 }
 
-async function getTeamMembers(api: v2.TeamsApi, teamId: string, limits: LimitsConfig) {
+export async function getTeamMembers(api: v2.TeamsApi, teamId: string, limits: LimitsConfig) {
   const response = await api.getTeamMemberships({
     teamId,
     pageSize: limits.maxResults

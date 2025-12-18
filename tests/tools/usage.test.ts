@@ -7,6 +7,14 @@ import { http } from 'msw'
 import { server, endpoints, jsonResponse, errorResponse } from '../helpers/msw.js'
 import { createMockConfig } from '../helpers/mock.js'
 import { usage as usageFixtures } from '../helpers/fixtures.js'
+import {
+  getUsageSummary,
+  getHostsUsage,
+  getLogsUsage,
+  getCustomMetricsUsage,
+  getIndexedSpansUsage,
+  getIngestedSpansUsage
+} from '../../src/tools/usage.js'
 
 describe('Usage Tool', () => {
   let api: v1.UsageMeteringApi
@@ -24,13 +32,13 @@ describe('Usage Tool', () => {
         })
       )
 
-      const response = await api.getUsageSummary({
-        startMonth: new Date('2024-01-01'),
-        endMonth: new Date('2024-01-31')
+      const result = await getUsageSummary(api, {
+        from: '2024-01-01',
+        to: '2024-01-31'
       })
 
-      expect(response.startDate).toBeDefined()
-      expect(response.usage).toBeDefined()
+      expect(result.startDate).toBeDefined()
+      expect(result.usage).toBeDefined()
     })
 
     it('should handle 401 unauthorized error', async () => {
@@ -40,11 +48,7 @@ describe('Usage Tool', () => {
         })
       )
 
-      await expect(
-        api.getUsageSummary({
-          startMonth: new Date()
-        })
-      ).rejects.toMatchObject({
+      await expect(getUsageSummary(api, {})).rejects.toMatchObject({
         code: 401
       })
     })
@@ -56,17 +60,13 @@ describe('Usage Tool', () => {
         })
       )
 
-      await expect(
-        api.getUsageSummary({
-          startMonth: new Date()
-        })
-      ).rejects.toMatchObject({
+      await expect(getUsageSummary(api, {})).rejects.toMatchObject({
         code: 403
       })
     })
   })
 
-  describe('getUsageHosts', () => {
+  describe('getHostsUsage', () => {
     it('should get hosts usage successfully', async () => {
       server.use(
         http.get(endpoints.getUsageHosts, () => {
@@ -74,13 +74,13 @@ describe('Usage Tool', () => {
         })
       )
 
-      const response = await api.getUsageHosts({
-        startHr: new Date('2024-01-01'),
-        endHr: new Date('2024-01-02')
+      const result = await getHostsUsage(api, {
+        from: '2024-01-01',
+        to: '2024-01-02'
       })
 
-      expect(response.usage).toBeDefined()
-      expect(response.usage).toHaveLength(1)
+      expect(result.usage).toBeDefined()
+      expect(result.usage).toHaveLength(1)
     })
 
     it('should handle 400 bad request error', async () => {
@@ -90,17 +90,13 @@ describe('Usage Tool', () => {
         })
       )
 
-      await expect(
-        api.getUsageHosts({
-          startHr: new Date()
-        })
-      ).rejects.toMatchObject({
+      await expect(getHostsUsage(api, {})).rejects.toMatchObject({
         code: 400
       })
     })
   })
 
-  describe('getUsageLogs', () => {
+  describe('getLogsUsage', () => {
     it('should get logs usage successfully', async () => {
       server.use(
         http.get(endpoints.getUsageLogs, () => {
@@ -108,16 +104,16 @@ describe('Usage Tool', () => {
         })
       )
 
-      const response = await api.getUsageLogs({
-        startHr: new Date('2024-01-01')
+      const result = await getLogsUsage(api, {
+        from: '2024-01-01'
       })
 
-      expect(response.usage).toBeDefined()
-      expect(response.usage).toHaveLength(1)
+      expect(result.usage).toBeDefined()
+      expect(result.usage).toHaveLength(1)
     })
   })
 
-  describe('getUsageTimeseries', () => {
+  describe('getCustomMetricsUsage', () => {
     it('should get custom metrics usage successfully', async () => {
       server.use(
         http.get(endpoints.getUsageTimeseries, () => {
@@ -125,16 +121,16 @@ describe('Usage Tool', () => {
         })
       )
 
-      const response = await api.getUsageTimeseries({
-        startHr: new Date('2024-01-01')
+      const result = await getCustomMetricsUsage(api, {
+        from: '2024-01-01'
       })
 
-      expect(response.usage).toBeDefined()
-      expect(response.usage).toHaveLength(1)
+      expect(result.usage).toBeDefined()
+      expect(result.usage).toHaveLength(1)
     })
   })
 
-  describe('getUsageIndexedSpans', () => {
+  describe('getIndexedSpansUsage', () => {
     it('should get indexed spans usage successfully', async () => {
       server.use(
         http.get(endpoints.getUsageIndexedSpans, () => {
@@ -142,16 +138,16 @@ describe('Usage Tool', () => {
         })
       )
 
-      const response = await api.getUsageIndexedSpans({
-        startHr: new Date('2024-01-01')
+      const result = await getIndexedSpansUsage(api, {
+        from: '2024-01-01'
       })
 
-      expect(response.usage).toBeDefined()
-      expect(response.usage).toHaveLength(1)
+      expect(result.usage).toBeDefined()
+      expect(result.usage).toHaveLength(1)
     })
   })
 
-  describe('getIngestedSpans', () => {
+  describe('getIngestedSpansUsage', () => {
     it('should get ingested spans usage successfully', async () => {
       server.use(
         http.get(endpoints.getIngestedSpans, () => {
@@ -159,12 +155,12 @@ describe('Usage Tool', () => {
         })
       )
 
-      const response = await api.getIngestedSpans({
-        startHr: new Date('2024-01-01')
+      const result = await getIngestedSpansUsage(api, {
+        from: '2024-01-01'
       })
 
-      expect(response.usage).toBeDefined()
-      expect(response.usage).toHaveLength(1)
+      expect(result.usage).toBeDefined()
+      expect(result.usage).toHaveLength(1)
     })
   })
 })

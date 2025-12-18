@@ -34,7 +34,7 @@ interface AllTagsSummary {
   totalHosts: number
 }
 
-async function listAllTags(api: v1.TagsApi, source?: string): Promise<AllTagsSummary> {
+export async function listAllTags(api: v1.TagsApi, source?: string): Promise<AllTagsSummary> {
   const response = await api.listHostTags({
     source
   })
@@ -47,7 +47,7 @@ async function listAllTags(api: v1.TagsApi, source?: string): Promise<AllTagsSum
   }
 }
 
-async function getHostTags(
+export async function getHostTags(
   api: v1.TagsApi,
   hostName: string,
   source?: string
@@ -64,7 +64,7 @@ async function getHostTags(
   }
 }
 
-async function addHostTags(api: v1.TagsApi, hostName: string, tags: string[], source?: string) {
+export async function addHostTags(api: v1.TagsApi, hostName: string, tags: string[], source?: string) {
   const response = await api.createHostTags({
     hostName,
     body: {
@@ -82,7 +82,7 @@ async function addHostTags(api: v1.TagsApi, hostName: string, tags: string[], so
   }
 }
 
-async function updateHostTags(api: v1.TagsApi, hostName: string, tags: string[], source?: string) {
+export async function updateHostTags(api: v1.TagsApi, hostName: string, tags: string[], source?: string) {
   const response = await api.updateHostTags({
     hostName,
     body: {
@@ -100,7 +100,7 @@ async function updateHostTags(api: v1.TagsApi, hostName: string, tags: string[],
   }
 }
 
-async function deleteHostTags(api: v1.TagsApi, hostName: string, source?: string) {
+export async function deleteHostTags(api: v1.TagsApi, hostName: string, source?: string) {
   await api.deleteHostTags({
     hostName,
     source

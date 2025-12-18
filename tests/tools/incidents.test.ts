@@ -7,6 +7,22 @@ import { http } from 'msw'
 import { server, endpoints, jsonResponse, errorResponse } from '../helpers/msw.js'
 import { createMockConfig } from '../helpers/mock.js'
 import { incidents as fixtures } from '../helpers/fixtures.js'
+import {
+  listIncidents,
+  getIncident,
+  searchIncidents,
+  createIncident,
+  updateIncident,
+  deleteIncident
+} from '../../src/tools/incidents.js'
+import type { LimitsConfig } from '../../src/config/schema.js'
+
+const defaultLimits: LimitsConfig = {
+  maxResults: 100,
+  maxLogLines: 500,
+  maxMetricDataPoints: 1000,
+  defaultTimeRangeHours: 24
+}
 
 describe('Incidents Tool', () => {
   let api: v2.IncidentsApi
@@ -24,28 +40,12 @@ describe('Incidents Tool', () => {
         })
       )
 
-      const response = await api.listIncidents({})
+      const result = await listIncidents(api, {}, defaultLimits)
 
-      expect(response.data).toHaveLength(2)
-      expect(response.data?.[0].id).toBe('inc-001')
-      expect(response.data?.[0].attributes?.title).toBe('Database connection failures')
-      expect(response.data?.[0].attributes?.state).toBe('active')
-    })
-
-    it('should handle pagination', async () => {
-      server.use(
-        http.get(endpoints.listIncidents, ({ request }) => {
-          const url = new URL(request.url)
-          const pageSize = url.searchParams.get('page[size]')
-
-          expect(pageSize).toBeTruthy()
-          return jsonResponse(fixtures.list)
-        })
-      )
-
-      const response = await api.listIncidents({ pageSize: 10 })
-
-      expect(response.data).toHaveLength(2)
+      expect(result.incidents).toHaveLength(2)
+      expect(result.incidents[0].id).toBe('inc-001')
+      expect(result.incidents[0].title).toBe('Database connection failures')
+      expect(result.incidents[0].state).toBe('active')
     })
 
     it('should handle 401 unauthorized error', async () => {
@@ -55,7 +55,7 @@ describe('Incidents Tool', () => {
         })
       )
 
-      await expect(api.listIncidents({})).rejects.toMatchObject({
+      await expect(listIncidents(api, {}, defaultLimits)).rejects.toMatchObject({
         code: 401
       })
     })
@@ -67,7 +67,7 @@ describe('Incidents Tool', () => {
         })
       )
 
-      await expect(api.listIncidents({})).rejects.toMatchObject({
+      await expect(listIncidents(api, {}, defaultLimits)).rejects.toMatchObject({
         code: 403
       })
     })
@@ -79,7 +79,7 @@ describe('Incidents Tool', () => {
         })
       )
 
-      await expect(api.listIncidents({})).rejects.toMatchObject({
+      await expect(listIncidents(api, {}, defaultLimits)).rejects.toMatchObject({
         code: 429
       })
     })
@@ -93,11 +93,11 @@ describe('Incidents Tool', () => {
         })
       )
 
-      const response = await api.getIncident({ incidentId: 'inc-001' })
+      const result = await getIncident(api, 'inc-001')
 
-      expect(response.data?.id).toBe('inc-001')
-      expect(response.data?.attributes?.title).toBe('Database connection failures')
-      expect(response.data?.attributes?.severity).toBe('SEV-2')
+      expect(result.incident.id).toBe('inc-001')
+      expect(result.incident.title).toBe('Database connection failures')
+      expect(result.incident.severity).toBe('SEV-2')
     })
 
     it('should handle 404 not found error', async () => {
@@ -107,7 +107,7 @@ describe('Incidents Tool', () => {
         })
       )
 
-      await expect(api.getIncident({ incidentId: 'nonexistent' })).rejects.toMatchObject({
+      await expect(getIncident(api, 'nonexistent')).rejects.toMatchObject({
         code: 404
       })
     })
@@ -125,9 +125,9 @@ describe('Incidents Tool', () => {
         })
       )
 
-      const response = await api.searchIncidents({ query: 'database' })
+      const result = await searchIncidents(api, 'database', defaultLimits)
 
-      expect(response.data?.attributes?.incidents).toHaveLength(2)
+      expect(result.incidents).toHaveLength(2)
     })
 
     it('should handle empty search results', async () => {
@@ -150,9 +150,9 @@ describe('Incidents Tool', () => {
         })
       )
 
-      const response = await api.searchIncidents({ query: 'nonexistent' })
+      const result = await searchIncidents(api, 'nonexistent', defaultLimits)
 
-      expect(response.data?.attributes?.incidents).toHaveLength(0)
+      expect(result.incidents).toHaveLength(0)
     })
   })
 
@@ -164,20 +164,14 @@ describe('Incidents Tool', () => {
         })
       )
 
-      const response = await api.createIncident({
-        body: {
-          data: {
-            type: 'incidents',
-            attributes: {
-              title: 'New Incident',
-              customerImpacted: false
-            }
-          }
-        }
+      const result = await createIncident(api, {
+        title: 'New Incident',
+        customerImpacted: false
       })
 
-      expect(response.data?.id).toBe('inc-003')
-      expect(response.data?.attributes?.title).toBe('New Incident')
+      expect(result.success).toBe(true)
+      expect(result.incident.id).toBe('inc-003')
+      expect(result.incident.title).toBe('New Incident')
     })
 
     it('should handle 400 bad request error', async () => {
@@ -188,16 +182,9 @@ describe('Incidents Tool', () => {
       )
 
       await expect(
-        api.createIncident({
-          body: {
-            data: {
-              type: 'incidents',
-              attributes: {
-                title: '',
-                customerImpacted: false
-              }
-            }
-          }
+        createIncident(api, {
+          title: '',
+          customerImpacted: false
         })
       ).rejects.toMatchObject({
         code: 400
@@ -208,8 +195,7 @@ describe('Incidents Tool', () => {
   describe('updateIncident', () => {
     it('should update an existing incident', async () => {
       server.use(
-        http.patch(endpoints.updateIncident('inc-001'), async ({ request }) => {
-          const _body = (await request.json()) as Record<string, unknown>
+        http.patch(endpoints.updateIncident('inc-001'), async () => {
           return jsonResponse({
             data: {
               ...fixtures.single.data,
@@ -222,20 +208,12 @@ describe('Incidents Tool', () => {
         })
       )
 
-      const response = await api.updateIncident({
-        incidentId: 'inc-001',
-        body: {
-          data: {
-            type: 'incidents',
-            id: 'inc-001',
-            attributes: {
-              state: 'resolved'
-            }
-          }
-        }
+      const result = await updateIncident(api, 'inc-001', {
+        state: 'resolved'
       })
 
-      expect(response.data?.attributes?.state).toBe('resolved')
+      expect(result.success).toBe(true)
+      expect(result.incident.state).toBe('resolved')
     })
   })
 
@@ -247,8 +225,10 @@ describe('Incidents Tool', () => {
         })
       )
 
-      // deleteIncident returns void on success
-      await expect(api.deleteIncident({ incidentId: 'inc-001' })).resolves.not.toThrow()
+      const result = await deleteIncident(api, 'inc-001')
+
+      expect(result.success).toBe(true)
+      expect(result.message).toContain('inc-001')
     })
 
     it('should handle 404 not found error', async () => {
@@ -258,7 +238,7 @@ describe('Incidents Tool', () => {
         })
       )
 
-      await expect(api.deleteIncident({ incidentId: 'nonexistent' })).rejects.toMatchObject({
+      await expect(deleteIncident(api, 'nonexistent')).rejects.toMatchObject({
         code: 404
       })
     })

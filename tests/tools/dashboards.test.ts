@@ -7,6 +7,20 @@ import { http } from 'msw'
 import { server, endpoints, jsonResponse, errorResponse } from '../helpers/msw.js'
 import { createMockConfig } from '../helpers/mock.js'
 import { dashboards as fixtures } from '../helpers/fixtures.js'
+import {
+  listDashboards,
+  getDashboard,
+  createDashboard,
+  deleteDashboard
+} from '../../src/tools/dashboards.js'
+import type { LimitsConfig } from '../../src/config/schema.js'
+
+const defaultLimits: LimitsConfig = {
+  maxResults: 100,
+  maxLogLines: 500,
+  maxMetricDataPoints: 1000,
+  defaultTimeRangeHours: 24
+}
 
 describe('Dashboards Tool', () => {
   let api: v1.DashboardsApi
@@ -24,11 +38,11 @@ describe('Dashboards Tool', () => {
         })
       )
 
-      const response = await api.listDashboards({})
+      const result = await listDashboards(api, {}, defaultLimits)
 
-      expect(response.dashboards).toHaveLength(2)
-      expect(response.dashboards?.[0]?.id).toBe('abc-123')
-      expect(response.dashboards?.[0]?.title).toBe('Production Overview')
+      expect(result.dashboards).toHaveLength(2)
+      expect(result.dashboards[0].id).toBe('abc-123')
+      expect(result.dashboards[0].title).toBe('Production Overview')
     })
 
     it('should handle 401 unauthorized error', async () => {
@@ -38,7 +52,7 @@ describe('Dashboards Tool', () => {
         })
       )
 
-      await expect(api.listDashboards({})).rejects.toMatchObject({
+      await expect(listDashboards(api, {}, defaultLimits)).rejects.toMatchObject({
         code: 401
       })
     })
@@ -50,7 +64,7 @@ describe('Dashboards Tool', () => {
         })
       )
 
-      await expect(api.listDashboards({})).rejects.toMatchObject({
+      await expect(listDashboards(api, {}, defaultLimits)).rejects.toMatchObject({
         code: 429
       })
     })
@@ -64,11 +78,11 @@ describe('Dashboards Tool', () => {
         })
       )
 
-      const response = await api.getDashboard({ dashboardId: 'abc-123' })
+      const result = await getDashboard(api, 'abc-123')
 
-      expect(response.id).toBe('abc-123')
-      expect(response.title).toBe('Production Overview')
-      expect(response.widgets).toHaveLength(2)
+      expect(result.dashboard.id).toBe('abc-123')
+      expect(result.dashboard.title).toBe('Production Overview')
+      expect(result.dashboard.widgets).toBe(2)
     })
 
     it('should handle 404 not found error', async () => {
@@ -78,7 +92,7 @@ describe('Dashboards Tool', () => {
         })
       )
 
-      await expect(api.getDashboard({ dashboardId: 'not-exist' })).rejects.toMatchObject({
+      await expect(getDashboard(api, 'not-exist')).rejects.toMatchObject({
         code: 404
       })
     })
@@ -88,7 +102,7 @@ describe('Dashboards Tool', () => {
     it('should create a new dashboard', async () => {
       const newDashboard = {
         title: 'New Dashboard',
-        layoutType: 'ordered' as const,
+        layoutType: 'ordered',
         widgets: []
       }
 
@@ -106,19 +120,15 @@ describe('Dashboards Tool', () => {
         })
       )
 
-      const response = await api.createDashboard({ body: newDashboard })
+      const result = await createDashboard(api, newDashboard)
 
-      expect(response.id).toBe('new-123')
-      expect(response.title).toBe('New Dashboard')
+      expect(result.success).toBe(true)
+      expect(result.dashboard.id).toBe('new-123')
+      expect(result.dashboard.title).toBe('New Dashboard')
     })
 
-    it('should validate required fields locally', async () => {
-      // SDK validates required fields before sending
-      await expect(
-        api.createDashboard({
-          body: { title: 'Test' } as v1.Dashboard
-        })
-      ).rejects.toThrow(/layoutType|layout_type/)
+    it('should validate required fields', async () => {
+      await expect(createDashboard(api, { title: 'Test' })).rejects.toThrow(/layoutType/)
     })
   })
 
@@ -130,9 +140,10 @@ describe('Dashboards Tool', () => {
         })
       )
 
-      const response = await api.deleteDashboard({ dashboardId: 'abc-123' })
+      const result = await deleteDashboard(api, 'abc-123')
 
-      expect(response.deletedDashboardId).toBe('abc-123')
+      expect(result.success).toBe(true)
+      expect(result.message).toContain('abc-123')
     })
   })
 })

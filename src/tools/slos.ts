@@ -44,7 +44,7 @@ interface SloSummary {
   modifiedAt: string
 }
 
-function formatSlo(s: v1.ServiceLevelObjective | v1.SLOResponseData): SloSummary {
+export function formatSlo(s: v1.ServiceLevelObjective | v1.SLOResponseData): SloSummary {
   const primaryThreshold = s.thresholds?.[0]
   return {
     id: s.id ?? '',
@@ -66,7 +66,7 @@ function formatSlo(s: v1.ServiceLevelObjective | v1.SLOResponseData): SloSummary
   }
 }
 
-async function listSlos(
+export async function listSlos(
   api: v1.ServiceLevelObjectivesApi,
   params: { ids?: string[]; query?: string; tags?: string[]; limit?: number },
   limits: LimitsConfig
@@ -88,7 +88,7 @@ async function listSlos(
   }
 }
 
-async function getSlo(api: v1.ServiceLevelObjectivesApi, id: string) {
+export async function getSlo(api: v1.ServiceLevelObjectivesApi, id: string) {
   const response = await api.getSLO({ sloId: id })
   return {
     slo: response.data ? formatSlo(response.data) : null
@@ -98,11 +98,11 @@ async function getSlo(api: v1.ServiceLevelObjectivesApi, id: string) {
 /**
  * Recursively convert snake_case keys to camelCase
  */
-function snakeToCamel(str: string): string {
+export function snakeToCamel(str: string): string {
   return str.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase())
 }
 
-function normalizeConfigKeys(obj: unknown): unknown {
+export function normalizeConfigKeys(obj: unknown): unknown {
   if (obj === null || obj === undefined) return obj
   if (Array.isArray(obj)) return obj.map(normalizeConfigKeys)
   if (typeof obj !== 'object') return obj
@@ -118,7 +118,7 @@ function normalizeConfigKeys(obj: unknown): unknown {
 /**
  * Normalize SLO config to handle snake_case -> camelCase
  */
-function normalizeSloConfig(config: Record<string, unknown>): Record<string, unknown> {
+export function normalizeSloConfig(config: Record<string, unknown>): Record<string, unknown> {
   const normalized = normalizeConfigKeys(config) as Record<string, unknown>
 
   // Validate required fields
@@ -135,7 +135,7 @@ function normalizeSloConfig(config: Record<string, unknown>): Record<string, unk
   return normalized
 }
 
-async function createSlo(api: v1.ServiceLevelObjectivesApi, config: Record<string, unknown>) {
+export async function createSlo(api: v1.ServiceLevelObjectivesApi, config: Record<string, unknown>) {
   const body = normalizeSloConfig(config) as unknown as v1.ServiceLevelObjectiveRequest
   const response = await api.createSLO({ body })
   return {
@@ -144,7 +144,7 @@ async function createSlo(api: v1.ServiceLevelObjectivesApi, config: Record<strin
   }
 }
 
-async function updateSlo(
+export async function updateSlo(
   api: v1.ServiceLevelObjectivesApi,
   id: string,
   config: Record<string, unknown>
@@ -157,7 +157,7 @@ async function updateSlo(
   }
 }
 
-async function deleteSlo(api: v1.ServiceLevelObjectivesApi, id: string) {
+export async function deleteSlo(api: v1.ServiceLevelObjectivesApi, id: string) {
   await api.deleteSLO({ sloId: id })
   return {
     success: true,
@@ -165,7 +165,7 @@ async function deleteSlo(api: v1.ServiceLevelObjectivesApi, id: string) {
   }
 }
 
-async function getSloHistory(
+export async function getSloHistory(
   api: v1.ServiceLevelObjectivesApi,
   id: string,
   params: { from?: string; to?: string }

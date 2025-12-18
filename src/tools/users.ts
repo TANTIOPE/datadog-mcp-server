@@ -32,7 +32,7 @@ interface UserSummary {
   }
 }
 
-function formatUser(user: v2.User): UserSummary {
+export function formatUser(user: v2.User): UserSummary {
   const attrs = user.attributes ?? {}
   const relationships = user.relationships ?? {}
 
@@ -57,7 +57,7 @@ function formatUser(user: v2.User): UserSummary {
   }
 }
 
-async function listUsers(
+export async function listUsers(
   api: v2.UsersApi,
   params: {
     filter?: string
@@ -85,7 +85,7 @@ async function listUsers(
   }
 }
 
-async function getUser(api: v2.UsersApi, userId: string) {
+export async function getUser(api: v2.UsersApi, userId: string) {
   const response = await api.getUser({ userId })
 
   if (!response.data) {

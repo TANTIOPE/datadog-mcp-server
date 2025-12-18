@@ -7,6 +7,15 @@ import { http } from 'msw'
 import { server, endpoints, jsonResponse, errorResponse } from '../helpers/msw.js'
 import { createMockConfig } from '../helpers/mock.js'
 import { users as fixtures } from '../helpers/fixtures.js'
+import { listUsers, getUser } from '../../src/tools/users.js'
+import type { LimitsConfig } from '../../src/config/schema.js'
+
+const defaultLimits: LimitsConfig = {
+  maxResults: 100,
+  maxLogLines: 500,
+  maxMetricDataPoints: 1000,
+  defaultTimeRangeHours: 24
+}
 
 describe('Users Tool', () => {
   let api: v2.UsersApi
@@ -24,11 +33,11 @@ describe('Users Tool', () => {
         })
       )
 
-      const response = await api.listUsers({})
+      const result = await listUsers(api, {}, defaultLimits)
 
-      expect(response.data).toHaveLength(2)
-      expect(response.data?.[0].attributes?.name).toBe('John Doe')
-      expect(response.data?.[0].attributes?.email).toBe('john.doe@example.com')
+      expect(result.users).toHaveLength(2)
+      expect(result.users[0].name).toBe('John Doe')
+      expect(result.users[0].email).toBe('john.doe@example.com')
     })
 
     it('should handle 401 unauthorized error', async () => {
@@ -38,7 +47,7 @@ describe('Users Tool', () => {
         })
       )
 
-      await expect(api.listUsers({})).rejects.toMatchObject({
+      await expect(listUsers(api, {}, defaultLimits)).rejects.toMatchObject({
         code: 401
       })
     })
@@ -50,7 +59,7 @@ describe('Users Tool', () => {
         })
       )
 
-      await expect(api.listUsers({})).rejects.toMatchObject({
+      await expect(listUsers(api, {}, defaultLimits)).rejects.toMatchObject({
         code: 403
       })
     })
@@ -64,11 +73,11 @@ describe('Users Tool', () => {
         })
       )
 
-      const response = await api.getUser({ userId: 'user-001' })
+      const result = await getUser(api, 'user-001')
 
-      expect(response.data?.id).toBe('user-001')
-      expect(response.data?.attributes?.name).toBe('John Doe')
-      expect(response.data?.attributes?.status).toBe('Active')
+      expect(result.user.id).toBe('user-001')
+      expect(result.user.name).toBe('John Doe')
+      expect(result.user.status).toBe('Active')
     })
 
     it('should handle 404 not found error', async () => {
@@ -78,7 +87,7 @@ describe('Users Tool', () => {
         })
       )
 
-      await expect(api.getUser({ userId: 'nonexistent' })).rejects.toMatchObject({
+      await expect(getUser(api, 'nonexistent')).rejects.toMatchObject({
         code: 404
       })
     })

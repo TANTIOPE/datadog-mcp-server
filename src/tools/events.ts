@@ -142,7 +142,7 @@ interface EnrichedEvent extends EventSummaryV2 {
  * - [Warn on {scope}] Monitor Name
  * - [Recovered on {scope}] Monitor Name
  */
-function extractMonitorInfo(title: string): {
+export function extractMonitorInfo(title: string): {
   status: string
   scope: string
   name: string
@@ -175,7 +175,7 @@ function extractMonitorInfo(title: string): {
  * v2 API returns empty title, but message contains the alert text
  * Format: "%%%\nMonitor title here\n\n..."
  */
-function extractTitleFromMessage(message: string): string {
+export function extractTitleFromMessage(message: string): string {
   if (!message) return ''
 
   // Remove %%% markdown delimiter if present
@@ -192,7 +192,7 @@ function extractTitleFromMessage(message: string): string {
  * Extract monitor ID from v2 event message body
  * Messages contain links like: [[Monitor Status](/monitors/67860480?...)]
  */
-function extractMonitorIdFromMessage(message: string): number | undefined {
+export function extractMonitorIdFromMessage(message: string): number | undefined {
   if (!message) return undefined
 
   // Match /monitors/{id} pattern in the message
@@ -208,7 +208,7 @@ function extractMonitorIdFromMessage(message: string): number | undefined {
 /**
  * Build a group key for aggregation based on the event and groupBy fields
  */
-function buildGroupKey(event: EventSummaryV2, groupBy: string[]): string {
+export function buildGroupKey(event: EventSummaryV2, groupBy: string[]): string {
   const parts: string[] = []
 
   for (const field of groupBy) {
@@ -245,7 +245,7 @@ function buildGroupKey(event: EventSummaryV2, groupBy: string[]): string {
   return parts.join('|')
 }
 
-function formatEventV1(e: v1.Event): EventSummaryV1 {
+export function formatEventV1(e: v1.Event): EventSummaryV1 {
   const event = e as v1.Event & { sourceTypeName?: string }
   return {
     id: e.id ?? 0,
@@ -260,7 +260,7 @@ function formatEventV1(e: v1.Event): EventSummaryV1 {
   }
 }
 
-function formatEventV2(e: v2.EventResponse): EventSummaryV2 {
+export function formatEventV2(e: v2.EventResponse): EventSummaryV2 {
   const attrs = e.attributes ?? {}
 
   // Parse timestamp
@@ -324,7 +324,7 @@ function formatEventV2(e: v2.EventResponse): EventSummaryV2 {
 
 // ============ V1 API Functions (backward compatible) ============
 
-async function listEventsV1(
+export async function listEventsV1(
   api: v1.EventsApi,
   params: {
     query?: string
@@ -369,7 +369,7 @@ async function listEventsV1(
   }
 }
 
-async function getEventV1(api: v1.EventsApi, id: string) {
+export async function getEventV1(api: v1.EventsApi, id: string) {
   const eventId = Number.parseInt(id, 10)
   if (Number.isNaN(eventId)) {
     throw new Error(`Invalid event ID: ${id}`)
@@ -379,7 +379,7 @@ async function getEventV1(api: v1.EventsApi, id: string) {
   return { event: formatEventV1(response.event ?? {}) }
 }
 
-async function createEventV1(
+export async function createEventV1(
   api: v1.EventsApi,
   params: {
     title: string
@@ -414,7 +414,7 @@ async function createEventV1(
 /**
  * Build a Datadog event search query from filter parameters
  */
-function buildEventQuery(params: {
+export function buildEventQuery(params: {
   query?: string
   sources?: string[]
   tags?: string[]
@@ -444,7 +444,7 @@ function buildEventQuery(params: {
   return parts.length > 0 ? parts.join(' ') : '*'
 }
 
-async function searchEventsV2(
+export async function searchEventsV2(
   api: v2.EventsApi,
   params: {
     query?: string
@@ -513,7 +513,7 @@ async function searchEventsV2(
  * Client-side aggregation for events
  * Streams through all matching events and counts by group key
  */
-async function aggregateEventsV2(
+export async function aggregateEventsV2(
   api: v2.EventsApi,
   params: {
     query?: string
@@ -627,7 +627,7 @@ async function aggregateEventsV2(
  * Top N events by count - convenience wrapper for aggregate
  * Direct answer to "which monitors triggered the most alerts"
  */
-async function topEventsV2(
+export async function topEventsV2(
   api: v2.EventsApi,
   params: {
     query?: string
@@ -682,7 +682,7 @@ async function topEventsV2(
  * Parse interval string to milliseconds
  * Supports: 1h, 4h, 1d, 15m, etc.
  */
-function parseIntervalToMs(interval: string | undefined): number {
+export function parseIntervalToMs(interval: string | undefined): number {
   const ns = parseDurationToNs(interval ?? '1h')
   return ns ? Math.floor(ns / 1000000) : 3600000 // default 1h
 }
@@ -691,7 +691,7 @@ function parseIntervalToMs(interval: string | undefined): number {
  * Time-bucketed alert trends
  * Buckets events by time interval and groups by specified fields
  */
-async function timeseriesEventsV2(
+export async function timeseriesEventsV2(
   api: v2.EventsApi,
   params: {
     query?: string
@@ -820,7 +820,7 @@ async function timeseriesEventsV2(
  * Deduplicate alert events into incidents
  * Groups Triggered events within a time window, pairs with Recovered events
  */
-async function incidentsEventsV2(
+export async function incidentsEventsV2(
   api: v2.EventsApi,
   params: {
     query?: string
@@ -1042,7 +1042,7 @@ async function incidentsEventsV2(
 /**
  * Enrich events with monitor metadata from the Monitors API
  */
-async function enrichWithMonitorMetadata(
+export async function enrichWithMonitorMetadata(
   events: EventSummaryV2[],
   monitorsApi: v1.MonitorsApi
 ): Promise<EnrichedEvent[]> {

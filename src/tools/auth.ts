@@ -35,7 +35,7 @@ export function registerAuthTool(server: McpServer, clients: DatadogClients): vo
   )
 }
 
-async function validateCredentials(clients: DatadogClients) {
+export async function validateCredentials(clients: DatadogClients) {
   // Step 1: Validate API key using the official Authentication API
   const apiKeyResult = await clients.auth.validate()
 
