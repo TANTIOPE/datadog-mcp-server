@@ -96,13 +96,43 @@ export async function getDowntime(api: v2.DowntimesApi, id: string) {
 }
 
 /**
- * Normalize downtime config to handle date conversions
- * One-time schedules: convert ISO strings to Date objects
- * Recurring schedules: keep dates as strings
+ * Normalize downtime config to handle property name conversion and date formatting
+ * - Converts snake_case user input to camelCase for SDK compatibility
+ * - One-time schedules: convert ISO strings to Date objects
+ * - Recurring schedules: keep dates as strings
  */
 export function normalizeDowntimeConfig(config: Record<string, unknown>): Record<string, unknown> {
-  const normalized = { ...config }
+  // Step 1: Convert top-level snake_case keys to camelCase
+  // SDK expects camelCase internally and converts to snake_case for HTTP API
+  const keyMapping: Record<string, string> = {
+    monitor_identifier: 'monitorIdentifier',
+    display_timezone: 'displayTimezone',
+    mute_first_recovery_notification: 'muteFirstRecoveryNotification',
+    notify_end_states: 'notifyEndStates',
+    notify_end_types: 'notifyEndTypes'
+  }
 
+  const normalized: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(config)) {
+    const newKey = keyMapping[key] || key
+    normalized[newKey] = value
+  }
+
+  // Step 2: Handle nested monitorIdentifier conversion (monitor_id → monitorId, monitor_tags → monitorTags)
+  if (normalized.monitorIdentifier && typeof normalized.monitorIdentifier === 'object') {
+    const mi = { ...(normalized.monitorIdentifier as Record<string, unknown>) }
+    if ('monitor_id' in mi) {
+      mi.monitorId = mi.monitor_id
+      delete mi.monitor_id
+    }
+    if ('monitor_tags' in mi) {
+      mi.monitorTags = mi.monitor_tags
+      delete mi.monitor_tags
+    }
+    normalized.monitorIdentifier = mi
+  }
+
+  // Step 3: Handle schedule date conversions and timezone
   if (normalized.schedule && typeof normalized.schedule === 'object') {
     const schedule = { ...(normalized.schedule as Record<string, unknown>) }
 
