@@ -17,7 +17,7 @@ describe('Error Handling', () => {
 
       // All should be in the valid range
       const codes = Object.values(DatadogErrorCode)
-      codes.forEach(code => {
+      codes.forEach((code) => {
         expect(code).toBeGreaterThanOrEqual(-32099)
         expect(code).toBeLessThanOrEqual(-32000)
       })
@@ -25,19 +25,19 @@ describe('Error Handling', () => {
 
     it('should not conflict with standard MCP error codes', () => {
       const mcpCodes = [
-        ErrorCode.ConnectionClosed,   // -32000
-        ErrorCode.RequestTimeout,     // -32001
-        ErrorCode.ParseError,         // -32700
-        ErrorCode.InvalidRequest,     // -32600
-        ErrorCode.MethodNotFound,     // -32601
-        ErrorCode.InvalidParams,      // -32602
-        ErrorCode.InternalError       // -32603
+        ErrorCode.ConnectionClosed, // -32000
+        ErrorCode.RequestTimeout, // -32001
+        ErrorCode.ParseError, // -32700
+        ErrorCode.InvalidRequest, // -32600
+        ErrorCode.MethodNotFound, // -32601
+        ErrorCode.InvalidParams, // -32602
+        ErrorCode.InternalError // -32603
       ]
 
       const datadogCodes = Object.values(DatadogErrorCode)
 
-      datadogCodes.forEach(ddCode => {
-        mcpCodes.forEach(mcpCode => {
+      datadogCodes.forEach((ddCode) => {
+        mcpCodes.forEach((mcpCode) => {
           expect(ddCode).not.toBe(mcpCode)
         })
       })
@@ -114,7 +114,7 @@ describe('Error Handling', () => {
     it('should map 500/502/503 to ServiceUnavailable', () => {
       const statusCodes = [500, 502, 503]
 
-      statusCodes.forEach(code => {
+      statusCodes.forEach((code) => {
         const error = { code, body: { errors: ['Service error'] } }
 
         expect(() => handleDatadogError(error)).toThrow(McpError)

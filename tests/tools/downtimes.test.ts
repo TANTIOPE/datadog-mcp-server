@@ -152,19 +152,21 @@ describe('Downtimes Tool', () => {
         })
       )
 
-      await expect(api.createDowntime({
-        body: {
-          data: {
-            type: 'downtime',
-            attributes: {
-              scope: 'invalid',
-              monitorIdentifier: {
-                monitorTags: ['invalid']
+      await expect(
+        api.createDowntime({
+          body: {
+            data: {
+              type: 'downtime',
+              attributes: {
+                scope: 'invalid',
+                monitorIdentifier: {
+                  monitorTags: ['invalid']
+                }
               }
             }
           }
-        }
-      })).rejects.toMatchObject({
+        })
+      ).rejects.toMatchObject({
         code: 400
       })
     })
@@ -174,7 +176,7 @@ describe('Downtimes Tool', () => {
     it('should update an existing downtime', async () => {
       server.use(
         http.patch(endpoints.updateDowntime('dt-001'), async ({ request }) => {
-          const _body = await request.json() as Record<string, unknown>
+          const _body = (await request.json()) as Record<string, unknown>
           return jsonResponse({
             data: {
               ...fixtures.single.data,

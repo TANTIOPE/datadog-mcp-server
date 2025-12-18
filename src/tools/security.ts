@@ -14,8 +14,14 @@ const InputSchema = {
   query: z.string().optional().describe('Search query for signals or findings'),
   from: z.string().optional().describe('Start time (ISO 8601, relative like "1h", "7d")'),
   to: z.string().optional().describe('End time (ISO 8601, relative like "now")'),
-  severity: z.enum(['info', 'low', 'medium', 'high', 'critical']).optional().describe('Filter by severity'),
-  status: z.enum(['open', 'under_review', 'archived']).optional().describe('Filter signals by status'),
+  severity: z
+    .enum(['info', 'low', 'medium', 'high', 'critical'])
+    .optional()
+    .describe('Filter by severity'),
+  status: z
+    .enum(['open', 'under_review', 'archived'])
+    .optional()
+    .describe('Filter signals by status'),
   pageSize: z.number().optional().describe('Number of results to return'),
   pageCursor: z.string().optional().describe('Cursor for pagination')
 }
@@ -69,7 +75,7 @@ function formatRule(rule: v2.SecurityMonitoringRuleResponse): SecurityRuleSummar
     creationAuthorId: (ruleData['creationAuthorId'] as number) ?? null,
     isDefault: (ruleData['isDefault'] as boolean) ?? false,
     isDeleted: (ruleData['isDeleted'] as boolean) ?? false,
-    filters: ((ruleData['filters'] as Array<{ action: string; query: string }>) ?? []).map(f => ({
+    filters: ((ruleData['filters'] as Array<{ action: string; query: string }>) ?? []).map((f) => ({
       action: f.action ?? '',
       query: f.query ?? ''
     }))
@@ -79,7 +85,7 @@ function formatRule(rule: v2.SecurityMonitoringRuleResponse): SecurityRuleSummar
 function formatSignal(signal: v2.SecurityMonitoringSignal): SecuritySignalSummary {
   const attrs = signal.attributes ?? {}
   // Custom attributes are in the additionalProperties
-  const customAttrs = (attrs as Record<string, unknown>)
+  const customAttrs = attrs as Record<string, unknown>
 
   return {
     id: signal.id ?? '',
@@ -198,7 +204,9 @@ async function listFindings(
   const response = await api.searchSecurityMonitoringSignals({
     body: {
       filter: {
-        query: params.query ?? '@workflow.rule.type:workload_security OR @workflow.rule.type:cloud_configuration',
+        query:
+          params.query ??
+          '@workflow.rule.type:workload_security OR @workflow.rule.type:cloud_configuration',
         from: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000), // Last 7 days
         to: new Date()
       },
@@ -239,7 +247,13 @@ export function registerSecurityTool(
             return toolResult(await listRules(api, { pageSize, pageCursor }, limits))
 
           case 'signals':
-            return toolResult(await searchSignals(api, { query, from, to, severity, status, pageSize, pageCursor }, limits))
+            return toolResult(
+              await searchSignals(
+                api,
+                { query, from, to, severity, status, pageSize, pageCursor },
+                limits
+              )
+            )
 
           case 'findings':
             return toolResult(await listFindings(api, { query, pageSize, pageCursor }, limits))

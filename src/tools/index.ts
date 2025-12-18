@@ -33,14 +33,26 @@ export function registerAllTools(
   const enabled = (tool: string) => !disabledTools.includes(tool)
 
   if (enabled('monitors')) registerMonitorsTool(server, clients.monitors, limits, readOnly, site)
-  if (enabled('dashboards')) registerDashboardsTool(server, clients.dashboards, limits, readOnly, site)
+  if (enabled('dashboards'))
+    registerDashboardsTool(server, clients.dashboards, limits, readOnly, site)
   if (enabled('logs')) registerLogsTool(server, clients.logs, limits, site)
-  if (enabled('metrics')) registerMetricsTool(server, clients.metricsV1, clients.metricsV2, limits, site)
+  if (enabled('metrics'))
+    registerMetricsTool(server, clients.metricsV1, clients.metricsV2, limits, site)
   if (enabled('traces')) registerTracesTool(server, clients.spans, clients.services, limits, site)
-  if (enabled('events')) registerEventsTool(server, clients.eventsV1, clients.eventsV2, clients.monitors, limits, readOnly, site)
+  if (enabled('events'))
+    registerEventsTool(
+      server,
+      clients.eventsV1,
+      clients.eventsV2,
+      clients.monitors,
+      limits,
+      readOnly,
+      site
+    )
   if (enabled('incidents')) registerIncidentsTool(server, clients.incidents, limits, readOnly, site)
   if (enabled('slos')) registerSlosTool(server, clients.slo, limits, readOnly, site)
-  if (enabled('synthetics')) registerSyntheticsTool(server, clients.synthetics, limits, readOnly, site)
+  if (enabled('synthetics'))
+    registerSyntheticsTool(server, clients.synthetics, limits, readOnly, site)
   if (enabled('hosts')) registerHostsTool(server, clients.hosts, limits, readOnly)
   if (enabled('downtimes')) registerDowntimesTool(server, clients.downtimes, limits, readOnly)
   if (enabled('rum')) registerRumTool(server, clients.rum, limits, site)

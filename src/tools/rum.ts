@@ -11,25 +11,52 @@ const ActionSchema = z.enum(['applications', 'events', 'aggregate', 'performance
 
 const InputSchema = {
   action: ActionSchema.describe('Action to perform'),
-  query: z.string().optional().describe('RUM query string (e.g., "@type:view @application.id:abc")'),
-  from: z.string().optional().describe('Start time (ISO 8601, relative like "1h", "7d", or precise like "1d@10:00")'),
-  to: z.string().optional().describe('End time (ISO 8601, relative like "now", or precise timestamp)'),
-  type: z.enum(['all', 'view', 'action', 'error', 'long_task', 'resource']).optional().describe('RUM event type filter'),
+  query: z
+    .string()
+    .optional()
+    .describe('RUM query string (e.g., "@type:view @application.id:abc")'),
+  from: z
+    .string()
+    .optional()
+    .describe('Start time (ISO 8601, relative like "1h", "7d", or precise like "1d@10:00")'),
+  to: z
+    .string()
+    .optional()
+    .describe('End time (ISO 8601, relative like "now", or precise timestamp)'),
+  type: z
+    .enum(['all', 'view', 'action', 'error', 'long_task', 'resource'])
+    .optional()
+    .describe('RUM event type filter'),
   sort: z.enum(['timestamp', '-timestamp']).optional().describe('Sort order for events'),
   limit: z.number().optional().describe('Maximum number of events to return'),
-  groupBy: z.array(z.string()).optional().describe('Fields to group by for aggregation (e.g., ["@view.url_path", "@session.type"])'),
-  compute: z.object({
-    aggregation: z.enum(['count', 'cardinality', 'avg', 'sum', 'min', 'max', 'percentile']).optional(),
-    metric: z.string().optional(),
-    interval: z.string().optional()
-  }).optional().describe('Compute configuration for aggregation'),
+  groupBy: z
+    .array(z.string())
+    .optional()
+    .describe('Fields to group by for aggregation (e.g., ["@view.url_path", "@session.type"])'),
+  compute: z
+    .object({
+      aggregation: z
+        .enum(['count', 'cardinality', 'avg', 'sum', 'min', 'max', 'percentile'])
+        .optional(),
+      metric: z.string().optional(),
+      interval: z.string().optional()
+    })
+    .optional()
+    .describe('Compute configuration for aggregation'),
   // Performance action parameters
-  metrics: z.array(z.enum(['lcp', 'fcp', 'cls', 'fid', 'inp', 'loading_time'])).optional()
-    .describe('Core Web Vitals metrics to retrieve (default: all). lcp=Largest Contentful Paint, fcp=First Contentful Paint, cls=Cumulative Layout Shift, fid=First Input Delay, inp=Interaction to Next Paint, loading_time=View loading time'),
+  metrics: z
+    .array(z.enum(['lcp', 'fcp', 'cls', 'fid', 'inp', 'loading_time']))
+    .optional()
+    .describe(
+      'Core Web Vitals metrics to retrieve (default: all). lcp=Largest Contentful Paint, fcp=First Contentful Paint, cls=Cumulative Layout Shift, fid=First Input Delay, inp=Interaction to Next Paint, loading_time=View loading time'
+    ),
   // Waterfall action parameters
   applicationId: z.string().optional().describe('Application ID for waterfall action'),
   sessionId: z.string().optional().describe('Session ID for waterfall action'),
-  viewId: z.string().optional().describe('View ID for waterfall action (optional, filters to specific view)')
+  viewId: z
+    .string()
+    .optional()
+    .describe('View ID for waterfall action (optional, filters to specific view)')
 }
 
 interface RumApplicationSummary {
@@ -135,21 +162,27 @@ function formatEvent(event: v2.RUMEvent): RumEventSummary {
         email: (usr['email'] as string) ?? null,
         name: (usr['name'] as string) ?? null
       },
-      action: action['id'] ? {
-        id: (action['id'] as string) ?? null,
-        type: (action['type'] as string) ?? null,
-        name: (action['name'] as string) ?? null
-      } : undefined,
-      error: error['message'] ? {
-        message: (error['message'] as string) ?? null,
-        source: (error['source'] as string) ?? null,
-        stack: (error['stack'] as string) ?? null
-      } : undefined,
-      resource: resource['url'] ? {
-        url: (resource['url'] as string) ?? null,
-        type: (resource['type'] as string) ?? null,
-        duration: (resource['duration'] as number) ?? null
-      } : undefined
+      action: action['id']
+        ? {
+            id: (action['id'] as string) ?? null,
+            type: (action['type'] as string) ?? null,
+            name: (action['name'] as string) ?? null
+          }
+        : undefined,
+      error: error['message']
+        ? {
+            message: (error['message'] as string) ?? null,
+            source: (error['source'] as string) ?? null,
+            stack: (error['stack'] as string) ?? null
+          }
+        : undefined,
+      resource: resource['url']
+        ? {
+            url: (resource['url'] as string) ?? null,
+            type: (resource['type'] as string) ?? null,
+            duration: (resource['duration'] as number) ?? null
+          }
+        : undefined
     }
   }
 }
@@ -235,7 +268,7 @@ async function aggregateEvents(
   const toTime = parseTime(params.to, Math.floor(nowMs / 1000))
 
   // Build group by configurations
-  const groupByConfigs: v2.RUMGroupBy[] = (params.groupBy ?? []).map(field => ({
+  const groupByConfigs: v2.RUMGroupBy[] = (params.groupBy ?? []).map((field) => ({
     facet: field,
     limit: 10,
     sort: {
@@ -274,7 +307,7 @@ async function aggregateEvents(
   })
 
   // Format buckets from response
-  const buckets = (response.data?.buckets ?? []).map(bucket => ({
+  const buckets = (response.data?.buckets ?? []).map((bucket) => ({
     by: bucket.by ?? {},
     computes: bucket.computes ?? {}
   }))
@@ -293,32 +326,33 @@ async function aggregateEvents(
 }
 
 // Core Web Vitals metric configurations
-const METRIC_CONFIGS: Record<string, { field: string; aggregations: v2.RUMAggregationFunction[] }> = {
-  lcp: {
-    field: '@view.largest_contentful_paint',
-    aggregations: ['avg', 'pc75', 'pc90']
-  },
-  fcp: {
-    field: '@view.first_contentful_paint',
-    aggregations: ['avg', 'pc75', 'pc90']
-  },
-  cls: {
-    field: '@view.cumulative_layout_shift',
-    aggregations: ['avg', 'pc75']
-  },
-  fid: {
-    field: '@view.first_input_delay',
-    aggregations: ['avg', 'pc75', 'pc90']
-  },
-  inp: {
-    field: '@view.interaction_to_next_paint',
-    aggregations: ['avg', 'pc75', 'pc90']
-  },
-  loading_time: {
-    field: '@view.loading_time',
-    aggregations: ['avg', 'pc75', 'pc90']
+const METRIC_CONFIGS: Record<string, { field: string; aggregations: v2.RUMAggregationFunction[] }> =
+  {
+    lcp: {
+      field: '@view.largest_contentful_paint',
+      aggregations: ['avg', 'pc75', 'pc90']
+    },
+    fcp: {
+      field: '@view.first_contentful_paint',
+      aggregations: ['avg', 'pc75', 'pc90']
+    },
+    cls: {
+      field: '@view.cumulative_layout_shift',
+      aggregations: ['avg', 'pc75']
+    },
+    fid: {
+      field: '@view.first_input_delay',
+      aggregations: ['avg', 'pc75', 'pc90']
+    },
+    inp: {
+      field: '@view.interaction_to_next_paint',
+      aggregations: ['avg', 'pc75', 'pc90']
+    },
+    loading_time: {
+      field: '@view.loading_time',
+      aggregations: ['avg', 'pc75', 'pc90']
+    }
   }
-}
 
 async function getPerformanceMetrics(
   api: v2.RUMApi,
@@ -357,7 +391,7 @@ async function getPerformanceMetrics(
   }
 
   // Build group by configurations
-  const groupByConfigs: v2.RUMGroupBy[] = (params.groupBy ?? []).map(field => ({
+  const groupByConfigs: v2.RUMGroupBy[] = (params.groupBy ?? []).map((field) => ({
     facet: field,
     limit: 10,
     sort: {
@@ -383,8 +417,8 @@ async function getPerformanceMetrics(
   })
 
   // Format response into structured metrics
-  const buckets = (response.data?.buckets ?? []).map(bucket => {
-    const computes = bucket.computes as Record<string, { value?: number }> ?? {}
+  const buckets = (response.data?.buckets ?? []).map((bucket) => {
+    const computes = (bucket.computes as Record<string, { value?: number }>) ?? {}
     const metrics: Record<string, Record<string, number | null>> = {}
 
     // Organize computes by metric name
@@ -397,7 +431,7 @@ async function getPerformanceMetrics(
         // The key format in response is like "c0", "c1", etc. based on order
         // We need to find the matching compute by index
         const computeIndex = computeConfigs.findIndex(
-          c => c.metric === config.field && c.aggregation === aggregation
+          (c) => c.metric === config.field && c.aggregation === aggregation
         )
         const key = `c${computeIndex}`
         const value = computes[key]?.value
@@ -480,27 +514,35 @@ function formatWaterfallEvent(event: v2.RUMEvent): WaterfallEvent {
       url: (view['url'] as string) ?? null,
       name: (view['name'] as string) ?? null
     },
-    resource: resource['url'] ? {
-      url: (resource['url'] as string) ?? null,
-      type: (resource['type'] as string) ?? null,
-      duration: (resource['duration'] as number) ?? null,
-      size: (resource['size'] as number) ?? null,
-      statusCode: (resource['status_code'] as number) ?? null
-    } : undefined,
-    action: action['id'] ? {
-      id: (action['id'] as string) ?? null,
-      type: (action['type'] as string) ?? null,
-      name: (action['name'] as string) ?? null,
-      target: (action['target'] as string) ?? null
-    } : undefined,
-    error: error['message'] ? {
-      message: (error['message'] as string) ?? null,
-      source: (error['source'] as string) ?? null,
-      type: (error['type'] as string) ?? null
-    } : undefined,
-    longTask: longTask['duration'] ? {
-      duration: (longTask['duration'] as number) ?? null
-    } : undefined
+    resource: resource['url']
+      ? {
+          url: (resource['url'] as string) ?? null,
+          type: (resource['type'] as string) ?? null,
+          duration: (resource['duration'] as number) ?? null,
+          size: (resource['size'] as number) ?? null,
+          statusCode: (resource['status_code'] as number) ?? null
+        }
+      : undefined,
+    action: action['id']
+      ? {
+          id: (action['id'] as string) ?? null,
+          type: (action['type'] as string) ?? null,
+          name: (action['name'] as string) ?? null,
+          target: (action['target'] as string) ?? null
+        }
+      : undefined,
+    error: error['message']
+      ? {
+          message: (error['message'] as string) ?? null,
+          source: (error['source'] as string) ?? null,
+          type: (error['type'] as string) ?? null
+        }
+      : undefined,
+    longTask: longTask['duration']
+      ? {
+          duration: (longTask['duration'] as number) ?? null
+        }
+      : undefined
   }
 }
 
@@ -515,10 +557,7 @@ async function getSessionWaterfall(
   site: string
 ) {
   // Build query for specific session
-  const queryParts = [
-    `@application.id:${params.applicationId}`,
-    `@session.id:${params.sessionId}`
-  ]
+  const queryParts = [`@application.id:${params.applicationId}`, `@session.id:${params.sessionId}`]
   if (params.viewId) {
     queryParts.push(`@view.id:${params.viewId}`)
   }
@@ -533,11 +572,11 @@ async function getSessionWaterfall(
 
   // Group events by type for summary
   const summary = {
-    views: events.filter(e => e.type === 'view').length,
-    resources: events.filter(e => e.type === 'resource').length,
-    actions: events.filter(e => e.type === 'action').length,
-    errors: events.filter(e => e.type === 'error').length,
-    longTasks: events.filter(e => e.type === 'long_task').length
+    views: events.filter((e) => e.type === 'view').length,
+    resources: events.filter((e) => e.type === 'resource').length,
+    actions: events.filter((e) => e.type === 'action').length,
+    errors: events.filter((e) => e.type === 'error').length,
+    longTasks: events.filter((e) => e.type === 'long_task').length
   }
 
   return {
@@ -563,26 +602,48 @@ export function registerRumTool(
     'rum',
     'Query Datadog Real User Monitoring (RUM) data. Actions: applications (list RUM apps), events (search RUM events), aggregate (group and count events), performance (Core Web Vitals: LCP, FCP, CLS, FID, INP), waterfall (session timeline with resources/actions/errors). Use for: frontend performance, user sessions, page views, errors, resource loading.',
     InputSchema,
-    async ({ action, query, from, to, type, sort, limit, groupBy, compute, metrics, applicationId, sessionId, viewId }) => {
+    async ({
+      action,
+      query,
+      from,
+      to,
+      type,
+      sort,
+      limit,
+      groupBy,
+      compute,
+      metrics,
+      applicationId,
+      sessionId,
+      viewId
+    }) => {
       try {
         switch (action) {
           case 'applications':
             return toolResult(await listApplications(api))
 
           case 'events':
-            return toolResult(await searchEvents(api, { query, from, to, type, sort, limit }, limits, site))
+            return toolResult(
+              await searchEvents(api, { query, from, to, type, sort, limit }, limits, site)
+            )
 
           case 'aggregate':
-            return toolResult(await aggregateEvents(api, { query, from, to, groupBy, compute }, limits, site))
+            return toolResult(
+              await aggregateEvents(api, { query, from, to, groupBy, compute }, limits, site)
+            )
 
           case 'performance':
-            return toolResult(await getPerformanceMetrics(api, { query, from, to, groupBy, metrics }, limits, site))
+            return toolResult(
+              await getPerformanceMetrics(api, { query, from, to, groupBy, metrics }, limits, site)
+            )
 
           case 'waterfall':
             if (!applicationId || !sessionId) {
               throw new Error('waterfall action requires applicationId and sessionId parameters')
             }
-            return toolResult(await getSessionWaterfall(api, { applicationId, sessionId, viewId }, limits, site))
+            return toolResult(
+              await getSessionWaterfall(api, { applicationId, sessionId, viewId }, limits, site)
+            )
 
           default:
             throw new Error(`Unknown action: ${action}`)

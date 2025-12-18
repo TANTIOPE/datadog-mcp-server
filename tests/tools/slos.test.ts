@@ -170,13 +170,15 @@ describe('SLOs Tool', () => {
         })
       )
 
-      await expect(api.createSLO({
-        body: {
-          name: 'Invalid SLO',
-          type: 'metric',
-          thresholds: []
-        }
-      })).rejects.toMatchObject({
+      await expect(
+        api.createSLO({
+          body: {
+            name: 'Invalid SLO',
+            type: 'metric',
+            thresholds: []
+          }
+        })
+      ).rejects.toMatchObject({
         code: 400
       })
     })
@@ -186,12 +188,14 @@ describe('SLOs Tool', () => {
     it('should update an existing SLO', async () => {
       server.use(
         http.put(endpoints.updateSlo('slo-001'), async ({ request }) => {
-          const _body = await request.json() as Record<string, unknown>
+          const _body = (await request.json()) as Record<string, unknown>
           return jsonResponse({
-            data: [{
-              ...fixtures.single.data,
-              name: 'Updated SLO Name'
-            }]
+            data: [
+              {
+                ...fixtures.single.data,
+                name: 'Updated SLO Name'
+              }
+            ]
           })
         })
       )
@@ -267,11 +271,13 @@ describe('SLOs Tool', () => {
         })
       )
 
-      await expect(api.getSLOHistory({
-        sloId: 'nonexistent',
-        fromTs: Math.floor(Date.now() / 1000) - 86400,
-        toTs: Math.floor(Date.now() / 1000)
-      })).rejects.toMatchObject({
+      await expect(
+        api.getSLOHistory({
+          sloId: 'nonexistent',
+          fromTs: Math.floor(Date.now() / 1000) - 86400,
+          toTs: Math.floor(Date.now() / 1000)
+        })
+      ).rejects.toMatchObject({
         code: 404
       })
     })

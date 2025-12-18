@@ -7,13 +7,25 @@ import { hoursAgo, now, parseTime, ensureValidTimeRange, parseDurationToNs } fro
 import { buildEventsUrl } from '../utils/urls.js'
 import type { LimitsConfig } from '../config/schema.js'
 
-const ActionSchema = z.enum(['list', 'get', 'create', 'search', 'aggregate', 'top', 'timeseries', 'incidents'])
+const ActionSchema = z.enum([
+  'list',
+  'get',
+  'create',
+  'search',
+  'aggregate',
+  'top',
+  'timeseries',
+  'incidents'
+])
 
 const InputSchema = {
   action: ActionSchema.describe('Action to perform'),
   id: z.string().optional().describe('Event ID (for get action)'),
   query: z.string().optional().describe('Search query'),
-  from: z.string().optional().describe('Start time (ISO 8601, relative like "1h", or Unix timestamp)'),
+  from: z
+    .string()
+    .optional()
+    .describe('Start time (ISO 8601, relative like "1h", or Unix timestamp)'),
   to: z.string().optional().describe('End time (ISO 8601, relative like "1h", or Unix timestamp)'),
   priority: z.enum(['normal', 'low']).optional().describe('Event priority'),
   sources: z.array(z.string()).optional().describe('Filter by sources'),
@@ -21,15 +33,30 @@ const InputSchema = {
   limit: z.number().optional().describe('Maximum number of events to return'),
   title: z.string().optional().describe('Event title (for create)'),
   text: z.string().optional().describe('Event text (for create)'),
-  alertType: z.enum(['error', 'warning', 'info', 'success']).optional().describe('Alert type (for create)'),
-  groupBy: z.array(z.string()).optional().describe('Fields to group by: monitor_name, priority, alert_type, source'),
+  alertType: z
+    .enum(['error', 'warning', 'info', 'success'])
+    .optional()
+    .describe('Alert type (for create)'),
+  groupBy: z
+    .array(z.string())
+    .optional()
+    .describe('Fields to group by: monitor_name, priority, alert_type, source'),
   cursor: z.string().optional().describe('Pagination cursor from previous response'),
   // Phase 2: Timeseries
-  interval: z.string().optional().describe('Time bucket interval for timeseries: 1h, 4h, 1d (default: 1h)'),
+  interval: z
+    .string()
+    .optional()
+    .describe('Time bucket interval for timeseries: 1h, 4h, 1d (default: 1h)'),
   // Phase 2: Incidents deduplication
-  dedupeWindow: z.string().optional().describe('Deduplication window for incidents: 5m, 15m, 1h (default: 5m)'),
+  dedupeWindow: z
+    .string()
+    .optional()
+    .describe('Deduplication window for incidents: 5m, 15m, 1h (default: 5m)'),
   // Phase 3: Monitor enrichment
-  enrich: z.boolean().optional().describe('Enrich events with monitor metadata (slower, adds monitor details)')
+  enrich: z
+    .boolean()
+    .optional()
+    .describe('Enrich events with monitor metadata (slower, adds monitor details)')
 }
 
 // v1 Event summary format
@@ -209,7 +236,7 @@ function buildGroupKey(event: EventSummaryV2, groupBy: string[]): string {
         break
       default: {
         // For unknown fields, try to find in tags
-        const tagValue = event.tags.find(t => t.startsWith(`${field}:`))?.split(':')[1] ?? ''
+        const tagValue = event.tags.find((t) => t.startsWith(`${field}:`))?.split(':')[1] ?? ''
         parts.push(tagValue)
       }
     }
@@ -246,7 +273,8 @@ function formatEventV2(e: v2.EventResponse): EventSummaryV2 {
   const message = (attrs.message as string) ?? ''
 
   // v2 API often returns empty title - extract from message body instead
-  let title = (attrs.title as string) ?? ''
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let title = ((attrs as any).title as string) ?? ''
   if (!title && message) {
     title = extractTitleFromMessage(message)
   }
@@ -256,19 +284,19 @@ function formatEventV2(e: v2.EventResponse): EventSummaryV2 {
 
   // Extract source from tags or attributes
   const tags = (attrs.tags as string[]) ?? []
-  const sourceTag = tags.find(t => t.startsWith('source:'))
+  const sourceTag = tags.find((t) => t.startsWith('source:'))
   const source = sourceTag?.split(':')[1] ?? ''
 
   // Extract alert_type from tags
-  const alertTypeTag = tags.find(t => t.startsWith('alert_type:'))
+  const alertTypeTag = tags.find((t) => t.startsWith('alert_type:'))
   const alertType = alertTypeTag?.split(':')[1] ?? ''
 
   // Extract host from tags
-  const hostTag = tags.find(t => t.startsWith('host:'))
+  const hostTag = tags.find((t) => t.startsWith('host:'))
   const host = hostTag?.split(':')[1] ?? ''
 
   // Extract priority from tags
-  const priorityTag = tags.find(t => t.startsWith('priority:'))
+  const priorityTag = tags.find((t) => t.startsWith('priority:'))
   const priority = priorityTag?.split(':')[1] ?? 'normal'
 
   return {
@@ -282,12 +310,15 @@ function formatEventV2(e: v2.EventResponse): EventSummaryV2 {
     alertType,
     host,
     monitorId,
-    monitorInfo: monitorInfo.name !== title ? {
-      name: monitorInfo.name,
-      status: monitorInfo.status,
-      scope: monitorInfo.scope,
-      priority: monitorInfo.priority
-    } : undefined
+    monitorInfo:
+      monitorInfo.name !== title
+        ? {
+            name: monitorInfo.name,
+            status: monitorInfo.status,
+            scope: monitorInfo.scope,
+            priority: monitorInfo.priority
+          }
+        : undefined
   }
 }
 
@@ -324,9 +355,9 @@ async function listEventsV1(
   // Client-side query filter
   if (params.query) {
     const lowerQuery = params.query.toLowerCase()
-    events = events.filter(e =>
-      e.title?.toLowerCase().includes(lowerQuery) ||
-      e.text?.toLowerCase().includes(lowerQuery)
+    events = events.filter(
+      (e) =>
+        e.title?.toLowerCase().includes(lowerQuery) || e.text?.toLowerCase().includes(lowerQuery)
     )
   }
 
@@ -396,7 +427,7 @@ function buildEventQuery(params: {
   }
 
   if (params.sources && params.sources.length > 0) {
-    const sourceFilter = params.sources.map(s => `source:${s}`).join(' OR ')
+    const sourceFilter = params.sources.map((s) => `source:${s}`).join(' OR ')
     parts.push(`(${sourceFilter})`)
   }
 
@@ -614,13 +645,18 @@ async function topEventsV2(
   const effectiveQuery = params.query ?? 'source:alert'
   const effectiveTags = params.tags ?? ['source:alert']
 
-  const result = await aggregateEventsV2(api, {
-    ...params,
-    query: effectiveQuery,
-    tags: effectiveTags,
-    groupBy: params.groupBy ?? ['monitor_name'],
-    limit: params.limit ?? 10
-  }, limits, site)
+  const result = await aggregateEventsV2(
+    api,
+    {
+      ...params,
+      query: effectiveQuery,
+      tags: effectiveTags,
+      groupBy: params.groupBy ?? ['monitor_name'],
+      limit: params.limit ?? 10
+    },
+    limits,
+    site
+  )
 
   // Format for easier consumption
   return {
@@ -881,7 +917,11 @@ async function incidentsEventsV2(
       // or default to 'triggered' since alert events are triggers by nature
       if (!status && formatted.source === 'alert') {
         const msgLower = formatted.message.toLowerCase()
-        if (msgLower.includes('recovered') || msgLower.includes('[ok]') || msgLower.includes('resolved')) {
+        if (
+          msgLower.includes('recovered') ||
+          msgLower.includes('[ok]') ||
+          msgLower.includes('resolved')
+        ) {
           status = 'recovered'
         } else {
           status = 'triggered'
@@ -890,7 +930,12 @@ async function incidentsEventsV2(
 
       const existing = incidents.get(monitorName)
 
-      if (status === 'triggered' || status === 'alert' || status === 're-triggered' || status === 'renotify') {
+      if (
+        status === 'triggered' ||
+        status === 'alert' ||
+        status === 're-triggered' ||
+        status === 'renotify'
+      ) {
         if (existing) {
           // Check if within dedupe window
           const timeSinceLastTrigger = eventTs.getTime() - existing.lastTrigger.getTime()
@@ -943,7 +988,7 @@ async function incidentsEventsV2(
   }
 
   // Convert to array and calculate durations
-  const incidentList: IncidentEvent[] = [...incidents.values()].map(inc => {
+  const incidentList: IncidentEvent[] = [...incidents.values()].map((inc) => {
     let duration: string | undefined
     if (inc.recoveredAt) {
       const durationMs = inc.recoveredAt.getTime() - inc.firstTrigger.getTime()
@@ -969,7 +1014,9 @@ async function incidentsEventsV2(
   })
 
   // Sort by first trigger descending, apply limit
-  incidentList.sort((a, b) => new Date(b.firstTrigger).getTime() - new Date(a.firstTrigger).getTime())
+  incidentList.sort(
+    (a, b) => new Date(b.firstTrigger).getTime() - new Date(a.firstTrigger).getTime()
+  )
   const effectiveLimit = Math.min(params.limit ?? 100, 500)
 
   return {
@@ -982,8 +1029,8 @@ async function incidentsEventsV2(
       dedupeWindowMs,
       totalIncidents: incidentList.length,
       totalEvents: eventCount,
-      recoveredCount: incidentList.filter(i => i.recovered).length,
-      activeCount: incidentList.filter(i => !i.recovered).length,
+      recoveredCount: incidentList.filter((i) => i.recovered).length,
+      activeCount: incidentList.filter((i) => !i.recovered).length,
       truncated: eventCount >= maxEventsToProcess,
       datadog_url: buildEventsUrl(fullQuery, validFrom, validTo, site)
     }
@@ -1033,7 +1080,7 @@ async function enrichWithMonitorMetadata(
   }
 
   // Enrich events
-  return events.map(event => {
+  return events.map((event) => {
     const enriched: EnrichedEvent = { ...event }
 
     if (event.monitorInfo?.name) {
@@ -1079,20 +1126,44 @@ Use action:"timeseries" with interval:"1h" to see alert trends over time.
 Use action:"incidents" with dedupeWindow:"5m" to deduplicate alerts into incidents.
 Use enrich:true with search to get monitor metadata (slower).`,
     InputSchema,
-    async ({ action, id, query, from, to, priority, sources, tags, limit, title, text, alertType, groupBy, cursor, interval, dedupeWindow, enrich }) => {
+    async ({
+      action,
+      id,
+      query,
+      from,
+      to,
+      priority,
+      sources,
+      tags,
+      limit,
+      title,
+      text,
+      alertType,
+      groupBy,
+      cursor,
+      interval,
+      dedupeWindow,
+      enrich
+    }) => {
       try {
         checkReadOnly(action, readOnly)
         switch (action) {
           case 'list':
-            return toolResult(await listEventsV1(apiV1, {
-              query,
-              from,
-              to,
-              priority,
-              sources,
-              tags,
-              limit
-            }, limits))
+            return toolResult(
+              await listEventsV1(
+                apiV1,
+                {
+                  query,
+                  from,
+                  to,
+                  priority,
+                  sources,
+                  tags,
+                  limit
+                },
+                limits
+              )
+            )
 
           case 'get': {
             const eventId = requireParam(id, 'id', 'get')
@@ -1102,26 +1173,33 @@ Use enrich:true with search to get monitor metadata (slower).`,
           case 'create': {
             const eventTitle = requireParam(title, 'title', 'create')
             const eventText = requireParam(text, 'text', 'create')
-            return toolResult(await createEventV1(apiV1, {
-              title: eventTitle,
-              text: eventText,
-              priority,
-              tags,
-              alertType
-            }))
+            return toolResult(
+              await createEventV1(apiV1, {
+                title: eventTitle,
+                text: eventText,
+                priority,
+                tags,
+                alertType
+              })
+            )
           }
 
           case 'search': {
-            const result = await searchEventsV2(apiV2, {
-              query,
-              from,
-              to,
-              sources,
-              tags,
-              priority,
-              limit,
-              cursor
-            }, limits, site)
+            const result = await searchEventsV2(
+              apiV2,
+              {
+                query,
+                from,
+                to,
+                sources,
+                tags,
+                priority,
+                limit,
+                cursor
+              },
+              limits,
+              site
+            )
 
             // Phase 3: Optional enrichment
             if (enrich && result.events.length > 0) {
@@ -1133,49 +1211,77 @@ Use enrich:true with search to get monitor metadata (slower).`,
           }
 
           case 'aggregate':
-            return toolResult(await aggregateEventsV2(apiV2, {
-              query,
-              from,
-              to,
-              sources,
-              tags,
-              groupBy,
-              limit
-            }, limits, site))
+            return toolResult(
+              await aggregateEventsV2(
+                apiV2,
+                {
+                  query,
+                  from,
+                  to,
+                  sources,
+                  tags,
+                  groupBy,
+                  limit
+                },
+                limits,
+                site
+              )
+            )
 
           case 'top':
-            return toolResult(await topEventsV2(apiV2, {
-              query,
-              from,
-              to,
-              sources,
-              tags,
-              groupBy,
-              limit
-            }, limits, site))
+            return toolResult(
+              await topEventsV2(
+                apiV2,
+                {
+                  query,
+                  from,
+                  to,
+                  sources,
+                  tags,
+                  groupBy,
+                  limit
+                },
+                limits,
+                site
+              )
+            )
 
           case 'timeseries':
-            return toolResult(await timeseriesEventsV2(apiV2, {
-              query,
-              from,
-              to,
-              sources,
-              tags,
-              groupBy,
-              interval,
-              limit
-            }, limits, site))
+            return toolResult(
+              await timeseriesEventsV2(
+                apiV2,
+                {
+                  query,
+                  from,
+                  to,
+                  sources,
+                  tags,
+                  groupBy,
+                  interval,
+                  limit
+                },
+                limits,
+                site
+              )
+            )
 
           case 'incidents':
-            return toolResult(await incidentsEventsV2(apiV2, {
-              query,
-              from,
-              to,
-              sources,
-              tags,
-              dedupeWindow,
-              limit
-            }, limits, site))
+            return toolResult(
+              await incidentsEventsV2(
+                apiV2,
+                {
+                  query,
+                  from,
+                  to,
+                  sources,
+                  tags,
+                  dedupeWindow,
+                  limit
+                },
+                limits,
+                site
+              )
+            )
 
           default:
             throw new Error(`Unknown action: ${action}`)

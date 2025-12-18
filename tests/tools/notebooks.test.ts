@@ -116,18 +116,20 @@ describe('Notebooks Tool', () => {
         })
       )
 
-      await expect(api.createNotebook({
-        body: {
-          data: {
-            type: 'notebooks',
-            attributes: {
-              name: '',
-              cells: [],
-              time: { liveSpan: '1h' }
+      await expect(
+        api.createNotebook({
+          body: {
+            data: {
+              type: 'notebooks',
+              attributes: {
+                name: '',
+                cells: [],
+                time: { liveSpan: '1h' }
+              }
             }
           }
-        }
-      })).rejects.toMatchObject({
+        })
+      ).rejects.toMatchObject({
         code: 400
       })
     })
@@ -165,19 +167,21 @@ describe('Notebooks Tool', () => {
         })
       )
 
-      await expect(api.updateNotebook({
-        notebookId: 99999,
-        body: {
-          data: {
-            type: 'notebooks',
-            attributes: {
-              name: 'Test',
-              cells: [],
-              time: { liveSpan: '1h' }
+      await expect(
+        api.updateNotebook({
+          notebookId: 99999,
+          body: {
+            data: {
+              type: 'notebooks',
+              attributes: {
+                name: 'Test',
+                cells: [],
+                time: { liveSpan: '1h' }
+              }
             }
           }
-        }
-      })).rejects.toMatchObject({
+        })
+      ).rejects.toMatchObject({
         code: 404
       })
     })

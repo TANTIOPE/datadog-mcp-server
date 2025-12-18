@@ -9,13 +9,24 @@ const ActionSchema = z.enum(['list', 'get', 'create', 'update', 'delete', 'trigg
 
 const InputSchema = {
   action: ActionSchema.describe('Action to perform'),
-  id: z.string().optional().describe('Test public ID (required for get/update/delete/trigger/results)'),
+  id: z
+    .string()
+    .optional()
+    .describe('Test public ID (required for get/update/delete/trigger/results)'),
   ids: z.array(z.string()).optional().describe('Multiple test IDs (for bulk trigger)'),
-  testType: z.enum(['api', 'browser']).optional().describe('Test type filter (for list) or type for create'),
+  testType: z
+    .enum(['api', 'browser'])
+    .optional()
+    .describe('Test type filter (for list) or type for create'),
   locations: z.array(z.string()).optional().describe('Filter by locations (for list)'),
   tags: z.array(z.string()).optional().describe('Filter by tags (for list)'),
   limit: z.number().optional().describe('Maximum number of tests to return'),
-  config: z.record(z.unknown()).optional().describe('Test configuration (for create/update). Includes: name, type, config, options, locations, message.')
+  config: z
+    .record(z.unknown())
+    .optional()
+    .describe(
+      'Test configuration (for create/update). Includes: name, type, config, options, locations, message.'
+    )
 }
 
 interface SyntheticTestSummary {
@@ -60,22 +71,22 @@ async function listTests(
 
   // Client-side filtering by tags
   if (params.tags && params.tags.length > 0) {
-    tests = tests.filter(t => params.tags!.some(tag => t.tags.includes(tag)))
+    tests = tests.filter((t) => params.tags!.some((tag) => t.tags.includes(tag)))
   }
 
   // Client-side filtering by locations
   if (params.locations && params.locations.length > 0) {
-    tests = tests.filter(t => params.locations!.some(loc => t.locations.includes(loc)))
+    tests = tests.filter((t) => params.locations!.some((loc) => t.locations.includes(loc)))
   }
 
   tests = tests.slice(0, effectiveLimit)
 
   const summary = {
     total: response.tests?.length ?? 0,
-    api: tests.filter(t => t.type === 'api').length,
-    browser: tests.filter(t => t.type === 'browser').length,
-    passing: tests.filter(t => t.status === 'OK' || t.status === 'live').length,
-    failing: tests.filter(t => t.status === 'Alert').length
+    api: tests.filter((t) => t.type === 'api').length,
+    browser: tests.filter((t) => t.type === 'browser').length,
+    passing: tests.filter((t) => t.status === 'OK' || t.status === 'live').length,
+    failing: tests.filter((t) => t.status === 'Alert').length
   }
 
   return { tests, summary }
@@ -123,14 +134,22 @@ function normalizeSyntheticsConfig(config: Record<string, unknown>): Record<stri
   if (!normalized.name) {
     throw new Error("Synthetics test config requires 'name' field")
   }
-  if (!normalized.locations || !Array.isArray(normalized.locations) || normalized.locations.length === 0) {
+  if (
+    !normalized.locations ||
+    !Array.isArray(normalized.locations) ||
+    normalized.locations.length === 0
+  ) {
     throw new Error("Synthetics test config requires 'locations' array (e.g., ['aws:us-east-1'])")
   }
 
   return normalized
 }
 
-async function createTest(api: v1.SyntheticsApi, config: Record<string, unknown>, testType?: 'api' | 'browser') {
+async function createTest(
+  api: v1.SyntheticsApi,
+  config: Record<string, unknown>,
+  testType?: 'api' | 'browser'
+) {
   const normalizedConfig = normalizeSyntheticsConfig(config)
   const type = testType ?? (normalizedConfig.type === 'browser' ? 'browser' : 'api')
 
@@ -194,15 +213,16 @@ async function deleteTests(api: v1.SyntheticsApi, ids: string[]) {
 async function triggerTests(api: v1.SyntheticsApi, ids: string[]) {
   const response = await api.triggerTests({
     body: {
-      tests: ids.map(id => ({ publicId: id }))
+      tests: ids.map((id) => ({ publicId: id }))
     }
   })
 
-  const results = response.results?.map(r => ({
-    publicId: r.publicId ?? '',
-    resultId: r.resultId ?? '',
-    triggered: true
-  })) ?? []
+  const results =
+    response.results?.map((r) => ({
+      publicId: r.publicId ?? '',
+      resultId: r.resultId ?? '',
+      triggered: true
+    })) ?? []
 
   return {
     triggered: results,
@@ -214,7 +234,7 @@ async function getTestResults(api: v1.SyntheticsApi, id: string) {
   // Try API test results first, then browser
   try {
     const response = await api.getAPITestLatestResults({ publicId: id })
-    const results = (response.results ?? []).map(r => ({
+    const results = (response.results ?? []).map((r) => ({
       resultId: r.resultId ?? '',
       status: r.result?.passed ? 'passed' : 'failed',
       checkTime: r.checkTime ? new Date(r.checkTime * 1000).toISOString() : '',
@@ -223,7 +243,7 @@ async function getTestResults(api: v1.SyntheticsApi, id: string) {
     return { results, testType: 'api' }
   } catch {
     const response = await api.getBrowserTestLatestResults({ publicId: id })
-    const results = (response.results ?? []).map(r => ({
+    const results = (response.results ?? []).map((r) => ({
       resultId: r.resultId ?? '',
       // Browser tests don't have 'passed' - determine from errorCount
       status: (r.result?.errorCount ?? 0) === 0 ? 'passed' : 'failed',
@@ -238,7 +258,8 @@ export function registerSyntheticsTool(
   server: McpServer,
   api: v1.SyntheticsApi,
   limits: LimitsConfig,
-  readOnly: boolean = false
+  readOnly: boolean = false,
+  _site: string = 'datadoghq.com'
 ): void {
   server.tool(
     'synthetics',

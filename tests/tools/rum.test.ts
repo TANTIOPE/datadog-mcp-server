@@ -77,9 +77,11 @@ describe('RUM Tool', () => {
         })
       )
 
-      await expect(api.searchRUMEvents({
-        body: {}
-      })).rejects.toMatchObject({
+      await expect(
+        api.searchRUMEvents({
+          body: {}
+        })
+      ).rejects.toMatchObject({
         code: 400
       })
     })
@@ -109,11 +111,13 @@ describe('RUM Tool', () => {
         })
       )
 
-      await expect(api.aggregateRUMEvents({
-        body: {
-          compute: [{ aggregation: 'count' }]
-        }
-      })).rejects.toMatchObject({
+      await expect(
+        api.aggregateRUMEvents({
+          body: {
+            compute: [{ aggregation: 'count' }]
+          }
+        })
+      ).rejects.toMatchObject({
         code: 400
       })
     })
@@ -185,7 +189,7 @@ describe('RUM Tool', () => {
 
       expect(response.data).toHaveLength(4)
       // Verify event types in waterfall - type is in nested attributes
-      const types = response.data?.map(e => {
+      const types = response.data?.map((e) => {
         const attrs = e.attributes?.attributes as Record<string, unknown> | undefined
         return attrs?.type
       })
@@ -198,8 +202,8 @@ describe('RUM Tool', () => {
       server.use(
         http.get(endpoints.getRumEvents, () => {
           return jsonResponse({
-            data: rumFixtures.waterfall.data.filter(e =>
-              e.attributes?.attributes?.view?.id === 'view-001'
+            data: rumFixtures.waterfall.data.filter(
+              (e) => e.attributes?.attributes?.view?.id === 'view-001'
             )
           })
         })
@@ -211,9 +215,11 @@ describe('RUM Tool', () => {
       })
 
       expect(response.data).toBeDefined()
-      expect(response.data?.every(e =>
-        (e.attributes?.attributes as Record<string, unknown>)?.view?.id === 'view-001'
-      )).toBe(true)
+      expect(
+        response.data?.every(
+          (e) => (e.attributes?.attributes as Record<string, unknown>)?.view?.id === 'view-001'
+        )
+      ).toBe(true)
     })
 
     it('should handle 400 bad request for invalid session', async () => {
@@ -223,9 +229,11 @@ describe('RUM Tool', () => {
         })
       )
 
-      await expect(api.listRUMEvents({
-        filterQuery: '@application.id:invalid @session.id:invalid'
-      })).rejects.toMatchObject({
+      await expect(
+        api.listRUMEvents({
+          filterQuery: '@application.id:invalid @session.id:invalid'
+        })
+      ).rejects.toMatchObject({
         code: 400
       })
     })

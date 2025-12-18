@@ -2,14 +2,28 @@ import { z } from 'zod'
 
 // All available tool names
 export const ALL_TOOLS = [
-  'monitors', 'dashboards', 'logs', 'metrics', 'traces', 'events',
-  'incidents', 'slos', 'synthetics', 'hosts', 'downtimes',
-  'rum', 'security', 'notebooks', 'users', 'teams',
-  'tags', 'usage',
+  'monitors',
+  'dashboards',
+  'logs',
+  'metrics',
+  'traces',
+  'events',
+  'incidents',
+  'slos',
+  'synthetics',
+  'hosts',
+  'downtimes',
+  'rum',
+  'security',
+  'notebooks',
+  'users',
+  'teams',
+  'tags',
+  'usage',
   'auth'
 ] as const
 
-export type ToolName = typeof ALL_TOOLS[number]
+export type ToolName = (typeof ALL_TOOLS)[number]
 
 export const configSchema = z.object({
   datadog: z.object({
@@ -26,15 +40,17 @@ export const configSchema = z.object({
   }),
   limits: z.object({
     maxResults: z.number().default(100),
-    maxLogLines: z.number().default(100),  // Reduced from 500 for token efficiency
-    defaultLimit: z.number().default(25),  // Default limit for initial queries
+    maxLogLines: z.number().default(100), // Reduced from 500 for token efficiency
+    defaultLimit: z.number().default(25), // Default limit for initial queries
     maxMetricDataPoints: z.number().default(1000),
     defaultTimeRangeHours: z.number().default(24)
   }),
-  features: z.object({
-    readOnly: z.boolean().default(false),
-    disabledTools: z.array(z.string()).default([])
-  }).default({})
+  features: z
+    .object({
+      readOnly: z.boolean().default(false),
+      disabledTools: z.array(z.string()).default([])
+    })
+    .default({})
 })
 
 export type Config = z.infer<typeof configSchema>

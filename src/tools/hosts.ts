@@ -129,12 +129,25 @@ export function registerHostsTool(
     'hosts',
     'Manage Datadog infrastructure hosts. Actions: list (with filters), totals (counts), mute (silence alerts), unmute. Use for: infrastructure inventory, host health, silencing noisy hosts during maintenance.',
     InputSchema,
-    async ({ action, filter, from, count, sortField, sortDir, hostName, message, end, override }) => {
+    async ({
+      action,
+      filter,
+      from,
+      count,
+      sortField,
+      sortDir,
+      hostName,
+      message,
+      end,
+      override
+    }) => {
       try {
         checkReadOnly(action, readOnly)
         switch (action) {
           case 'list':
-            return toolResult(await listHosts(api, { filter, from, count, sortField, sortDir }, limits))
+            return toolResult(
+              await listHosts(api, { filter, from, count, sortField, sortDir }, limits)
+            )
 
           case 'totals':
             return toolResult(await getHostTotals(api))

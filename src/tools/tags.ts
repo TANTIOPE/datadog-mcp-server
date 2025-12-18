@@ -9,9 +9,18 @@ const ActionSchema = z.enum(['list', 'get', 'add', 'update', 'delete'])
 
 const InputSchema = {
   action: ActionSchema.describe('Action to perform'),
-  hostName: z.string().optional().describe('Host name (required for get/add/update/delete actions)'),
-  tags: z.array(z.string()).optional().describe('Tags to add or set (for add/update actions). Format: "key:value"'),
-  source: z.string().optional().describe('Source of the tags (e.g., "users", "datadog"). Defaults to "users"')
+  hostName: z
+    .string()
+    .optional()
+    .describe('Host name (required for get/add/update/delete actions)'),
+  tags: z
+    .array(z.string())
+    .optional()
+    .describe('Tags to add or set (for add/update actions). Format: "key:value"'),
+  source: z
+    .string()
+    .optional()
+    .describe('Source of the tags (e.g., "users", "datadog"). Defaults to "users"')
 }
 
 interface HostTagsSummary {
@@ -55,12 +64,7 @@ async function getHostTags(
   }
 }
 
-async function addHostTags(
-  api: v1.TagsApi,
-  hostName: string,
-  tags: string[],
-  source?: string
-) {
+async function addHostTags(api: v1.TagsApi, hostName: string, tags: string[], source?: string) {
   const response = await api.createHostTags({
     hostName,
     body: {
@@ -78,12 +82,7 @@ async function addHostTags(
   }
 }
 
-async function updateHostTags(
-  api: v1.TagsApi,
-  hostName: string,
-  tags: string[],
-  source?: string
-) {
+async function updateHostTags(api: v1.TagsApi, hostName: string, tags: string[], source?: string) {
   const response = await api.updateHostTags({
     hostName,
     body: {
@@ -101,11 +100,7 @@ async function updateHostTags(
   }
 }
 
-async function deleteHostTags(
-  api: v1.TagsApi,
-  hostName: string,
-  source?: string
-) {
+async function deleteHostTags(api: v1.TagsApi, hostName: string, source?: string) {
   await api.deleteHostTags({
     hostName,
     source

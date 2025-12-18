@@ -114,9 +114,11 @@ describe('Dashboards Tool', () => {
 
     it('should validate required fields locally', async () => {
       // SDK validates required fields before sending
-      await expect(api.createDashboard({
-        body: { title: 'Test' } as v1.Dashboard
-      })).rejects.toThrow(/layoutType|layout_type/)
+      await expect(
+        api.createDashboard({
+          body: { title: 'Test' } as v1.Dashboard
+        })
+      ).rejects.toThrow(/layoutType|layout_type/)
     })
   })
 

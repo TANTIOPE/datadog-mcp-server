@@ -56,9 +56,7 @@ async function listDashboards(
   // Client-side filtering by name
   if (params.name) {
     const lowerName = params.name.toLowerCase()
-    dashboards = dashboards.filter(d =>
-      d.title?.toLowerCase().includes(lowerName)
-    )
+    dashboards = dashboards.filter((d) => d.title?.toLowerCase().includes(lowerName))
   }
 
   const result = dashboards.slice(0, effectiveLimit).map(formatDashboardSummary)
@@ -116,11 +114,7 @@ async function createDashboard(api: v1.DashboardsApi, config: Record<string, unk
   }
 }
 
-async function updateDashboard(
-  api: v1.DashboardsApi,
-  id: string,
-  config: Record<string, unknown>
-) {
+async function updateDashboard(api: v1.DashboardsApi, id: string, config: Record<string, unknown>) {
   const body = normalizeDashboardConfig(config) as unknown as v1.Dashboard
   const dashboard = await api.updateDashboard({ dashboardId: id, body })
   return {
@@ -142,7 +136,8 @@ export function registerDashboardsTool(
   server: McpServer,
   api: v1.DashboardsApi,
   limits: LimitsConfig,
-  readOnly: boolean = false
+  readOnly: boolean = false,
+  _site: string = 'datadoghq.com'
 ): void {
   server.tool(
     'dashboards',

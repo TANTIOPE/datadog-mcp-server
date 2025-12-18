@@ -147,7 +147,7 @@ describe('Monitors Tool', () => {
 
       server.use(
         http.post(endpoints.listMonitors, async ({ request }) => {
-          const body = await request.json() as typeof newMonitor
+          const body = (await request.json()) as typeof newMonitor
           return jsonResponse({
             id: 12347,
             ...body,
@@ -196,7 +196,7 @@ describe('Monitors Tool', () => {
     it('should update an existing monitor', async () => {
       server.use(
         http.put(endpoints.getMonitor(12345), async ({ request }) => {
-          const body = await request.json() as Record<string, unknown>
+          const body = (await request.json()) as Record<string, unknown>
           return jsonResponse({
             ...fixtures.single,
             ...body

@@ -143,7 +143,7 @@ export function ensureValidTimeRange(
 ): [number, number] {
   // If from > to, swap them (user probably made a mistake)
   if (from > to) {
-    [from, to] = [to, from]
+    ;[from, to] = [to, from]
   }
 
   // If from == to (or very close), add minimum buffer to 'to'
@@ -195,15 +195,15 @@ export function parseDurationToNs(input: string | number | undefined): number | 
   const unit = match[2] ?? 'ns'
 
   const multipliers: Record<string, number> = {
-    'ns': 1,
-    'µs': 1000,
-    'us': 1000,
-    'ms': 1000000,
-    's': 1000000000,
-    'm': 60000000000,
-    'h': 3600000000000,
-    'd': 86400000000000,
-    'w': 604800000000000
+    ns: 1,
+    µs: 1000,
+    us: 1000,
+    ms: 1000000,
+    s: 1000000000,
+    m: 60000000000,
+    h: 3600000000000,
+    d: 86400000000000,
+    w: 604800000000000
   }
 
   return Math.floor(value * (multipliers[unit] ?? 1))

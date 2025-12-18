@@ -187,17 +187,19 @@ describe('Incidents Tool', () => {
         })
       )
 
-      await expect(api.createIncident({
-        body: {
-          data: {
-            type: 'incidents',
-            attributes: {
-              title: '',
-              customerImpacted: false
+      await expect(
+        api.createIncident({
+          body: {
+            data: {
+              type: 'incidents',
+              attributes: {
+                title: '',
+                customerImpacted: false
+              }
             }
           }
-        }
-      })).rejects.toMatchObject({
+        })
+      ).rejects.toMatchObject({
         code: 400
       })
     })
@@ -207,7 +209,7 @@ describe('Incidents Tool', () => {
     it('should update an existing incident', async () => {
       server.use(
         http.patch(endpoints.updateIncident('inc-001'), async ({ request }) => {
-          const _body = await request.json() as Record<string, unknown>
+          const _body = (await request.json()) as Record<string, unknown>
           return jsonResponse({
             data: {
               ...fixtures.single.data,

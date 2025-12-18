@@ -11,19 +11,55 @@ const ActionSchema = z.enum(['search', 'aggregate'])
 
 const InputSchema = {
   action: ActionSchema.describe('Action to perform'),
-  query: z.string().optional().describe('Log search query (Datadog syntax). Examples: "error", "service:my-service status:error", "error AND timeout"'),
-  keyword: z.string().optional().describe('Simple text search - finds logs containing this text (grep-like). Merged with query using AND'),
-  pattern: z.string().optional().describe('Regex pattern to match in log message (grep -E style). Example: "ERROR.*timeout|connection refused"'),
-  from: z.string().optional().describe('Start time. Formats: ISO 8601, relative (30s, 15m, 2h, 7d), precise (3d@11:45:23, yesterday@14:00)'),
-  to: z.string().optional().describe('End time. Same formats as "from". Example: from="3d@11:45:23" to="3d@12:55:34"'),
+  query: z
+    .string()
+    .optional()
+    .describe(
+      'Log search query (Datadog syntax). Examples: "error", "service:my-service status:error", "error AND timeout"'
+    ),
+  keyword: z
+    .string()
+    .optional()
+    .describe(
+      'Simple text search - finds logs containing this text (grep-like). Merged with query using AND'
+    ),
+  pattern: z
+    .string()
+    .optional()
+    .describe(
+      'Regex pattern to match in log message (grep -E style). Example: "ERROR.*timeout|connection refused"'
+    ),
+  from: z
+    .string()
+    .optional()
+    .describe(
+      'Start time. Formats: ISO 8601, relative (30s, 15m, 2h, 7d), precise (3d@11:45:23, yesterday@14:00)'
+    ),
+  to: z
+    .string()
+    .optional()
+    .describe('End time. Same formats as "from". Example: from="3d@11:45:23" to="3d@12:55:34"'),
   service: z.string().optional().describe('Filter by service name'),
   host: z.string().optional().describe('Filter by host'),
-  status: z.enum(['error', 'warn', 'info', 'debug']).optional().describe('Filter by log status/level'),
+  status: z
+    .enum(['error', 'warn', 'info', 'debug'])
+    .optional()
+    .describe('Filter by log status/level'),
   indexes: z.array(z.string()).optional().describe('Log indexes to search'),
   limit: z.number().optional().describe('Maximum number of logs to return'),
   sort: z.enum(['timestamp', '-timestamp']).optional().describe('Sort order'),
-  sample: z.enum(['first', 'spread', 'diverse']).optional().describe('Sampling mode: first (chronological, default), spread (evenly across time range), diverse (distinct message patterns)'),
-  compact: z.boolean().optional().describe('Strip custom attributes for token efficiency. Keeps: id, timestamp, service, status, message (truncated), dd.trace_id, error info'),
+  sample: z
+    .enum(['first', 'spread', 'diverse'])
+    .optional()
+    .describe(
+      'Sampling mode: first (chronological, default), spread (evenly across time range), diverse (distinct message patterns)'
+    ),
+  compact: z
+    .boolean()
+    .optional()
+    .describe(
+      'Strip custom attributes for token efficiency. Keeps: id, timestamp, service, status, message (truncated), dd.trace_id, error info'
+    ),
   groupBy: z.array(z.string()).optional().describe('Fields to group by (for aggregate)'),
   compute: z.record(z.unknown()).optional().describe('Compute operations (for aggregate)')
 }
@@ -69,14 +105,16 @@ interface CompactLogEntry {
   service: string
   host: string
   status: string
-  message: string  // truncated to 500 chars
-  traceId: string  // extracted from dd.trace_id for correlation
+  message: string // truncated to 500 chars
+  traceId: string // extracted from dd.trace_id for correlation
   spanId: string
   error?: {
     type: string
     message: string
   }
 }
+
+type FormattedLog = LogEntry | CompactLogEntry
 
 function formatLogCompact(log: v2.Log): CompactLogEntry {
   const attrs = log.attributes ?? {}
@@ -90,18 +128,24 @@ function formatLogCompact(log: v2.Log): CompactLogEntry {
   }
 
   // Extract trace correlation IDs from various possible locations
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const attrsAny = attrs as any
   const traceId =
     (nestedAttrs['dd.trace_id'] as string) ??
     (nestedAttrs['trace_id'] as string) ??
-    (attrs['dd.trace_id'] as string) ?? ''
+    (attrsAny['dd.trace_id'] as string) ??
+    ''
   const spanId =
     (nestedAttrs['dd.span_id'] as string) ??
     (nestedAttrs['span_id'] as string) ??
-    (attrs['dd.span_id'] as string) ?? ''
+    (attrsAny['dd.span_id'] as string) ??
+    ''
 
   // Extract error info
-  const errorType = (nestedAttrs['error.type'] as string) ?? (nestedAttrs['error.kind'] as string) ?? ''
-  const errorMessage = (nestedAttrs['error.message'] as string) ?? (nestedAttrs['error.msg'] as string) ?? ''
+  const errorType =
+    (nestedAttrs['error.type'] as string) ?? (nestedAttrs['error.kind'] as string) ?? ''
+  const errorMessage =
+    (nestedAttrs['error.message'] as string) ?? (nestedAttrs['error.msg'] as string) ?? ''
 
   // Truncate message for token efficiency
   const fullMessage = (attrs.message as string) ?? ''
@@ -134,21 +178,23 @@ function formatLogCompact(log: v2.Log): CompactLogEntry {
  * Used for diverse sampling to identify distinct error patterns
  */
 function normalizeToPattern(message: string): string {
-  return message
-    // UUIDs (universal format)
-    .replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, '{UUID}')
-    // Long hex strings (16+ chars - trace IDs, hashes, object IDs)
-    .replace(/\b[0-9a-f]{16,}\b/gi, '{HEX}')
-    // Shorter hex IDs (8-15 chars)
-    .replace(/\b[0-9a-f]{8,15}\b/gi, '{ID}')
-    // ISO timestamps
-    .replace(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[.\dZ]*/g, '{TS}')
-    // IP addresses
-    .replace(/\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b/g, '{IP}')
-    // Large numbers (4+ digits) - after other patterns to avoid breaking them
-    .replace(/\b\d{4,}\b/g, '{N}')
-    // Truncate for efficient hashing
-    .slice(0, 200)
+  return (
+    message
+      // UUIDs (universal format)
+      .replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, '{UUID}')
+      // Long hex strings (16+ chars - trace IDs, hashes, object IDs)
+      .replace(/\b[0-9a-f]{16,}\b/gi, '{HEX}')
+      // Shorter hex IDs (8-15 chars)
+      .replace(/\b[0-9a-f]{8,15}\b/gi, '{ID}')
+      // ISO timestamps
+      .replace(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[.\dZ]*/g, '{TS}')
+      // IP addresses
+      .replace(/\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b/g, '{IP}')
+      // Large numbers (4+ digits) - after other patterns to avoid breaking them
+      .replace(/\b\d{4,}\b/g, '{N}')
+      // Truncate for efficient hashing
+      .slice(0, 200)
+  )
 }
 
 /**
@@ -163,7 +209,10 @@ function spreadSample<T>(items: T[], limit: number): T[] {
 /**
  * Diverse sample: deduplicate by message pattern to get distinct error types
  */
-function diverseSample<T extends { message: string }>(items: T[], limit: number): { samples: T[]; patterns: number } {
+function diverseSample<T extends { message: string }>(
+  items: T[],
+  limit: number
+): { samples: T[]; patterns: number } {
   const seen = new Map<string, T>()
 
   for (const item of items) {
@@ -300,15 +349,17 @@ async function searchLogs(
     : (response.data ?? []).map(formatLog)
 
   // Apply sampling based on mode
-  let logs: typeof formattedLogs
+  // Type assertion needed because ternary produces CompactLogEntry[] | LogEntry[]
+  // but generic functions need (CompactLogEntry | LogEntry)[]
+  let logs: FormattedLog[]
   let distinctPatterns: number | undefined
 
   switch (sampleMode) {
     case 'spread':
-      logs = spreadSample(formattedLogs, requestedLimit)
+      logs = spreadSample(formattedLogs as FormattedLog[], requestedLimit)
       break
     case 'diverse': {
-      const result = diverseSample(formattedLogs, requestedLimit)
+      const result = diverseSample(formattedLogs as FormattedLog[], requestedLimit)
       logs = result.samples
       distinctPatterns = result.patterns
       break
@@ -368,7 +419,7 @@ async function aggregateLogs(
       to: toTime
     },
     compute: computeOps,
-    groupBy: params.groupBy?.map(field => ({
+    groupBy: params.groupBy?.map((field) => ({
       facet: field,
       limit: 10
     }))
@@ -401,37 +452,68 @@ CORRELATION: Logs contain dd.trace_id in attributes for linking to traces and AP
 SAMPLING: Use sample:"diverse" for error investigation (dedupes by message pattern), sample:"spread" for time distribution.
 TOKEN TIP: Use compact:true to reduce payload size (strips heavy fields) when querying large volumes.`,
     InputSchema,
-    async ({ action, query, keyword, pattern, service, host, status, from, to, indexes, limit, sort, sample, compact, groupBy, compute }) => {
+    async ({
+      action,
+      query,
+      keyword,
+      pattern,
+      service,
+      host,
+      status,
+      from,
+      to,
+      indexes,
+      limit,
+      sort,
+      sample,
+      compact,
+      groupBy,
+      compute
+    }) => {
       try {
         switch (action) {
           case 'search': {
             // Query is now optional - can use keyword, pattern, or filters instead
-            return toolResult(await searchLogs(api, {
-              query,
-              keyword,
-              pattern,
-              service,
-              host,
-              status,
-              from,
-              to,
-              indexes,
-              limit,
-              sort,
-              sample,
-              compact
-            }, limits, site))
+            return toolResult(
+              await searchLogs(
+                api,
+                {
+                  query,
+                  keyword,
+                  pattern,
+                  service,
+                  host,
+                  status,
+                  from,
+                  to,
+                  indexes,
+                  limit,
+                  sort,
+                  sample,
+                  compact
+                },
+                limits,
+                site
+              )
+            )
           }
 
           case 'aggregate': {
             const aggregateQuery = requireParam(query, 'query', 'aggregate')
-            return toolResult(await aggregateLogs(api, {
-              query: aggregateQuery,
-              from,
-              to,
-              groupBy,
-              compute
-            }, limits, site))
+            return toolResult(
+              await aggregateLogs(
+                api,
+                {
+                  query: aggregateQuery,
+                  from,
+                  to,
+                  groupBy,
+                  compute
+                },
+                limits,
+                site
+              )
+            )
           }
 
           default:

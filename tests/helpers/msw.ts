@@ -22,10 +22,7 @@ export function jsonResponse<T>(data: T, status = 200) {
  * Helper to create an error response matching Datadog API format
  */
 export function errorResponse(code: number, message: string) {
-  return HttpResponse.json(
-    { errors: [message] },
-    { status: code }
-  )
+  return HttpResponse.json({ errors: [message] }, { status: code })
 }
 
 /**
@@ -104,7 +101,8 @@ export const endpoints = {
   deleteSyntheticsTests: `${DD_API_V1}/synthetics/tests/delete`,
   triggerSyntheticsTests: `${DD_API_V1}/synthetics/tests/trigger`,
   getApiTestResults: (publicId: string) => `${DD_API_V1}/synthetics/tests/${publicId}/results`,
-  getBrowserTestResults: (publicId: string) => `${DD_API_V1}/synthetics/tests/browser/${publicId}/results`,
+  getBrowserTestResults: (publicId: string) =>
+    `${DD_API_V1}/synthetics/tests/browser/${publicId}/results`,
 
   // P3 Tools - Users
   listUsers: `${DD_API_V2}/users`,
@@ -118,7 +116,7 @@ export const endpoints = {
   // P3 Tools - RUM
   listRumApplications: `${DD_API_V2}/rum/applications`,
   listRumEvents: `${DD_API_V2}/rum/events/search`,
-  getRumEvents: `${DD_API_V2}/rum/events`,  // GET endpoint for listRUMEvents
+  getRumEvents: `${DD_API_V2}/rum/events`, // GET endpoint for listRUMEvents
   aggregateRumEvents: `${DD_API_V2}/rum/analytics/aggregate`,
 
   // P3 Tools - Security

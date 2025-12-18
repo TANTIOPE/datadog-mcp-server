@@ -110,10 +110,12 @@ describe('Tags Tool', () => {
         })
       )
 
-      await expect(api.createHostTags({
-        hostName: 'new-host',
-        body: { tags: ['invalid'] }
-      })).rejects.toMatchObject({
+      await expect(
+        api.createHostTags({
+          hostName: 'new-host',
+          body: { tags: ['invalid'] }
+        })
+      ).rejects.toMatchObject({
         code: 400
       })
     })

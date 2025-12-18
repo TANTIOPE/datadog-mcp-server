@@ -45,7 +45,13 @@ export const monitors = {
   },
   searchResults: {
     monitors: [
-      { id: 12345, name: 'High CPU Usage', status: 'Alert', type: 'metric alert', tags: ['env:production'] }
+      {
+        id: 12345,
+        name: 'High CPU Usage',
+        status: 'Alert',
+        type: 'metric alert',
+        tags: ['env:production']
+      }
     ],
     metadata: {
       totalCount: 1,
@@ -556,13 +562,9 @@ export const slos = {
         name: 'API Availability',
         description: '99.9% availability for production API',
         type: 'metric',
-        thresholds: [
-          { target: 99.9, warning: 99.95, timeframe: '30d' }
-        ],
+        thresholds: [{ target: 99.9, warning: 99.95, timeframe: '30d' }],
         tags: ['service:api', 'env:production'],
-        overall_status: [
-          { sli_value: 99.95, error_budget_remaining: 75.5, state: 'OK' }
-        ],
+        overall_status: [{ sli_value: 99.95, error_budget_remaining: 75.5, state: 'OK' }],
         created_at: 1704067200,
         modified_at: 1705276800
       },
@@ -571,13 +573,9 @@ export const slos = {
         name: 'Payment Processing Latency',
         description: 'P99 latency under 500ms',
         type: 'monitor',
-        thresholds: [
-          { target: 99.5, timeframe: '7d' }
-        ],
+        thresholds: [{ target: 99.5, timeframe: '7d' }],
         tags: ['service:payments', 'env:production'],
-        overall_status: [
-          { sli_value: 98.2, error_budget_remaining: -26.0, state: 'breached' }
-        ],
+        overall_status: [{ sli_value: 98.2, error_budget_remaining: -26.0, state: 'breached' }],
         created_at: 1704153600,
         modified_at: 1705363200
       }
@@ -589,13 +587,9 @@ export const slos = {
       name: 'API Availability',
       description: '99.9% availability for production API',
       type: 'metric',
-      thresholds: [
-        { target: 99.9, warning: 99.95, timeframe: '30d' }
-      ],
+      thresholds: [{ target: 99.9, warning: 99.95, timeframe: '30d' }],
       tags: ['service:api', 'env:production'],
-      overall_status: [
-        { sli_value: 99.95, error_budget_remaining: 75.5, state: 'OK' }
-      ],
+      overall_status: [{ sli_value: 99.95, error_budget_remaining: 75.5, state: 'OK' }],
       created_at: 1704067200,
       modified_at: 1705276800
     }
@@ -799,9 +793,7 @@ export const synthetics = {
         method: 'GET',
         url: 'https://api.example.com/health'
       },
-      assertions: [
-        { type: 'statusCode', operator: 'is', target: 200 }
-      ]
+      assertions: [{ type: 'statusCode', operator: 'is', target: 200 }]
     },
     options: {
       tick_every: 300
@@ -1061,7 +1053,12 @@ export const rum = {
           attributes: {
             application: { id: 'app-001', name: 'Production Web App' },
             session: { id: 'session-001', type: 'user' },
-            view: { id: 'view-001', url: 'https://example.com/dashboard', url_path: '/dashboard', name: 'Dashboard' },
+            view: {
+              id: 'view-001',
+              url: 'https://example.com/dashboard',
+              url_path: '/dashboard',
+              name: 'Dashboard'
+            },
             usr: { id: 'user-123', email: 'user@example.com', name: 'Test User' }
           }
         }
@@ -1083,20 +1080,20 @@ export const rum = {
         {
           by: {},
           computes: {
-            c0: { value: 2500000000 },  // LCP avg in nanoseconds
-            c1: { value: 3000000000 },  // LCP p75
-            c2: { value: 4000000000 },  // LCP p90
-            c3: { value: 1500000000 },  // FCP avg
-            c4: { value: 2000000000 },  // FCP p75
-            c5: { value: 2500000000 },  // FCP p90
-            c6: { value: 0.05 },        // CLS avg
-            c7: { value: 0.1 },         // CLS p75
-            c8: { value: 50000000 },    // FID avg
-            c9: { value: 100000000 },   // FID p75
-            c10: { value: 150000000 },  // FID p90
+            c0: { value: 2500000000 }, // LCP avg in nanoseconds
+            c1: { value: 3000000000 }, // LCP p75
+            c2: { value: 4000000000 }, // LCP p90
+            c3: { value: 1500000000 }, // FCP avg
+            c4: { value: 2000000000 }, // FCP p75
+            c5: { value: 2500000000 }, // FCP p90
+            c6: { value: 0.05 }, // CLS avg
+            c7: { value: 0.1 }, // CLS p75
+            c8: { value: 50000000 }, // FID avg
+            c9: { value: 100000000 }, // FID p75
+            c10: { value: 150000000 }, // FID p90
             c11: { value: 3000000000 }, // loading_time avg
             c12: { value: 4000000000 }, // loading_time p75
-            c13: { value: 5000000000 }  // loading_time p90
+            c13: { value: 5000000000 } // loading_time p90
           }
         }
       ]
@@ -1114,7 +1111,12 @@ export const rum = {
             type: 'view',
             application: { id: 'app-001', name: 'Production Web App' },
             session: { id: 'session-001', type: 'user' },
-            view: { id: 'view-001', url: 'https://example.com/dashboard', name: 'Dashboard', loading_time: 2500000000 }
+            view: {
+              id: 'view-001',
+              url: 'https://example.com/dashboard',
+              name: 'Dashboard',
+              loading_time: 2500000000
+            }
           }
         }
       },
@@ -1128,7 +1130,13 @@ export const rum = {
             application: { id: 'app-001', name: 'Production Web App' },
             session: { id: 'session-001', type: 'user' },
             view: { id: 'view-001', url: 'https://example.com/dashboard', name: 'Dashboard' },
-            resource: { url: 'https://cdn.example.com/app.js', type: 'js', duration: 150000000, size: 256000, status_code: 200 }
+            resource: {
+              url: 'https://cdn.example.com/app.js',
+              type: 'js',
+              duration: 150000000,
+              size: 256000,
+              status_code: 200
+            }
           }
         }
       },
@@ -1142,7 +1150,13 @@ export const rum = {
             application: { id: 'app-001', name: 'Production Web App' },
             session: { id: 'session-001', type: 'user' },
             view: { id: 'view-001', url: 'https://example.com/dashboard', name: 'Dashboard' },
-            resource: { url: 'https://cdn.example.com/styles.css', type: 'css', duration: 80000000, size: 45000, status_code: 200 }
+            resource: {
+              url: 'https://cdn.example.com/styles.css',
+              type: 'css',
+              duration: 80000000,
+              size: 45000,
+              status_code: 200
+            }
           }
         }
       },
@@ -1250,7 +1264,11 @@ export const notebooks = {
           author: { handle: 'admin@example.com', name: 'Admin User' },
           status: 'published',
           cells: [
-            { id: 'cell-001', type: 'notebook_cells', attributes: { definition: { type: 'markdown', text: '# Runbook' } } }
+            {
+              id: 'cell-001',
+              type: 'notebook_cells',
+              attributes: { definition: { type: 'markdown', text: '# Runbook' } }
+            }
           ],
           time: { live_span: '1h' },
           created: '2024-01-10T00:00:00Z',
@@ -1266,7 +1284,11 @@ export const notebooks = {
           author: { handle: 'engineer@example.com', name: 'Engineer' },
           status: 'published',
           cells: [
-            { id: 'cell-002', type: 'notebook_cells', attributes: { definition: { type: 'markdown', text: '# Analysis' } } }
+            {
+              id: 'cell-002',
+              type: 'notebook_cells',
+              attributes: { definition: { type: 'markdown', text: '# Analysis' } }
+            }
           ],
           time: { live_span: '4h' },
           created: '2024-01-12T00:00:00Z',
@@ -1286,8 +1308,16 @@ export const notebooks = {
         author: { handle: 'admin@example.com', name: 'Admin User' },
         status: 'published',
         cells: [
-          { id: 'cell-001', type: 'notebook_cells', attributes: { definition: { type: 'markdown', text: '# Runbook' } } },
-          { id: 'cell-002', type: 'notebook_cells', attributes: { definition: { type: 'timeseries' } } }
+          {
+            id: 'cell-001',
+            type: 'notebook_cells',
+            attributes: { definition: { type: 'markdown', text: '# Runbook' } }
+          },
+          {
+            id: 'cell-002',
+            type: 'notebook_cells',
+            attributes: { definition: { type: 'timeseries' } }
+          }
         ],
         time: { live_span: '1h' },
         created: '2024-01-10T00:00:00Z',
@@ -1305,7 +1335,11 @@ export const notebooks = {
         author: { handle: 'admin@example.com', name: 'Admin User' },
         status: 'published',
         cells: [
-          { id: 'cell-001', type: 'notebook_cells', attributes: { definition: { type: 'markdown', text: '# New' } } }
+          {
+            id: 'cell-001',
+            type: 'notebook_cells',
+            attributes: { definition: { type: 'markdown', text: '# New' } }
+          }
         ],
         time: { live_span: '1h' },
         created: '2024-01-20T00:00:00Z',
@@ -1323,7 +1357,11 @@ export const notebooks = {
         author: { handle: 'admin@example.com', name: 'Admin User' },
         status: 'published',
         cells: [
-          { id: 'cell-001', type: 'notebook_cells', attributes: { definition: { type: 'markdown', text: '# Updated' } } }
+          {
+            id: 'cell-001',
+            type: 'notebook_cells',
+            attributes: { definition: { type: 'markdown', text: '# Updated' } }
+          }
         ],
         time: { live_span: '1h' },
         created: '2024-01-10T00:00:00Z',

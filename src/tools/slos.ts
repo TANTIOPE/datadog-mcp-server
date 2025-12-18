@@ -15,8 +15,14 @@ const InputSchema = {
   query: z.string().optional().describe('Search query (for list)'),
   tags: z.array(z.string()).optional().describe('Filter by tags (for list)'),
   limit: z.number().optional().describe('Maximum number of SLOs to return'),
-  config: z.record(z.unknown()).optional().describe('SLO configuration (for create/update). Must include type, name, thresholds.'),
-  from: z.string().optional().describe('Start time for history (ISO 8601 or relative like "7d", "1w")'),
+  config: z
+    .record(z.unknown())
+    .optional()
+    .describe('SLO configuration (for create/update). Must include type, name, thresholds.'),
+  from: z
+    .string()
+    .optional()
+    .describe('Start time for history (ISO 8601 or relative like "7d", "1w")'),
   to: z.string().optional().describe('End time for history (ISO 8601 or relative, default: now)')
 }
 
@@ -138,7 +144,11 @@ async function createSlo(api: v1.ServiceLevelObjectivesApi, config: Record<strin
   }
 }
 
-async function updateSlo(api: v1.ServiceLevelObjectivesApi, id: string, config: Record<string, unknown>) {
+async function updateSlo(
+  api: v1.ServiceLevelObjectivesApi,
+  id: string,
+  config: Record<string, unknown>
+) {
   const body = normalizeConfigKeys(config) as unknown as v1.ServiceLevelObjective
   const response = await api.updateSLO({ sloId: id, body })
   return {
@@ -197,7 +207,8 @@ export function registerSlosTool(
   server: McpServer,
   api: v1.ServiceLevelObjectivesApi,
   limits: LimitsConfig,
-  readOnly: boolean = false
+  readOnly: boolean = false,
+  _site: string = 'datadoghq.com'
 ): void {
   server.tool(
     'slos',

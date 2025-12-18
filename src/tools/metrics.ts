@@ -11,8 +11,18 @@ const ActionSchema = z.enum(['query', 'search', 'list', 'metadata'])
 
 const InputSchema = {
   action: ActionSchema.describe('Action to perform'),
-  query: z.string().optional().describe('For query: PromQL expression (e.g., "avg:system.cpu.user{*}"). For search: grep-like filter on metric names. For list: tag filter.'),
-  from: z.string().optional().describe('Start time (ONLY for query action). Formats: ISO 8601, relative (30s, 15m, 2h, 7d), precise (3d@11:45:23)'),
+  query: z
+    .string()
+    .optional()
+    .describe(
+      'For query: PromQL expression (e.g., "avg:system.cpu.user{*}"). For search: grep-like filter on metric names. For list: tag filter.'
+    ),
+  from: z
+    .string()
+    .optional()
+    .describe(
+      'Start time (ONLY for query action). Formats: ISO 8601, relative (30s, 15m, 2h, 7d), precise (3d@11:45:23)'
+    ),
   to: z.string().optional().describe('End time (ONLY for query action). Same formats as "from".'),
   metric: z.string().optional().describe('Metric name (for metadata action)'),
   tag: z.string().optional().describe('Filter by tag'),
@@ -51,9 +61,9 @@ async function queryMetrics(
     query: params.query
   })
 
-  const series: MetricSeriesData[] = (response.series ?? []).map(s => ({
+  const series: MetricSeriesData[] = (response.series ?? []).map((s) => ({
     metric: s.metric ?? '',
-    points: (s.pointlist ?? []).slice(0, limits.maxMetricDataPoints).map(p => ({
+    points: (s.pointlist ?? []).slice(0, limits.maxMetricDataPoints).map((p) => ({
       timestamp: p[0] ?? 0,
       value: p[1] ?? 0
     })),
@@ -90,7 +100,7 @@ async function searchMetrics(
 
   // Filter by query (grep-like on metric name)
   const filtered = allMetrics
-    .filter(name => name.toLowerCase().includes(lowerQuery))
+    .filter((name) => name.toLowerCase().includes(lowerQuery))
     .slice(0, params.limit ?? limits.maxResults)
 
   return {
@@ -100,11 +110,7 @@ async function searchMetrics(
   }
 }
 
-async function listMetrics(
-  api: v1.MetricsApi,
-  params: { query?: string },
-  limits: LimitsConfig
-) {
+async function listMetrics(api: v1.MetricsApi, params: { query?: string }, limits: LimitsConfig) {
   const response = await api.listActiveMetrics({
     from: hoursAgo(24),
     host: undefined,
@@ -159,19 +165,32 @@ Example: max:trace.{service}.request.duration{*}`,
         switch (action) {
           case 'query': {
             const metricsQuery = requireParam(query, 'query', 'query')
-            return toolResult(await queryMetrics(metricsV1Api, {
-              query: metricsQuery,
-              from,
-              to
-            }, limits, site))
+            return toolResult(
+              await queryMetrics(
+                metricsV1Api,
+                {
+                  query: metricsQuery,
+                  from,
+                  to
+                },
+                limits,
+                site
+              )
+            )
           }
 
           case 'search': {
             const searchQuery = requireParam(query, 'query', 'search')
-            return toolResult(await searchMetrics(metricsV1Api, {
-              query: searchQuery,
-              limit
-            }, limits))
+            return toolResult(
+              await searchMetrics(
+                metricsV1Api,
+                {
+                  query: searchQuery,
+                  limit
+                },
+                limits
+              )
+            )
           }
 
           case 'list':

@@ -37,7 +37,7 @@ function formatUser(user: v2.User): UserSummary {
   const relationships = user.relationships ?? {}
 
   // Extract role names from relationships
-  const roles = (relationships.roles?.data ?? []).map(r => r.id ?? '')
+  const roles = (relationships.roles?.data ?? []).map((r) => r.id ?? '')
   const orgId = relationships.org?.data?.id ?? null
 
   return {
@@ -97,11 +97,7 @@ async function getUser(api: v2.UsersApi, userId: string) {
   }
 }
 
-export function registerUsersTool(
-  server: McpServer,
-  api: v2.UsersApi,
-  limits: LimitsConfig
-): void {
+export function registerUsersTool(server: McpServer, api: v2.UsersApi, limits: LimitsConfig): void {
   server.tool(
     'users',
     'Manage Datadog users. Actions: list (with filters), get (by ID). Use for: access management, user auditing, team organization.',
@@ -110,7 +106,9 @@ export function registerUsersTool(
       try {
         switch (action) {
           case 'list':
-            return toolResult(await listUsers(api, { filter, status, pageSize, pageNumber }, limits))
+            return toolResult(
+              await listUsers(api, { filter, status, pageSize, pageNumber }, limits)
+            )
 
           case 'get': {
             const userId = requireParam(id, 'id', 'get')

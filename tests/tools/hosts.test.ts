@@ -135,10 +135,12 @@ describe('Hosts Tool', () => {
         })
       )
 
-      await expect(api.muteHost({
-        hostName: 'nonexistent-host',
-        body: {}
-      })).rejects.toMatchObject({
+      await expect(
+        api.muteHost({
+          hostName: 'nonexistent-host',
+          body: {}
+        })
+      ).rejects.toMatchObject({
         code: 404
       })
     })

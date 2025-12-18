@@ -48,11 +48,13 @@ describe('Metrics Tool', () => {
       )
 
       const now = Math.floor(Date.now() / 1000)
-      await expect(api.queryMetrics({
-        from: now - 3600,
-        to: now,
-        query: 'invalid:query'
-      })).rejects.toMatchObject({
+      await expect(
+        api.queryMetrics({
+          from: now - 3600,
+          to: now,
+          query: 'invalid:query'
+        })
+      ).rejects.toMatchObject({
         code: 400
       })
     })
@@ -65,11 +67,13 @@ describe('Metrics Tool', () => {
       )
 
       const now = Math.floor(Date.now() / 1000)
-      await expect(api.queryMetrics({
-        from: now - 3600,
-        to: now,
-        query: 'avg:system.cpu.user{*}'
-      })).rejects.toMatchObject({
+      await expect(
+        api.queryMetrics({
+          from: now - 3600,
+          to: now,
+          query: 'avg:system.cpu.user{*}'
+        })
+      ).rejects.toMatchObject({
         code: 401
       })
     })

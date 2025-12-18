@@ -66,10 +66,12 @@ describe('Events Tool', () => {
       )
 
       const now = Math.floor(Date.now() / 1000)
-      await expect(apiV1.listEvents({
-        start: now - 3600,
-        end: now
-      })).rejects.toMatchObject({
+      await expect(
+        apiV1.listEvents({
+          start: now - 3600,
+          end: now
+        })
+      ).rejects.toMatchObject({
         code: 401
       })
     })
@@ -82,10 +84,12 @@ describe('Events Tool', () => {
       )
 
       const now = Math.floor(Date.now() / 1000)
-      await expect(apiV1.listEvents({
-        start: now - 3600,
-        end: now
-      })).rejects.toMatchObject({
+      await expect(
+        apiV1.listEvents({
+          start: now - 3600,
+          end: now
+        })
+      ).rejects.toMatchObject({
         code: 429
       })
     })
@@ -141,9 +145,11 @@ describe('Events Tool', () => {
 
     it('should validate required fields locally', async () => {
       // SDK validates required fields (like 'title') before sending
-      await expect(apiV1.createEvent({
-        body: { text: 'Missing title' }
-      })).rejects.toThrow(/title/)
+      await expect(
+        apiV1.createEvent({
+          body: { text: 'Missing title' }
+        })
+      ).rejects.toThrow(/title/)
     })
 
     it('should handle 400 bad request from API', async () => {
@@ -154,9 +160,11 @@ describe('Events Tool', () => {
       )
 
       // Use valid body to reach the API
-      await expect(apiV1.createEvent({
-        body: { title: 'Test', text: 'Test' }
-      })).rejects.toMatchObject({
+      await expect(
+        apiV1.createEvent({
+          body: { title: 'Test', text: 'Test' }
+        })
+      ).rejects.toMatchObject({
         code: 400
       })
     })
@@ -191,7 +199,7 @@ describe('Events Tool', () => {
       let pageCount = 0
       server.use(
         http.post(endpoints.searchEvents, async ({ request }) => {
-          const body = await request.json() as { page?: { cursor?: string } }
+          const body = (await request.json()) as { page?: { cursor?: string } }
           pageCount++
 
           if (body.page?.cursor === 'cursor_page2') {
@@ -232,11 +240,13 @@ describe('Events Tool', () => {
         })
       )
 
-      await expect(apiV2.searchEvents({
-        body: {
-          filter: { query: '*' }
-        }
-      })).rejects.toMatchObject({
+      await expect(
+        apiV2.searchEvents({
+          body: {
+            filter: { query: '*' }
+          }
+        })
+      ).rejects.toMatchObject({
         code: 401
       })
     })
@@ -294,7 +304,7 @@ describe('Events Tool', () => {
       let pageCount = 0
       server.use(
         http.post(endpoints.searchEvents, async ({ request }) => {
-          const body = await request.json() as { page?: { cursor?: string } }
+          const body = (await request.json()) as { page?: { cursor?: string } }
           pageCount++
 
           if (body.page?.cursor === 'cursor_page2') {
@@ -347,7 +357,7 @@ describe('Events Tool', () => {
       expect(response.data).toHaveLength(5)
 
       // Verify data array can be iterated for client-side processing
-      const ids = (response.data ?? []).map(e => e.id)
+      const ids = (response.data ?? []).map((e) => e.id)
       expect(ids).toContain('evt-agg-001')
       expect(ids).toContain('evt-agg-004') // Recovery event
       expect(ids).toContain('evt-agg-005')

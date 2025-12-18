@@ -10,7 +10,9 @@ import { toolResult } from '../utils/format.js'
 const ActionSchema = z.enum(['validate'])
 
 const InputSchema = {
-  action: ActionSchema.describe('Action to perform: validate - test if API key and App key are valid')
+  action: ActionSchema.describe(
+    'Action to perform: validate - test if API key and App key are valid'
+  )
 }
 
 export function registerAuthTool(server: McpServer, clients: DatadogClients): void {
@@ -65,7 +67,10 @@ async function validateCredentials(clients: DatadogClients) {
     const errorMessage = appKeyError instanceof Error ? appKeyError.message : String(appKeyError)
 
     // Check if it's an auth error or just a permission issue
-    const isAuthError = errorMessage.includes('401') || errorMessage.includes('403') || errorMessage.includes('Forbidden')
+    const isAuthError =
+      errorMessage.includes('401') ||
+      errorMessage.includes('403') ||
+      errorMessage.includes('Forbidden')
 
     return {
       valid: !isAuthError,

@@ -47,7 +47,9 @@ describe('Traces Tool', () => {
     it('should filter spans by duration', async () => {
       server.use(
         http.post(endpoints.listSpans, async ({ request }) => {
-          const body = await request.json() as { data?: { attributes?: { filter?: { query?: string } } } }
+          const body = (await request.json()) as {
+            data?: { attributes?: { filter?: { query?: string } } }
+          }
           const query = body.data?.attributes?.filter?.query ?? ''
 
           // Verify duration filter is in query
@@ -77,7 +79,9 @@ describe('Traces Tool', () => {
     it('should filter spans by status', async () => {
       server.use(
         http.post(endpoints.listSpans, async ({ request }) => {
-          const body = await request.json() as { data?: { attributes?: { filter?: { query?: string } } } }
+          const body = (await request.json()) as {
+            data?: { attributes?: { filter?: { query?: string } } }
+          }
           const query = body.data?.attributes?.filter?.query ?? ''
 
           expect(query).toContain('status:error')
@@ -112,16 +116,18 @@ describe('Traces Tool', () => {
         })
       )
 
-      await expect(api.listSpans({
-        body: {
-          data: {
-            type: 'search_request',
-            attributes: {
-              filter: { query: '*' }
+      await expect(
+        api.listSpans({
+          body: {
+            data: {
+              type: 'search_request',
+              attributes: {
+                filter: { query: '*' }
+              }
             }
           }
-        }
-      })).rejects.toMatchObject({
+        })
+      ).rejects.toMatchObject({
         code: 401
       })
     })
@@ -133,16 +139,18 @@ describe('Traces Tool', () => {
         })
       )
 
-      await expect(api.listSpans({
-        body: {
-          data: {
-            type: 'search_request',
-            attributes: {
-              filter: { query: '*' }
+      await expect(
+        api.listSpans({
+          body: {
+            data: {
+              type: 'search_request',
+              attributes: {
+                filter: { query: '*' }
+              }
             }
           }
-        }
-      })).rejects.toMatchObject({
+        })
+      ).rejects.toMatchObject({
         code: 429
       })
     })
@@ -187,7 +195,9 @@ describe('Traces Tool', () => {
                 to: '2024-01-20T23:59:59Z'
               },
               compute: [{ aggregation: 'count' }],
-              groupBy: [{ facet: 'service', limit: 10, sort: { aggregation: 'count', order: 'desc' } }]
+              groupBy: [
+                { facet: 'service', limit: 10, sort: { aggregation: 'count', order: 'desc' } }
+              ]
             }
           }
         }

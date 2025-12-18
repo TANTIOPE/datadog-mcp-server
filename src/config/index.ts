@@ -54,8 +54,8 @@ function parseArgs(): ParsedArgs {
 function parseDisabledTools(value: string | undefined): string[] {
   if (!value) return []
 
-  const requested = value.split(',').map(s => s.trim().toLowerCase())
-  return requested.filter(t => (ALL_TOOLS as readonly string[]).includes(t))
+  const requested = value.split(',').map((s) => s.trim().toLowerCase())
+  return requested.filter((t) => (ALL_TOOLS as readonly string[]).includes(t))
 }
 
 export function loadConfig(): Config {
@@ -82,11 +82,21 @@ export function loadConfig(): Config {
     },
     features: {
       readOnly: args.booleans.has('read-only') || process.env.MCP_READ_ONLY === 'true',
-      disabledTools: parseDisabledTools(args.strings['disable-tools'] ?? process.env.MCP_DISABLE_TOOLS)
+      disabledTools: parseDisabledTools(
+        args.strings['disable-tools'] ?? process.env.MCP_DISABLE_TOOLS
+      )
     }
   }
 
   return configSchema.parse(raw)
 }
 
-export { type Config, type DatadogConfig, type ServerConfig, type LimitsConfig, type FeaturesConfig, type ToolName, ALL_TOOLS } from './schema.js'
+export {
+  type Config,
+  type DatadogConfig,
+  type ServerConfig,
+  type LimitsConfig,
+  type FeaturesConfig,
+  type ToolName,
+  ALL_TOOLS
+} from './schema.js'

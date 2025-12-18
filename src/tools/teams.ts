@@ -107,11 +107,7 @@ async function getTeam(api: v2.TeamsApi, teamId: string) {
   }
 }
 
-async function getTeamMembers(
-  api: v2.TeamsApi,
-  teamId: string,
-  limits: LimitsConfig
-) {
+async function getTeamMembers(api: v2.TeamsApi, teamId: string, limits: LimitsConfig) {
   const response = await api.getTeamMemberships({
     teamId,
     pageSize: limits.maxResults
@@ -127,11 +123,7 @@ async function getTeamMembers(
   }
 }
 
-export function registerTeamsTool(
-  server: McpServer,
-  api: v2.TeamsApi,
-  limits: LimitsConfig
-): void {
+export function registerTeamsTool(server: McpServer, api: v2.TeamsApi, limits: LimitsConfig): void {
   server.tool(
     'teams',
     'Manage Datadog teams. Actions: list (with filters), get (by ID), members (list team members). Use for: team organization, access management, collaboration.',

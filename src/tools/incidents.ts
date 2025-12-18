@@ -11,9 +11,17 @@ const InputSchema = {
   action: ActionSchema.describe('Action to perform'),
   id: z.string().optional().describe('Incident ID (required for get/update/delete)'),
   query: z.string().optional().describe('Search query (for search action)'),
-  status: z.enum(['active', 'stable', 'resolved']).optional().describe('Filter by status (for list)'),
+  status: z
+    .enum(['active', 'stable', 'resolved'])
+    .optional()
+    .describe('Filter by status (for list)'),
   limit: z.number().optional().describe('Maximum number of incidents to return'),
-  config: z.record(z.unknown()).optional().describe('Incident configuration (for create/update). Create requires: title. Update can modify: title, status, severity, fields.')
+  config: z
+    .record(z.unknown())
+    .optional()
+    .describe(
+      'Incident configuration (for create/update). Create requires: title. Update can modify: title, status, severity, fields.'
+    )
 }
 
 interface IncidentSummary {
@@ -76,7 +84,7 @@ async function listIncidents(
 
   // Filter by status client-side if specified
   if (params.status) {
-    incidents = incidents.filter(i => i.state?.toLowerCase() === params.status)
+    incidents = incidents.filter((i) => i.state?.toLowerCase() === params.status)
   }
 
   // Apply limit after filtering (in case status filter reduced count)
@@ -95,21 +103,19 @@ async function getIncident(api: v2.IncidentsApi, id: string) {
   }
 }
 
-async function searchIncidents(
-  api: v2.IncidentsApi,
-  query: string,
-  limits: LimitsConfig
-) {
+async function searchIncidents(api: v2.IncidentsApi, query: string, limits: LimitsConfig) {
   const response = await api.searchIncidents({
     query,
     pageSize: limits.maxResults
   })
 
-  const incidents = (response.data?.attributes?.incidents ?? []).map((i: v2.IncidentSearchResponseIncidentsData) => ({
-    id: i.data?.id ?? '',
-    title: i.data?.attributes?.title ?? '',
-    state: i.data?.attributes?.state ?? 'unknown'
-  }))
+  const incidents = (response.data?.attributes?.incidents ?? []).map(
+    (i: v2.IncidentSearchResponseIncidentsData) => ({
+      id: i.data?.id ?? '',
+      title: i.data?.attributes?.title ?? '',
+      state: i.data?.attributes?.state ?? 'unknown'
+    })
+  )
 
   return {
     incidents,
@@ -160,7 +166,8 @@ export function registerIncidentsTool(
   server: McpServer,
   api: v2.IncidentsApi,
   limits: LimitsConfig,
-  readOnly: boolean = false
+  readOnly: boolean = false,
+  _site: string = 'datadoghq.com'
 ): void {
   server.tool(
     'incidents',

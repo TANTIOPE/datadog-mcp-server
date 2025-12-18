@@ -13,17 +13,35 @@ const InputSchema = {
   query: z.string().optional().describe('Search query for notebooks'),
   authorHandle: z.string().optional().describe('Filter by author handle (email)'),
   excludeAuthorHandle: z.string().optional().describe('Exclude notebooks by author handle'),
-  includeCells: z.boolean().optional().describe('Include cell content in response (default: true for get)'),
+  includeCells: z
+    .boolean()
+    .optional()
+    .describe('Include cell content in response (default: true for get)'),
   name: z.string().optional().describe('Notebook name (for create/update)'),
-  cells: z.array(z.object({
-    type: z.enum(['markdown', 'timeseries', 'toplist', 'heatmap', 'distribution', 'log_stream']),
-    content: z.unknown()
-  })).optional().describe('Notebook cells (for create/update)'),
-  time: z.object({
-    liveSpan: z.string().optional(),
-    start: z.number().optional(),
-    end: z.number().optional()
-  }).optional().describe('Time configuration for notebook'),
+  cells: z
+    .array(
+      z.object({
+        type: z.enum([
+          'markdown',
+          'timeseries',
+          'toplist',
+          'heatmap',
+          'distribution',
+          'log_stream'
+        ]),
+        content: z.unknown()
+      })
+    )
+    .optional()
+    .describe('Notebook cells (for create/update)'),
+  time: z
+    .object({
+      liveSpan: z.string().optional(),
+      start: z.number().optional(),
+      end: z.number().optional()
+    })
+    .optional()
+    .describe('Time configuration for notebook'),
   status: z.enum(['published']).optional().describe('Notebook status'),
   pageSize: z.number().optional().describe('Number of notebooks to return'),
   pageNumber: z.number().optional().describe('Page number for pagination')
@@ -96,13 +114,15 @@ function formatNotebookDetail(nb: v1.NotebookResponseData): NotebookDetail {
       isTemplate: attrs.metadata?.isTemplate ?? null,
       takeSnapshots: attrs.metadata?.takeSnapshots ?? null
     },
-    cells: (attrs.cells ?? []).map(cell => ({
+    cells: (attrs.cells ?? []).map((cell) => ({
       id: String(cell.id ?? ''),
       type: String(cell.type ?? ''),
       attributes: cell.attributes ?? {}
     })),
     time: {
-      liveSpan: attrs.time ? String((attrs.time as unknown as Record<string, unknown>)['liveSpan'] ?? '') : null
+      liveSpan: attrs.time
+        ? String((attrs.time as unknown as Record<string, unknown>)['liveSpan'] ?? '')
+        : null
     }
   }
 }
@@ -161,7 +181,7 @@ async function createNotebook(
   }
 ) {
   // Build cells for the notebook
-  const cells: v1.NotebookCellCreateRequest[] = (params.cells ?? []).map(cell => {
+  const cells: v1.NotebookCellCreateRequest[] = (params.cells ?? []).map((cell) => {
     // Default to markdown cell if no specific type handling
     if (cell.type === 'markdown') {
       return {
@@ -197,9 +217,11 @@ async function createNotebook(
   }
 
   // Build time configuration - use type assertion for union type
-  const timeConfig = (params.time?.liveSpan
-    ? { liveSpan: params.time.liveSpan as v1.NotebookRelativeTime['liveSpan'] }
-    : { liveSpan: '1h' as v1.NotebookRelativeTime['liveSpan'] }) as v1.NotebookGlobalTime
+  const timeConfig = (
+    params.time?.liveSpan
+      ? { liveSpan: params.time.liveSpan as v1.NotebookRelativeTime['liveSpan'] }
+      : { liveSpan: '1h' as v1.NotebookRelativeTime['liveSpan'] }
+  ) as v1.NotebookGlobalTime
 
   const response = await api.createNotebook({
     body: {
@@ -209,7 +231,7 @@ async function createNotebook(
           name: params.name,
           cells,
           time: timeConfig,
-          status: params.status as v1.NotebookStatus ?? 'published'
+          status: (params.status as v1.NotebookStatus) ?? 'published'
         }
       }
     }
@@ -247,7 +269,7 @@ async function updateNotebook(
   // Build cells if provided
   let cells: v1.NotebookUpdateCell[] | undefined
   if (params.cells) {
-    cells = params.cells.map(cell => {
+    cells = params.cells.map((cell) => {
       if (cell.type === 'markdown') {
         return {
           type: 'notebook_cells' as const,
@@ -270,7 +292,9 @@ async function updateNotebook(
 
   // Build time configuration - use type assertion for union type
   const timeConfig: v1.NotebookGlobalTime | undefined = params.time?.liveSpan
-    ? { liveSpan: params.time.liveSpan as v1.NotebookRelativeTime['liveSpan'] } as v1.NotebookGlobalTime
+    ? ({
+        liveSpan: params.time.liveSpan as v1.NotebookRelativeTime['liveSpan']
+      } as v1.NotebookGlobalTime)
     : undefined
 
   const response = await api.updateNotebook({
@@ -280,11 +304,14 @@ async function updateNotebook(
         type: 'notebooks',
         attributes: {
           name: params.name ?? existingAttrs.name ?? '',
-          cells: cells ?? existingAttrs.cells?.map(c => ({
-            id: c.id,
-            type: 'notebook_cells' as const,
-            attributes: c.attributes as v1.NotebookCellUpdateRequestAttributes
-          })) ?? [],
+          cells:
+            cells ??
+            existingAttrs.cells?.map((c) => ({
+              id: c.id,
+              type: 'notebook_cells' as const,
+              attributes: c.attributes as v1.NotebookCellUpdateRequestAttributes
+            })) ??
+            [],
           time: timeConfig ?? existingAttrs.time ?? { liveSpan: '1h' as const },
           status: (params.status ?? existingAttrs.status) as v1.NotebookStatus
         }
@@ -316,18 +343,38 @@ export function registerNotebooksTool(
   server: McpServer,
   api: v1.NotebooksApi,
   limits: LimitsConfig,
-  readOnly: boolean = false
+  readOnly: boolean = false,
+  _site: string = 'datadoghq.com'
 ): void {
   server.tool(
     'notebooks',
     'Manage Datadog Notebooks. Actions: list (search notebooks), get (by ID with cells), create (new notebook), update (modify notebook), delete (remove notebook). Use for: runbooks, incident documentation, investigation notes, dashboards as code.',
     InputSchema,
-    async ({ action, id, query, authorHandle, excludeAuthorHandle, includeCells, name, cells, time, status, pageSize, pageNumber }) => {
+    async ({
+      action,
+      id,
+      query,
+      authorHandle,
+      excludeAuthorHandle,
+      includeCells,
+      name,
+      cells,
+      time,
+      status,
+      pageSize,
+      pageNumber
+    }) => {
       try {
         checkReadOnly(action, readOnly)
         switch (action) {
           case 'list':
-            return toolResult(await listNotebooks(api, { query, authorHandle, excludeAuthorHandle, includeCells, pageSize, pageNumber }, limits))
+            return toolResult(
+              await listNotebooks(
+                api,
+                { query, authorHandle, excludeAuthorHandle, includeCells, pageSize, pageNumber },
+                limits
+              )
+            )
 
           case 'get': {
             const notebookId = requireParam(id, 'id', 'get')
@@ -336,22 +383,26 @@ export function registerNotebooksTool(
 
           case 'create': {
             const notebookName = requireParam(name, 'name', 'create')
-            return toolResult(await createNotebook(api, {
-              name: notebookName,
-              cells: cells as Array<{ type: string; content: unknown }>,
-              time,
-              status
-            }))
+            return toolResult(
+              await createNotebook(api, {
+                name: notebookName,
+                cells: cells as Array<{ type: string; content: unknown }>,
+                time,
+                status
+              })
+            )
           }
 
           case 'update': {
             const notebookId = requireParam(id, 'id', 'update')
-            return toolResult(await updateNotebook(api, notebookId, {
-              name,
-              cells: cells as Array<{ type: string; content: unknown }>,
-              time,
-              status
-            }))
+            return toolResult(
+              await updateNotebook(api, notebookId, {
+                name,
+                cells: cells as Array<{ type: string; content: unknown }>,
+                time,
+                status
+              })
+            )
           }
 
           case 'delete': {

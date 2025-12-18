@@ -44,19 +44,31 @@ export function handleDatadogError(error: unknown): never {
       case 400:
         throw new McpError(ErrorCode.InvalidRequest, `Invalid request: ${message}`)
       case 401:
-        throw new McpError(DatadogErrorCode.Unauthorized, `Authentication failed: Invalid Datadog API key or APP key`)
+        throw new McpError(
+          DatadogErrorCode.Unauthorized,
+          `Authentication failed: Invalid Datadog API key or APP key`
+        )
       case 403:
         throw new McpError(DatadogErrorCode.Forbidden, `Authorization denied: ${message}`)
       case 404:
         throw new McpError(DatadogErrorCode.NotFound, `Resource not found: ${message}`)
       case 429:
-        throw new McpError(DatadogErrorCode.RateLimited, 'Rate limit exceeded. Retry after a short delay.')
+        throw new McpError(
+          DatadogErrorCode.RateLimited,
+          'Rate limit exceeded. Retry after a short delay.'
+        )
       case 500:
       case 502:
       case 503:
-        throw new McpError(DatadogErrorCode.ServiceUnavailable, 'Datadog service temporarily unavailable. Retry later.')
+        throw new McpError(
+          DatadogErrorCode.ServiceUnavailable,
+          'Datadog service temporarily unavailable. Retry later.'
+        )
       default:
-        throw new McpError(ErrorCode.InternalError, `Datadog API error (${apiError.code}): ${message}`)
+        throw new McpError(
+          ErrorCode.InternalError,
+          `Datadog API error (${apiError.code}): ${message}`
+        )
     }
   }
 
@@ -83,7 +95,14 @@ export function requireParam<T>(value: T | undefined, name: string, action: stri
  * Write actions that should be blocked in read-only mode
  */
 const WRITE_ACTIONS = new Set([
-  'create', 'update', 'delete', 'mute', 'unmute', 'cancel', 'add', 'trigger'
+  'create',
+  'update',
+  'delete',
+  'mute',
+  'unmute',
+  'cancel',
+  'add',
+  'trigger'
 ])
 
 /**

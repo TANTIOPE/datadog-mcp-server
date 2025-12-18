@@ -40,9 +40,11 @@ describe('Usage Tool', () => {
         })
       )
 
-      await expect(api.getUsageSummary({
-        startMonth: new Date()
-      })).rejects.toMatchObject({
+      await expect(
+        api.getUsageSummary({
+          startMonth: new Date()
+        })
+      ).rejects.toMatchObject({
         code: 401
       })
     })
@@ -54,9 +56,11 @@ describe('Usage Tool', () => {
         })
       )
 
-      await expect(api.getUsageSummary({
-        startMonth: new Date()
-      })).rejects.toMatchObject({
+      await expect(
+        api.getUsageSummary({
+          startMonth: new Date()
+        })
+      ).rejects.toMatchObject({
         code: 403
       })
     })
@@ -86,9 +90,11 @@ describe('Usage Tool', () => {
         })
       )
 
-      await expect(api.getUsageHosts({
-        startHr: new Date()
-      })).rejects.toMatchObject({
+      await expect(
+        api.getUsageHosts({
+          startHr: new Date()
+        })
+      ).rejects.toMatchObject({
         code: 400
       })
     })

@@ -6,7 +6,16 @@ import { toolResult } from '../utils/format.js'
 import { buildMonitorUrl, buildMonitorsListUrl } from '../utils/urls.js'
 import type { LimitsConfig } from '../config/schema.js'
 
-const ActionSchema = z.enum(['list', 'get', 'search', 'create', 'update', 'delete', 'mute', 'unmute'])
+const ActionSchema = z.enum([
+  'list',
+  'get',
+  'search',
+  'create',
+  'update',
+  'delete',
+  'mute',
+  'unmute'
+])
 
 const InputSchema = {
   action: ActionSchema.describe('Action to perform'),
@@ -14,7 +23,10 @@ const InputSchema = {
   query: z.string().optional().describe('Search query (for search action)'),
   name: z.string().optional().describe('Filter by name (for list action)'),
   tags: z.array(z.string()).optional().describe('Filter by tags'),
-  groupStates: z.array(z.string()).optional().describe('Filter by group states: alert, warn, no data, ok'),
+  groupStates: z
+    .array(z.string())
+    .optional()
+    .describe('Filter by group states: alert, warn, no data, ok'),
   limit: z.number().optional().describe('Maximum number of monitors to return'),
   config: z.record(z.unknown()).optional().describe('Monitor configuration (for create/update)'),
   message: z.string().optional().describe('Mute message (for mute action)'),
@@ -65,10 +77,10 @@ async function listMonitors(
 
   const statusCounts = {
     total: response.length,
-    alert: response.filter(m => m.overallState === 'Alert').length,
-    warn: response.filter(m => m.overallState === 'Warn').length,
-    ok: response.filter(m => m.overallState === 'OK').length,
-    noData: response.filter(m => m.overallState === 'No Data').length
+    alert: response.filter((m) => m.overallState === 'Alert').length,
+    warn: response.filter((m) => m.overallState === 'Warn').length,
+    ok: response.filter((m) => m.overallState === 'OK').length,
+    noData: response.filter((m) => m.overallState === 'No Data').length
   }
 
   return {
@@ -98,7 +110,7 @@ async function searchMonitors(
   site: string
 ) {
   const response = await api.searchMonitors({ query })
-  const monitors = (response.monitors ?? []).slice(0, limits.maxResults).map(m => ({
+  const monitors = (response.monitors ?? []).slice(0, limits.maxResults).map((m) => ({
     id: m.id ?? 0,
     name: m.name ?? '',
     status: String(m.status ?? 'unknown'),
@@ -149,7 +161,7 @@ function normalizeMonitorConfig(config: Record<string, unknown>): Record<string,
       ['require_full_window', 'requireFullWindow'],
       ['escalation_message', 'escalationMessage'],
       ['locked', 'locked'],
-      ['silenced', 'silenced'],
+      ['silenced', 'silenced']
     ]
 
     for (const [snake, camel] of optionMappings) {
@@ -167,7 +179,7 @@ function normalizeMonitorConfig(config: Record<string, unknown>): Record<string,
         ['warning', 'warning'],
         ['ok', 'ok'],
         ['critical_recovery', 'criticalRecovery'],
-        ['warning_recovery', 'warningRecovery'],
+        ['warning_recovery', 'warningRecovery']
       ]
       for (const [snake, camel] of thresholdMappings) {
         if (snake in thresholds && !(camel in thresholds) && snake !== camel) {
@@ -209,11 +221,7 @@ async function deleteMonitor(api: v1.MonitorsApi, id: string) {
   return { success: true, message: `Monitor ${id} deleted` }
 }
 
-async function muteMonitor(
-  api: v1.MonitorsApi,
-  id: string,
-  params: { end?: number }
-) {
+async function muteMonitor(api: v1.MonitorsApi, id: string, params: { end?: number }) {
   const monitorId = parseInt(id, 10)
   // Use validate endpoint with mute options
   const monitor = await api.getMonitor({ monitorId })
@@ -266,7 +274,9 @@ TIP: For alert HISTORY (which monitors triggered), use the events tool with tags
         checkReadOnly(action, readOnly)
         switch (action) {
           case 'list':
-            return toolResult(await listMonitors(api, { name, tags, groupStates, limit }, limits, site))
+            return toolResult(
+              await listMonitors(api, { name, tags, groupStates, limit }, limits, site)
+            )
 
           case 'get': {
             const monitorId = requireParam(id, 'id', 'get')

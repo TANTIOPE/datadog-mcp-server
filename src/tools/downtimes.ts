@@ -13,7 +13,10 @@ const InputSchema = {
   monitorId: z.number().optional().describe('Monitor ID (required for listByMonitor)'),
   currentOnly: z.boolean().optional().describe('Only return active downtimes (for list)'),
   limit: z.number().optional().describe('Maximum number of downtimes to return'),
-  config: z.record(z.unknown()).optional().describe('Downtime configuration (for create/update). Must include scope and schedule.')
+  config: z
+    .record(z.unknown())
+    .optional()
+    .describe('Downtime configuration (for create/update). Must include scope and schedule.')
 }
 
 interface DowntimeSummary {
@@ -31,7 +34,10 @@ interface DowntimeSummary {
   modifiedAt: string
 }
 
-function extractMonitorIdentifier(mi?: v2.DowntimeMonitorIdentifier): { monitorId: number | null; monitorTags: string[] } {
+function extractMonitorIdentifier(mi?: v2.DowntimeMonitorIdentifier): {
+  monitorId: number | null
+  monitorTags: string[]
+} {
   if (!mi) return { monitorId: null, monitorTags: [] }
 
   // Check if it's a DowntimeMonitorIdentifierId (has monitorId property)
@@ -145,11 +151,7 @@ function formatMonitorDowntime(d: v2.MonitorDowntimeMatchResponseData): MonitorD
   }
 }
 
-async function listMonitorDowntimes(
-  api: v2.DowntimesApi,
-  monitorId: number,
-  limits: LimitsConfig
-) {
+async function listMonitorDowntimes(api: v2.DowntimesApi, monitorId: number, limits: LimitsConfig) {
   const response = await api.listMonitorDowntimes({ monitorId })
   const downtimes = (response.data ?? []).slice(0, limits.maxResults).map(formatMonitorDowntime)
 

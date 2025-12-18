@@ -185,15 +185,17 @@ describe('Synthetics Tool', () => {
 
       // The SDK validates required fields before sending
       // This test verifies the error is thrown for missing required fields
-      await expect(api.createSyntheticsAPITest({
-        body: {
-          name: 'Invalid Test',
-          type: 'api',
-          config: {},
-          locations: [],
-          options: {}
-        }
-      })).rejects.toThrow(/missing required property/)
+      await expect(
+        api.createSyntheticsAPITest({
+          body: {
+            name: 'Invalid Test',
+            type: 'api',
+            config: {},
+            locations: [],
+            options: {}
+          }
+        })
+      ).rejects.toThrow(/missing required property/)
     })
   })
 
@@ -214,7 +216,10 @@ describe('Synthetics Tool', () => {
           name: 'Updated API Test',
           type: 'api',
           message: 'Updated test',
-          config: fixtures.apiTest.config as { request: { method: string; url: string }; assertions: unknown[] },
+          config: fixtures.apiTest.config as {
+            request: { method: string; url: string }
+            assertions: unknown[]
+          },
           locations: fixtures.apiTest.locations,
           options: { tickEvery: 300 }
         }
@@ -228,9 +233,9 @@ describe('Synthetics Tool', () => {
     it('should delete synthetic tests', async () => {
       server.use(
         http.post(endpoints.deleteSyntheticsTests, async ({ request }) => {
-          const body = await request.json() as { public_ids: string[] }
+          const body = (await request.json()) as { public_ids: string[] }
           return jsonResponse({
-            deleted_tests: body.public_ids.map(id => ({
+            deleted_tests: body.public_ids.map((id) => ({
               public_id: id,
               deleted_at: new Date().toISOString()
             }))
@@ -257,10 +262,7 @@ describe('Synthetics Tool', () => {
 
       const response = await api.triggerTests({
         body: {
-          tests: [
-            { publicId: 'abc-123-xyz' },
-            { publicId: 'def-456-uvw' }
-          ]
+          tests: [{ publicId: 'abc-123-xyz' }, { publicId: 'def-456-uvw' }]
         }
       })
 

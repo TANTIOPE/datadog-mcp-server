@@ -3,7 +3,14 @@ import { z } from 'zod'
 import { v2 } from '@datadog/datadog-api-client'
 import { handleDatadogError } from '../errors/datadog.js'
 import { toolResult } from '../utils/format.js'
-import { hoursAgo, now, parseTime, ensureValidTimeRange, parseDurationToNs, formatDurationNs } from '../utils/time.js'
+import {
+  hoursAgo,
+  now,
+  parseTime,
+  ensureValidTimeRange,
+  parseDurationToNs,
+  formatDurationNs
+} from '../utils/time.js'
 import { buildTracesUrl } from '../utils/urls.js'
 import type { LimitsConfig } from '../config/schema.js'
 
@@ -11,28 +18,81 @@ const ActionSchema = z.enum(['search', 'aggregate', 'services'])
 
 // Reserved span facets that should NOT be prefixed with @
 const RESERVED_SPAN_FACETS = new Set([
-  'service', 'resource_name', 'operation_name', 'span_name',
-  'status', 'env', 'host', 'type', 'duration', 'trace_id', 'span_id'
+  'service',
+  'resource_name',
+  'operation_name',
+  'span_name',
+  'status',
+  'env',
+  'host',
+  'type',
+  'duration',
+  'trace_id',
+  'span_id'
 ])
 
 const InputSchema = {
   action: ActionSchema.describe('Action to perform'),
-  query: z.string().optional().describe('APM trace search query (Datadog syntax). Example: "@http.status_code:500", "service:my-service status:error"'),
-  from: z.string().optional().describe('Start time. Formats: ISO 8601, relative (30s, 15m, 2h, 7d), precise (3d@11:45:23, yesterday@14:00)'),
-  to: z.string().optional().describe('End time. Same formats as "from". Example: from="3d@11:45" to="3d@12:55"'),
-  service: z.string().optional().describe('Filter by service name. Example: "my-service", "postgres"'),
-  operation: z.string().optional().describe('Filter by operation name. Example: "express.request", "mongodb.query"'),
-  resource: z.string().optional().describe('Filter by resource name (endpoint/query). Supports wildcards. Example: "GET /api/*", "*orders*"'),
-  status: z.enum(['ok', 'error']).optional().describe('Filter by span status - "ok" for successful, "error" for failed spans'),
+  query: z
+    .string()
+    .optional()
+    .describe(
+      'APM trace search query (Datadog syntax). Example: "@http.status_code:500", "service:my-service status:error"'
+    ),
+  from: z
+    .string()
+    .optional()
+    .describe(
+      'Start time. Formats: ISO 8601, relative (30s, 15m, 2h, 7d), precise (3d@11:45:23, yesterday@14:00)'
+    ),
+  to: z
+    .string()
+    .optional()
+    .describe('End time. Same formats as "from". Example: from="3d@11:45" to="3d@12:55"'),
+  service: z
+    .string()
+    .optional()
+    .describe('Filter by service name. Example: "my-service", "postgres"'),
+  operation: z
+    .string()
+    .optional()
+    .describe('Filter by operation name. Example: "express.request", "mongodb.query"'),
+  resource: z
+    .string()
+    .optional()
+    .describe(
+      'Filter by resource name (endpoint/query). Supports wildcards. Example: "GET /api/*", "*orders*"'
+    ),
+  status: z
+    .enum(['ok', 'error'])
+    .optional()
+    .describe('Filter by span status - "ok" for successful, "error" for failed spans'),
   env: z.string().optional().describe('Filter by environment. Example: "production", "staging"'),
-  minDuration: z.string().optional().describe('Minimum span duration (find slow spans). Examples: "1s", "500ms", "100ms"'),
+  minDuration: z
+    .string()
+    .optional()
+    .describe('Minimum span duration (find slow spans). Examples: "1s", "500ms", "100ms"'),
   maxDuration: z.string().optional().describe('Maximum span duration. Examples: "5s", "1000ms"'),
-  httpStatus: z.string().optional().describe('HTTP status code filter. Examples: "500", "5xx" (500-599), "4xx" (400-499), ">=400"'),
-  errorType: z.string().optional().describe('Filter by error type (grep-like). Example: "TimeoutError", "ConnectionRefused"'),
-  errorMessage: z.string().optional().describe('Filter by error message (grep-like). Example: "timeout", "connection refused"'),
+  httpStatus: z
+    .string()
+    .optional()
+    .describe(
+      'HTTP status code filter. Examples: "500", "5xx" (500-599), "4xx" (400-499), ">=400"'
+    ),
+  errorType: z
+    .string()
+    .optional()
+    .describe('Filter by error type (grep-like). Example: "TimeoutError", "ConnectionRefused"'),
+  errorMessage: z
+    .string()
+    .optional()
+    .describe('Filter by error message (grep-like). Example: "timeout", "connection refused"'),
   limit: z.number().optional().describe('Maximum number of results'),
   sort: z.enum(['timestamp', '-timestamp']).optional().describe('Sort order'),
-  groupBy: z.array(z.string()).optional().describe('Fields to group by (for aggregate). Example: ["resource_name", "status"]')
+  groupBy: z
+    .array(z.string())
+    .optional()
+    .describe('Fields to group by (for aggregate). Example: ["resource_name", "status"]')
 }
 
 interface SpanSummary {
@@ -84,14 +144,16 @@ function formatSpan(span: v2.Span): SpanSummary {
   }
 
   // Get status from nested attributes or custom
-  const status = (nestedAttrs['status'] as string) ?? (custom['status'] as string) ?? tagMap['status'] ?? ''
+  const status =
+    (nestedAttrs['status'] as string) ?? (custom['status'] as string) ?? tagMap['status'] ?? ''
 
   return {
     traceId: attrs.traceId ?? '',
     spanId: attrs.spanId ?? '',
     service: attrs.service ?? '',
     resource: attrs.resourceName ?? '',
-    operation: (nestedAttrs['operation_name'] as string) ?? (custom['operation_name'] as string) ?? '',
+    operation:
+      (nestedAttrs['operation_name'] as string) ?? (custom['operation_name'] as string) ?? '',
     type: attrs.type ?? '',
     status,
     duration: formatDurationNs(durationNs),
@@ -351,7 +413,7 @@ async function aggregateTraces(
           to: toTime
         },
         compute: [{ aggregation: 'count', type: 'total' }],
-        groupBy: params.groupBy?.map(field => ({
+        groupBy: params.groupBy?.map((field) => ({
           facet: RESERVED_SPAN_FACETS.has(field) || field.startsWith('@') ? field : `@${field}`,
           limit: 10
         }))
@@ -405,10 +467,12 @@ async function listApmServices(
           to: toTime
         },
         compute: [{ aggregation: 'count', type: 'total' }],
-        groupBy: [{
-          facet: 'service',
-          limit: limits.maxResults
-        }]
+        groupBy: [
+          {
+            facet: 'service',
+            limit: limits.maxResults
+          }
+        ]
       }
     }
   } as v2.SpansAggregateRequest
@@ -423,10 +487,12 @@ async function listApmServices(
     }
   }>
 
-  const services = buckets.map(bucket => ({
-    name: bucket.attributes?.by?.['service'] ?? '',
-    spanCount: bucket.attributes?.computes?.['c0'] ?? 0
-  })).filter(s => s.name !== '')
+  const services = buckets
+    .map((bucket) => ({
+      name: bucket.attributes?.by?.['service'] ?? '',
+      spanCount: bucket.attributes?.computes?.['c0'] ?? 0
+    }))
+    .filter((s) => s.name !== '')
 
   return {
     services,
@@ -452,46 +518,78 @@ export function registerTracesTool(
     `Analyze APM traces for request flow and latency debugging. Actions: search (find spans), aggregate (group stats), services (list APM services). Key filters: minDuration/maxDuration ("500ms", "2s"), httpStatus ("5xx", ">=400"), status (ok/error), errorMessage (grep).
 APM METRICS: Traces auto-generate metrics in trace.{service}.* namespace. Use metrics tool to query: avg:trace.{service}.request.duration{*}`,
     InputSchema,
-    async ({ action, query, from, to, service, operation, resource, status, env, minDuration, maxDuration, httpStatus, errorType, errorMessage, limit, sort, groupBy }) => {
+    async ({
+      action,
+      query,
+      from,
+      to,
+      service,
+      operation,
+      resource,
+      status,
+      env,
+      minDuration,
+      maxDuration,
+      httpStatus,
+      errorType,
+      errorMessage,
+      limit,
+      sort,
+      groupBy
+    }) => {
       try {
         switch (action) {
           case 'search': {
-            return toolResult(await searchTraces(spansApi, {
-              query,
-              from,
-              to,
-              service,
-              operation,
-              resource,
-              status,
-              env,
-              minDuration,
-              maxDuration,
-              httpStatus,
-              errorType,
-              errorMessage,
-              limit,
-              sort
-            }, limits, site))
+            return toolResult(
+              await searchTraces(
+                spansApi,
+                {
+                  query,
+                  from,
+                  to,
+                  service,
+                  operation,
+                  resource,
+                  status,
+                  env,
+                  minDuration,
+                  maxDuration,
+                  httpStatus,
+                  errorType,
+                  errorMessage,
+                  limit,
+                  sort
+                },
+                limits,
+                site
+              )
+            )
           }
 
           case 'aggregate': {
-            return toolResult(await aggregateTraces(spansApi, {
-              query,
-              from,
-              to,
-              service,
-              operation,
-              resource,
-              status,
-              env,
-              minDuration,
-              maxDuration,
-              httpStatus,
-              errorType,
-              errorMessage,
-              groupBy
-            }, limits, site))
+            return toolResult(
+              await aggregateTraces(
+                spansApi,
+                {
+                  query,
+                  from,
+                  to,
+                  service,
+                  operation,
+                  resource,
+                  status,
+                  env,
+                  minDuration,
+                  maxDuration,
+                  httpStatus,
+                  errorType,
+                  errorMessage,
+                  groupBy
+                },
+                limits,
+                site
+              )
+            )
           }
 
           case 'services':

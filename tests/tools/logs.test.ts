@@ -43,7 +43,7 @@ describe('Logs Tool', () => {
     it('should search logs with keyword filter', async () => {
       server.use(
         http.post(endpoints.listLogs, async ({ request }) => {
-          const body = await request.json() as { filter?: { query?: string } }
+          const body = (await request.json()) as { filter?: { query?: string } }
           const query = body.filter?.query ?? ''
 
           // Verify the query includes the keyword
@@ -72,9 +72,11 @@ describe('Logs Tool', () => {
         })
       )
 
-      await expect(api.listLogs({
-        body: { filter: { query: '*' } }
-      })).rejects.toMatchObject({
+      await expect(
+        api.listLogs({
+          body: { filter: { query: '*' } }
+        })
+      ).rejects.toMatchObject({
         code: 401
       })
     })
@@ -86,9 +88,11 @@ describe('Logs Tool', () => {
         })
       )
 
-      await expect(api.listLogs({
-        body: { filter: { query: '*' } }
-      })).rejects.toMatchObject({
+      await expect(
+        api.listLogs({
+          body: { filter: { query: '*' } }
+        })
+      ).rejects.toMatchObject({
         code: 429
       })
     })
@@ -124,12 +128,14 @@ describe('Logs Tool', () => {
         })
       )
 
-      await expect(api.aggregateLogs({
-        body: {
-          filter: { query: 'invalid[query' },
-          compute: [{ aggregation: 'count' }]
-        }
-      })).rejects.toMatchObject({
+      await expect(
+        api.aggregateLogs({
+          body: {
+            filter: { query: 'invalid[query' },
+            compute: [{ aggregation: 'count' }]
+          }
+        })
+      ).rejects.toMatchObject({
         code: 400
       })
     })

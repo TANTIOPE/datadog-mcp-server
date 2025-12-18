@@ -156,10 +156,7 @@ export function buildMonitorUrl(
  * @param query - Optional search query
  * @param site - Datadog site (default: datadoghq.com)
  */
-export function buildMonitorsListUrl(
-  query?: string,
-  site: string = 'datadoghq.com'
-): string {
+export function buildMonitorsListUrl(query?: string, site: string = 'datadoghq.com'): string {
   const base = getAppBaseUrl(site)
   if (query) {
     const params = new URLSearchParams({ query })
@@ -213,10 +210,7 @@ export function buildRumSessionUrl(
  * @param dashboardId - Dashboard ID
  * @param site - Datadog site (default: datadoghq.com)
  */
-export function buildDashboardUrl(
-  dashboardId: string,
-  site: string = 'datadoghq.com'
-): string {
+export function buildDashboardUrl(dashboardId: string, site: string = 'datadoghq.com'): string {
   const base = getAppBaseUrl(site)
   return `${base}/dashboard/${dashboardId}`
 }
@@ -227,10 +221,7 @@ export function buildDashboardUrl(
  * @param sloId - SLO ID
  * @param site - Datadog site (default: datadoghq.com)
  */
-export function buildSloUrl(
-  sloId: string,
-  site: string = 'datadoghq.com'
-): string {
+export function buildSloUrl(sloId: string, site: string = 'datadoghq.com'): string {
   const base = getAppBaseUrl(site)
   return `${base}/slo/${sloId}`
 }
@@ -241,10 +232,7 @@ export function buildSloUrl(
  * @param incidentId - Incident ID
  * @param site - Datadog site (default: datadoghq.com)
  */
-export function buildIncidentUrl(
-  incidentId: string,
-  site: string = 'datadoghq.com'
-): string {
+export function buildIncidentUrl(incidentId: string, site: string = 'datadoghq.com'): string {
   const base = getAppBaseUrl(site)
   return `${base}/incidents/${incidentId}`
 }
@@ -255,10 +243,7 @@ export function buildIncidentUrl(
  * @param publicId - Synthetic test public ID
  * @param site - Datadog site (default: datadoghq.com)
  */
-export function buildSyntheticUrl(
-  publicId: string,
-  site: string = 'datadoghq.com'
-): string {
+export function buildSyntheticUrl(publicId: string, site: string = 'datadoghq.com'): string {
   const base = getAppBaseUrl(site)
   return `${base}/synthetics/details/${publicId}`
 }
@@ -269,10 +254,7 @@ export function buildSyntheticUrl(
  * @param notebookId - Notebook ID
  * @param site - Datadog site (default: datadoghq.com)
  */
-export function buildNotebookUrl(
-  notebookId: number,
-  site: string = 'datadoghq.com'
-): string {
+export function buildNotebookUrl(notebookId: number, site: string = 'datadoghq.com'): string {
   const base = getAppBaseUrl(site)
   return `${base}/notebook/${notebookId}`
 }

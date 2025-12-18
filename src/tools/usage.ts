@@ -6,13 +6,31 @@ import { toolResult } from '../utils/format.js'
 import { parseTime } from '../utils/time.js'
 import type { LimitsConfig } from '../config/schema.js'
 
-const ActionSchema = z.enum(['summary', 'hosts', 'logs', 'custom_metrics', 'indexed_spans', 'ingested_spans'])
+const ActionSchema = z.enum([
+  'summary',
+  'hosts',
+  'logs',
+  'custom_metrics',
+  'indexed_spans',
+  'ingested_spans'
+])
 
 const InputSchema = {
-  action: ActionSchema.describe('Action to perform: summary (overall usage), hosts, logs, custom_metrics, indexed_spans, ingested_spans'),
-  from: z.string().optional().describe('Start time (ISO 8601 date like "2024-01-01", or relative like "30d")'),
-  to: z.string().optional().describe('End time (ISO 8601 date like "2024-01-31", or relative like "now")'),
-  includeOrgDetails: z.boolean().optional().describe('Include usage breakdown by organization (for multi-org accounts)')
+  action: ActionSchema.describe(
+    'Action to perform: summary (overall usage), hosts, logs, custom_metrics, indexed_spans, ingested_spans'
+  ),
+  from: z
+    .string()
+    .optional()
+    .describe('Start time (ISO 8601 date like "2024-01-01", or relative like "30d")'),
+  to: z
+    .string()
+    .optional()
+    .describe('End time (ISO 8601 date like "2024-01-31", or relative like "now")'),
+  includeOrgDetails: z
+    .boolean()
+    .optional()
+    .describe('Include usage breakdown by organization (for multi-org accounts)')
 }
 
 interface UsageSummary {
@@ -117,9 +135,9 @@ async function getUsageSummary(
       apmHostTop99p: response.apmHostTop99PSum ?? null,
       infraHostTop99p: response.infraHostTop99PSum ?? null
     },
-    usage: (response.usage ?? []).map(u => ({
+    usage: (response.usage ?? []).map((u) => ({
       date: u.date?.toISOString() ?? '',
-      orgName: (u as Record<string, unknown>)['orgName'] as string ?? null,
+      orgName: ((u as Record<string, unknown>)['orgName'] as string) ?? null,
       apmHostTop99pSum: u.apmHostTop99P ?? null,
       infraHostTop99pSum: u.infraHostTop99P ?? null,
       logsIndexedLogsUsageSum: u.indexedEventsCountSum ?? null,
@@ -147,7 +165,7 @@ async function getHostsUsage(
   return {
     startDate: startDate.toISOString(),
     endDate: endDate.toISOString(),
-    usage: (response.usage ?? []).map(u => ({
+    usage: (response.usage ?? []).map((u) => ({
       date: u.hour?.toISOString() ?? '',
       agentHostTop99p: u.agentHostCount ?? null,
       awsHostTop99p: u.awsHostCount ?? null,
@@ -177,11 +195,12 @@ async function getLogsUsage(
   return {
     startDate: startDate.toISOString(),
     endDate: endDate.toISOString(),
-    usage: (response.usage ?? []).map(u => ({
+    usage: (response.usage ?? []).map((u) => ({
       date: u.hour?.toISOString() ?? '',
       logsIndexedLogsUsageSum: u.indexedEventsCount ?? null,
       logsLiveIndexedLogsUsageSum: u.indexedEventsCount ?? null,
-      logsRehydratedIndexedLogsUsageSum: (u as Record<string, unknown>)['logsRehydratedIndexedCount'] as number ?? null
+      logsRehydratedIndexedLogsUsageSum:
+        ((u as Record<string, unknown>)['logsRehydratedIndexedCount'] as number) ?? null
     }))
   }
 }
@@ -204,7 +223,7 @@ async function getCustomMetricsUsage(
   return {
     startDate: startDate.toISOString(),
     endDate: endDate.toISOString(),
-    usage: (response.usage ?? []).map(u => ({
+    usage: (response.usage ?? []).map((u) => ({
       date: u.hour?.toISOString() ?? '',
       avgMetricsCount: u.numCustomTimeseries ?? null,
       maxMetricsCount: null // Not directly available
@@ -230,7 +249,7 @@ async function getIndexedSpansUsage(
   return {
     startDate: startDate.toISOString(),
     endDate: endDate.toISOString(),
-    usage: (response.usage ?? []).map(u => ({
+    usage: (response.usage ?? []).map((u) => ({
       date: u.hour?.toISOString() ?? '',
       indexedSpansCount: u.indexedEventsCount ?? null,
       ingestedSpansBytes: null
@@ -256,10 +275,10 @@ async function getIngestedSpansUsage(
   return {
     startDate: startDate.toISOString(),
     endDate: endDate.toISOString(),
-    usage: (response.usage ?? []).map(u => ({
+    usage: (response.usage ?? []).map((u) => ({
       date: u.hour?.toISOString() ?? '',
       indexedSpansCount: null,
-      ingestedSpansBytes: (u as Record<string, unknown>)['ingestedTracesBytes'] as number ?? null
+      ingestedSpansBytes: ((u as Record<string, unknown>)['ingestedTracesBytes'] as number) ?? null
     }))
   }
 }
