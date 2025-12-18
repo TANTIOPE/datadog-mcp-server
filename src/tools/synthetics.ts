@@ -175,7 +175,7 @@ async function updateTest(api: v1.SyntheticsApi, id: string, config: Record<stri
   const normalizedConfig = normalizeConfigKeys(config) as Record<string, unknown>
 
   // Determine test type by fetching it first
-  let testType: 'api' | 'browser' = 'api'
+  let testType: 'api' | 'browser'
   try {
     await api.getAPITest({ publicId: id })
     testType = 'api'

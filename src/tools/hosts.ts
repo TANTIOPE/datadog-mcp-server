@@ -105,9 +105,12 @@ async function muteHost(
       override: params.override
     }
   })
+  const muteEndMessage = params.end
+    ? ` until ${new Date(params.end * 1000).toISOString()}`
+    : ' indefinitely'
   return {
     success: true,
-    message: `Host ${hostName} muted${params.end ? ` until ${new Date(params.end * 1000).toISOString()}` : ' indefinitely'}`
+    message: `Host ${hostName} muted${muteEndMessage}`
   }
 }
 

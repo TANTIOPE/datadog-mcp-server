@@ -197,9 +197,9 @@ function extractMonitorIdFromMessage(message: string): number | undefined {
 
   // Match /monitors/{id} pattern in the message
   const match = message.match(/\/monitors\/(\d+)/)
-  if (match && match[1]) {
-    const id = parseInt(match[1], 10)
-    return isNaN(id) ? undefined : id
+  if (match?.[1]) {
+    const id = Number.parseInt(match[1], 10)
+    return Number.isNaN(id) ? undefined : id
   }
 
   return undefined
@@ -370,8 +370,8 @@ async function listEventsV1(
 }
 
 async function getEventV1(api: v1.EventsApi, id: string) {
-  const eventId = parseInt(id, 10)
-  if (isNaN(eventId)) {
+  const eventId = Number.parseInt(id, 10)
+  if (Number.isNaN(eventId)) {
     throw new Error(`Invalid event ID: ${id}`)
   }
 

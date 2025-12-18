@@ -57,9 +57,9 @@ export function parseTime(input: string | number | undefined, defaultValue: numb
   const trimmed = input.trim()
 
   // Simple relative time: 30s, 15m, 2h, 7d
-  const simpleRelativeMatch = trimmed.match(/^(\d+)(s|m|h|d)$/)
+  const simpleRelativeMatch = trimmed.match(/^(\d+)([smhd])$/)
   if (simpleRelativeMatch) {
-    const value = parseInt(simpleRelativeMatch[1] ?? '0', 10)
+    const value = Number.parseInt(simpleRelativeMatch[1] ?? '0', 10)
     const unit = simpleRelativeMatch[2]
     const nowTs = now()
     switch (unit) {
@@ -77,13 +77,13 @@ export function parseTime(input: string | number | undefined, defaultValue: numb
   }
 
   // Relative time with specific time: 3d@11:45:23 or 3d@11:45
-  const relativeWithTimeMatch = trimmed.match(/^(\d+)(d|h)[@\s](\d{1,2}):(\d{2})(?::(\d{2}))?$/)
+  const relativeWithTimeMatch = trimmed.match(/^(\d+)([dh])[@\s](\d{1,2}):(\d{2})(?::(\d{2}))?$/)
   if (relativeWithTimeMatch) {
-    const value = parseInt(relativeWithTimeMatch[1] ?? '0', 10)
+    const value = Number.parseInt(relativeWithTimeMatch[1] ?? '0', 10)
     const unit = relativeWithTimeMatch[2]
-    const hours = parseInt(relativeWithTimeMatch[3] ?? '0', 10)
-    const minutes = parseInt(relativeWithTimeMatch[4] ?? '0', 10)
-    const seconds = parseInt(relativeWithTimeMatch[5] ?? '0', 10)
+    const hours = Number.parseInt(relativeWithTimeMatch[3] ?? '0', 10)
+    const minutes = Number.parseInt(relativeWithTimeMatch[4] ?? '0', 10)
+    const seconds = Number.parseInt(relativeWithTimeMatch[5] ?? '0', 10)
 
     if (unit === 'd') {
       const date = startOfDayAgo(value)
@@ -102,9 +102,9 @@ export function parseTime(input: string | number | undefined, defaultValue: numb
   const keywordMatch = trimmed.match(/^(today|yesterday)[@\s](\d{1,2}):(\d{2})(?::(\d{2}))?$/i)
   if (keywordMatch) {
     const keyword = keywordMatch[1]?.toLowerCase()
-    const hours = parseInt(keywordMatch[2] ?? '0', 10)
-    const minutes = parseInt(keywordMatch[3] ?? '0', 10)
-    const seconds = parseInt(keywordMatch[4] ?? '0', 10)
+    const hours = Number.parseInt(keywordMatch[2] ?? '0', 10)
+    const minutes = Number.parseInt(keywordMatch[3] ?? '0', 10)
+    const seconds = Number.parseInt(keywordMatch[4] ?? '0', 10)
 
     const daysAgo = keyword === 'yesterday' ? 1 : 0
     const date = startOfDayAgo(daysAgo)
@@ -114,13 +114,13 @@ export function parseTime(input: string | number | undefined, defaultValue: numb
 
   // ISO 8601 date
   const date = new Date(trimmed)
-  if (!isNaN(date.getTime())) {
+  if (!Number.isNaN(date.getTime())) {
     return Math.floor(date.getTime() / 1000)
   }
 
   // Unix timestamp as string
-  const ts = parseInt(trimmed, 10)
-  if (!isNaN(ts)) {
+  const ts = Number.parseInt(trimmed, 10)
+  if (!Number.isNaN(ts)) {
     return ts
   }
 
@@ -187,11 +187,11 @@ export function parseDurationToNs(input: string | number | undefined): number | 
   const match = trimmed.match(/^(\d+(?:\.\d+)?)(ns|µs|us|ms|s|m|h|d|w)?$/)
   if (!match) {
     // Try parsing as raw number (assume nanoseconds)
-    const raw = parseInt(trimmed, 10)
-    return isNaN(raw) ? undefined : raw
+    const raw = Number.parseInt(trimmed, 10)
+    return Number.isNaN(raw) ? undefined : raw
   }
 
-  const value = parseFloat(match[1] ?? '0')
+  const value = Number.parseFloat(match[1] ?? '0')
   const unit = match[2] ?? 'ns'
 
   const multipliers: Record<string, number> = {

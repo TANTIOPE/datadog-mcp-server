@@ -104,7 +104,7 @@ function parseDate(dateStr: string | undefined, defaultDate: Date): Date {
 
   // Try ISO date parsing
   const parsed = new Date(dateStr)
-  if (!isNaN(parsed.getTime())) {
+  if (!Number.isNaN(parsed.getTime())) {
     return parsed
   }
 
