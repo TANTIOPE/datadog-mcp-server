@@ -133,7 +133,7 @@ export async function searchMonitors(
  * Normalize monitor config to handle snake_case -> camelCase conversion
  * Common fields that users might pass in snake_case
  */
-function normalizeMonitorConfig(config: Record<string, unknown>): Record<string, unknown> {
+export function normalizeMonitorConfig(config: Record<string, unknown>): Record<string, unknown> {
   const normalized = { ...config }
 
   // Required field validation
