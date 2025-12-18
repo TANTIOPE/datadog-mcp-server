@@ -119,6 +119,13 @@ export function normalizeDowntimeConfig(config: Record<string, unknown>): Record
       if (schedule.end && typeof schedule.end === 'string') {
         schedule.end = new Date(schedule.end)
       }
+
+      // Move timezone to displayTimezone at top level if present in schedule
+      if (schedule.timezone && !normalized.displayTimezone) {
+        normalized.displayTimezone = schedule.timezone
+      }
+      // Remove timezone from one-time schedule (not a valid field)
+      delete schedule.timezone
     }
     // For recurring schedules, keep dates as strings (no conversion needed)
 
