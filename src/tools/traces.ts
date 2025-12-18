@@ -173,6 +173,25 @@ export function formatSpan(span: v2.Span): SpanSummary {
 }
 
 /**
+ * Build HTTP status code filter string for trace query
+ * Handles ranges (5xx), comparisons (>=500), and exact values (404)
+ */
+function buildHttpStatusFilter(httpStatus: string): string {
+  const status = httpStatus.toLowerCase()
+
+  if (status.endsWith('xx')) {
+    const base = Number.parseInt(status[0] ?? '0', 10) * 100
+    return `@http.status_code:[${base} TO ${base + 99}]`
+  }
+  if (status.startsWith('>=')) return `@http.status_code:>=${status.slice(2)}`
+  if (status.startsWith('>')) return `@http.status_code:>${status.slice(1)}`
+  if (status.startsWith('<=')) return `@http.status_code:<=${status.slice(2)}`
+  if (status.startsWith('<')) return `@http.status_code:<${status.slice(1)}`
+
+  return `@http.status_code:${httpStatus}`
+}
+
+/**
  * Build a Datadog APM trace query from filter parameters
  */
 export function buildTraceQuery(params: {
@@ -236,22 +255,7 @@ export function buildTraceQuery(params: {
 
   // HTTP status code filter
   if (params.httpStatus) {
-    const status = params.httpStatus.toLowerCase()
-    if (status.endsWith('xx')) {
-      // Handle ranges like "5xx", "4xx"
-      const base = Number.parseInt(status[0] ?? '0', 10) * 100
-      parts.push(`@http.status_code:[${base} TO ${base + 99}]`)
-    } else if (status.startsWith('>=')) {
-      parts.push(`@http.status_code:>=${status.slice(2)}`)
-    } else if (status.startsWith('>')) {
-      parts.push(`@http.status_code:>${status.slice(1)}`)
-    } else if (status.startsWith('<=')) {
-      parts.push(`@http.status_code:<=${status.slice(2)}`)
-    } else if (status.startsWith('<')) {
-      parts.push(`@http.status_code:<${status.slice(1)}`)
-    } else {
-      parts.push(`@http.status_code:${params.httpStatus}`)
-    }
+    parts.push(buildHttpStatusFilter(params.httpStatus))
   }
 
   // Error type grep (wildcard search)

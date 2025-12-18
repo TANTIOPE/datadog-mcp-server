@@ -6,6 +6,37 @@ interface ParsedArgs {
 }
 
 /**
+ * Parse --key=value format argument
+ * Returns [key, value] or null if invalid
+ */
+function parseEqualsFormat(arg: string): [string, string] | null {
+  if (!arg.includes('=')) return null
+  const parts = arg.slice(2).split('=')
+  const key = parts[0]
+  const value = parts.slice(1).join('=') // Handle values with = in them
+  return key && value !== undefined ? [key, value] : null
+}
+
+/**
+ * Parse --key value format argument
+ * Returns [key, value] or null if next arg is missing/invalid
+ */
+function parseSpacedFormat(arg: string, nextArg?: string): [string, string] | null {
+  if (nextArg && !nextArg.startsWith('--')) {
+    return [arg.slice(2), nextArg]
+  }
+  return null
+}
+
+/**
+ * Parse boolean flag argument (--flag with no value)
+ * Returns the flag name
+ */
+function parseBooleanFlag(arg: string): string {
+  return arg.slice(2)
+}
+
+/**
  * Parse CLI arguments
  * Supports: --transport, --port, --host, --site, --read-only, --disable-tools
  * Format: --key=value or --key value or --flag (boolean)
@@ -20,27 +51,25 @@ function parseArgs(): ParsedArgs {
     if (!arg) continue
 
     if (arg.startsWith('--')) {
-      // Handle --key=value format
-      if (arg.includes('=')) {
-        const parts = arg.slice(2).split('=')
-        const key = parts[0]
-        const value = parts.slice(1).join('=') // Handle values with = in them
-        if (key && value !== undefined) {
-          strings[key] = value
-        }
+      // Try --key=value format
+      const equalsResult = parseEqualsFormat(arg)
+      if (equalsResult) {
+        const [key, value] = equalsResult
+        strings[key] = value
+        continue
       }
-      // Handle --key value format or --flag (boolean)
-      else {
-        const argName = arg.slice(2)
-        const nextArg = argv[i + 1]
-        if (nextArg && !nextArg.startsWith('--')) {
-          strings[argName] = nextArg
-          i += 1
-        } else {
-          // Boolean flag (no value)
-          booleans.add(argName)
-        }
+
+      // Try --key value format
+      const spacedResult = parseSpacedFormat(arg, argv[i + 1])
+      if (spacedResult) {
+        const [key, value] = spacedResult
+        strings[key] = value
+        i += 1 // Skip next arg since we consumed it
+        continue
       }
+
+      // Must be boolean flag
+      booleans.add(parseBooleanFlag(arg))
     }
   }
 

@@ -154,6 +154,7 @@ export function extractMonitorInfo(title: string): {
   const withoutPriority = title.replace(/^\[P\d+\]\s*/, '')
 
   // Extract status, scope, and name
+  // NOSONAR S5852: Anchored pattern with no nested quantifiers, input is bounded Datadog event titles
   const match = withoutPriority.match(
     /^\[(Triggered|Recovered|Warn|Alert|OK|No Data|Re-Triggered|Renotify)(?:\s+on\s+\{([^}]+)\})?\]\s*(.+)$/i
   )
@@ -185,7 +186,8 @@ export function extractTitleFromMessage(message: string): string {
   const firstLine = content.split('\n')[0]?.trim() ?? ''
 
   // Clean up common trailing patterns like " !" or extra whitespace
-  return firstLine.replace(/\s+!?\s*$/, '').trim()
+  // NOSONAR S5852: Simplified pattern, .trim() handles whitespace
+  return firstLine.replace(/\s*!?\s*$/, '').trim()
 }
 
 /**

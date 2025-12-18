@@ -12,8 +12,13 @@ import type { ServerConfig } from '../config/schema.js'
 // Store active transports by session ID
 const transports: Record<string, StreamableHTTPServerTransport> = {}
 
-export async function connectHttp(server: McpServer, config: ServerConfig): Promise<void> {
+/**
+ * Creates and configures an Express app for MCP server
+ * Exported for testing purposes
+ */
+export function createExpressApp(server: McpServer, config: ServerConfig): express.Application {
   const app = express()
+  app.disable('x-powered-by')
   app.use(express.json())
 
   // Health check endpoint
@@ -78,6 +83,12 @@ export async function connectHttp(server: McpServer, config: ServerConfig): Prom
       res.status(400).json({ error: 'Invalid session' })
     }
   })
+
+  return app
+}
+
+export async function connectHttp(server: McpServer, config: ServerConfig): Promise<void> {
+  const app = createExpressApp(server, config)
 
   // Start server
   app.listen(config.port, config.host, () => {
