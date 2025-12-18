@@ -1,0 +1,43 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-10-17/server.schema.json",
+  "name": "io.github.tantiope/datadog-mcp-server",
+  "description": "MCP server providing AI assistants with full Datadog observability access. Features grep-like log search, APM trace filtering, smart sampling modes, and cross-correlation between logs, traces, and metrics.",
+  "repository": {
+    "url": "https://github.com/tantiope/datadog-mcp-server",
+    "source": "github"
+  },
+  "version": "$VERSION",
+  "packages": [
+    {
+      "registryType": "npm",
+      "registryBaseUrl": "https://registry.npmjs.org",
+      "identifier": "datadog-mcp",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "DD_API_KEY",
+          "description": "Datadog API key",
+          "isRequired": true,
+          "format": "string",
+          "isSecret": true
+        },
+        {
+          "name": "DD_APP_KEY",
+          "description": "Datadog Application key",
+          "isRequired": true,
+          "format": "string",
+          "isSecret": true
+        },
+        {
+          "name": "DD_SITE",
+          "description": "Datadog site (e.g., datadoghq.com, datadoghq.eu, us3.datadoghq.com)",
+          "isRequired": false,
+          "format": "string",
+          "isSecret": false
+        }
+      ]
+    }
+  ]
+}

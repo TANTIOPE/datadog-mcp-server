@@ -1,0 +1,20 @@
+startCommand:
+  type: stdio
+  configSchema:
+    type: object
+    required:
+      - ddApiKey
+      - ddAppKey
+    properties:
+      ddApiKey:
+        type: string
+        description: Datadog API key
+      ddAppKey:
+        type: string
+        description: Datadog Application key
+      ddSite:
+        type: string
+        default: datadoghq.com
+        description: Datadog site (e.g., datadoghq.com, datadoghq.eu)
+  commandFunction: |-
+    config => ({ command: 'npx', args: ['-y', 'datadog-mcp'], env: { DD_API_KEY: config.ddApiKey, DD_APP_KEY: config.ddAppKey, DD_SITE: config.ddSite || 'datadoghq.com' } })
