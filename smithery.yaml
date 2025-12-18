@@ -18,3 +18,7 @@ startCommand:
         description: Datadog site (e.g., datadoghq.com, datadoghq.eu)
   commandFunction: |-
     config => ({ command: 'npx', args: ['-y', 'datadog-mcp'], env: { DD_API_KEY: config.ddApiKey, DD_APP_KEY: config.ddAppKey, DD_SITE: config.ddSite || 'datadoghq.com' } })
+  exampleConfig:
+    ddApiKey: smithery-scan-placeholder-api-key
+    ddAppKey: smithery-scan-placeholder-app-key
+    ddSite: datadoghq.com
