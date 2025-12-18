@@ -80,6 +80,26 @@ DD_SITE=datadoghq.com  # Default. Use datadoghq.eu for EU, etc.
 }
 ```
 
+### Kubernetes
+
+**Use environment variables instead of container args:**
+
+```yaml
+env:
+  - name: DD_API_KEY
+    value: "your-api-key"
+  - name: DD_APP_KEY
+    value: "your-app-key"
+  - name: MCP_TRANSPORT
+    value: "http"
+  - name: MCP_PORT
+    value: "3000"
+  - name: MCP_HOST
+    value: "0.0.0.0"
+```
+
+> **Note:** Kubernetes `args:` replaces the entire Dockerfile CMD, causing Node.js to receive the flags instead of your application. Environment variables avoid this issue.
+
 ### HTTP Transport
 
 When running with `--transport=http`:
