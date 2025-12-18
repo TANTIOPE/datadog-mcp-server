@@ -40,17 +40,25 @@ jobs:
         node-version: ['18', '20', '22']
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node-version }}
           cache: 'npm'
       - run: npm ci
-      - run: npm test -- --run
-      - name: Upload coverage
+      - name: Run tests with coverage
         if: matrix.node-version == '20'
-        uses: codecov/codecov-action@v4
-        with:
-          fail_ci_if_error: false
+        run: npm run test:coverage
+      - name: Run tests
+        if: matrix.node-version != '20'
+        run: npm test -- --run
+      - name: SonarCloud Scan
+        if: matrix.node-version == '20'
+        uses: SonarSource/sonarqube-scan-action@v4
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: https://sonarcloud.io
 
   build:
     name: Build
