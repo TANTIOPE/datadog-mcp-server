@@ -84,7 +84,7 @@ export async function getDashboard(api: v1.DashboardsApi, id: string) {
   }
 }
 
-function normalizeDashboardConfig(config: Record<string, unknown>): Record<string, unknown> {
+export function normalizeDashboardConfig(config: Record<string, unknown>): Record<string, unknown> {
   const normalized = { ...config }
 
   // Handle layout_type -> layoutType
