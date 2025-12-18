@@ -31,20 +31,24 @@ export const configSchema = z.object({
     appKey: z.string().min(1, 'DD_APP_KEY is required'),
     site: z.string().default('datadoghq.com')
   }),
-  server: z.object({
-    name: z.string().default('datadog-mcp'),
-    version: z.string().default('1.0.0'),
-    transport: z.enum(['stdio', 'http']).default('stdio'),
-    port: z.number().default(3000),
-    host: z.string().default('localhost')
-  }),
-  limits: z.object({
-    maxResults: z.number().default(100),
-    maxLogLines: z.number().default(100), // Reduced from 500 for token efficiency
-    defaultLimit: z.number().default(25), // Default limit for initial queries
-    maxMetricDataPoints: z.number().default(1000),
-    defaultTimeRangeHours: z.number().default(24)
-  }),
+  server: z
+    .object({
+      name: z.string().default('datadog-mcp'),
+      version: z.string().default('1.0.0'),
+      transport: z.enum(['stdio', 'http']).default('stdio'),
+      port: z.number().default(3000),
+      host: z.string().default('localhost')
+    })
+    .default({}),
+  limits: z
+    .object({
+      maxResults: z.number().default(100),
+      maxLogLines: z.number().default(100), // Reduced from 500 for token efficiency
+      defaultLimit: z.number().default(25), // Default limit for initial queries
+      maxMetricDataPoints: z.number().default(1000),
+      defaultTimeRangeHours: z.number().default(24)
+    })
+    .default({}),
   features: z
     .object({
       readOnly: z.boolean().default(false),
