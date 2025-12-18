@@ -146,7 +146,7 @@ describe('Format Utilities', () => {
     })
 
     it('should handle circular references gracefully', () => {
-      const obj: any = { name: 'test' }
+      const obj: Record<string, unknown> = { name: 'test' }
       obj.self = obj // Create circular reference
 
       // JSON.stringify throws on circular refs

@@ -2,7 +2,7 @@
  * Comprehensive async tests for traces.ts
  * Focuses on listApmServices (completely untested) and additional edge cases
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { v2 } from '@datadog/datadog-api-client'
 import { listApmServices } from '../../src/tools/traces.js'
 import type { LimitsConfig } from '../../src/config/schema.js'

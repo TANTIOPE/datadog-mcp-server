@@ -14,7 +14,7 @@ vi.mock('@datadog/datadog-api-client', () => {
 
   // Mock API classes
   class MockApi {
-    constructor(public config: any) {}
+    constructor(public config: unknown) {}
   }
 
   return {
@@ -106,7 +106,7 @@ describe('Datadog Client Creation', () => {
     })
 
     it('should not set server variables for default site', () => {
-      const mockConfiguration = (client.createConfiguration as any)()
+      const mockConfiguration = (client.createConfiguration as unknown)()
 
       createDatadogClients(mockConfig)
 
@@ -114,7 +114,7 @@ describe('Datadog Client Creation', () => {
     })
 
     it('should set server variables for EU site', () => {
-      const mockConfiguration = (client.createConfiguration as any)()
+      const mockConfiguration = (client.createConfiguration as unknown)()
 
       const euConfig: DatadogConfig = {
         ...mockConfig,
@@ -129,7 +129,7 @@ describe('Datadog Client Creation', () => {
     })
 
     it('should set server variables for US3 site', () => {
-      const mockConfiguration = (client.createConfiguration as any)()
+      const mockConfiguration = (client.createConfiguration as unknown)()
 
       const us3Config: DatadogConfig = {
         ...mockConfig,
@@ -144,7 +144,7 @@ describe('Datadog Client Creation', () => {
     })
 
     it('should enable unstable operations for incidents API', () => {
-      const mockConfiguration = (client.createConfiguration as any)()
+      const mockConfiguration = (client.createConfiguration as unknown)()
 
       createDatadogClients(mockConfig)
 
@@ -159,7 +159,7 @@ describe('Datadog Client Creation', () => {
     })
 
     it('should return clients with correct configuration', () => {
-      const mockConfiguration = (client.createConfiguration as any)()
+      const mockConfiguration = (client.createConfiguration as unknown)()
 
       const clients = createDatadogClients(mockConfig)
 

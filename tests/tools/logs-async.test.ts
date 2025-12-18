@@ -2,7 +2,7 @@
  * Comprehensive async tests for logs.ts
  * Tests all async functions with focus on edge cases, pagination, error handling
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { v2 } from '@datadog/datadog-api-client'
 import { searchLogs, aggregateLogs } from '../../src/tools/logs.js'
 import type { LimitsConfig } from '../../src/config/schema.js'
