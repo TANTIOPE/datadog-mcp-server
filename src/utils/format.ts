@@ -5,7 +5,7 @@ export function formatResponse(data: unknown): { type: 'text'; text: string }[] 
   return [
     {
       type: 'text' as const,
-      text: JSON.stringify(data, null, 2)
+      text: JSON.stringify(data, null, 2) ?? 'null'
     }
   ]
 }
