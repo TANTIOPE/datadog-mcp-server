@@ -114,7 +114,9 @@ describe('registerTagsTool', () => {
   it('should throw error for unknown action', async () => {
     registerTagsTool(mockServer, mockApi, limits, false)
 
-    await expect(registeredHandler({ action: 'unknown' })).rejects.toThrow('Unknown action: unknown')
+    await expect(registeredHandler({ action: 'unknown' })).rejects.toThrow(
+      'Unknown action: unknown'
+    )
   })
 
   it('should throw error for get without hostName', async () => {
@@ -138,6 +140,8 @@ describe('registerTagsTool', () => {
   it('should block write operations in read-only mode', async () => {
     registerTagsTool(mockServer, mockApi, limits, true)
 
-    await expect(registeredHandler({ action: 'add', hostName: 'host1', tags: ['tag1'] })).rejects.toThrow()
+    await expect(
+      registeredHandler({ action: 'add', hostName: 'host1', tags: ['tag1'] })
+    ).rejects.toThrow()
   })
 })

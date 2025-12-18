@@ -242,7 +242,12 @@ describe('formatNotebookDetail', () => {
     const result = formatNotebookDetail(notebook)
 
     expect(result.cells).toHaveLength(4)
-    expect(result.cells.map((c) => c.type)).toEqual(['markdown', 'timeseries', 'toplist', 'heatmap'])
+    expect(result.cells.map((c) => c.type)).toEqual([
+      'markdown',
+      'timeseries',
+      'toplist',
+      'heatmap'
+    ])
   })
 
   it('should handle missing time configuration', () => {

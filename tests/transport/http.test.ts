@@ -99,9 +99,7 @@ describe('HTTP Transport', () => {
     it('should handle GET with invalid session', async () => {
       const app = createExpressApp(mockServer, config)
 
-      const response = await request(app)
-        .get('/mcp')
-        .set('mcp-session-id', 'nonexistent-session')
+      const response = await request(app).get('/mcp').set('mcp-session-id', 'nonexistent-session')
 
       expect(response.status).toBe(400)
       expect(response.body).toEqual({ error: 'Invalid session' })

@@ -38,18 +38,22 @@ describe('normalizeConfigKeys', () => {
   it('should handle nested objects', () => {
     const input = {
       name: 'Test SLO',
-      thresholds: [{
-        target_threshold: 99.9,
-        time_window: '7d'
-      }]
+      thresholds: [
+        {
+          target_threshold: 99.9,
+          time_window: '7d'
+        }
+      ]
     }
     const result = normalizeConfigKeys(input)
     expect(result).toEqual({
       name: 'Test SLO',
-      thresholds: [{
-        targetThreshold: 99.9,
-        timeWindow: '7d'
-      }]
+      thresholds: [
+        {
+          targetThreshold: 99.9,
+          timeWindow: '7d'
+        }
+      ]
     })
   })
 

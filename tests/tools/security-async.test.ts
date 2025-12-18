@@ -255,7 +255,8 @@ describe('listFindings', () => {
       expect.objectContaining({
         body: expect.objectContaining({
           filter: expect.objectContaining({
-            query: '@workflow.rule.type:workload_security OR @workflow.rule.type:cloud_configuration'
+            query:
+              '@workflow.rule.type:workload_security OR @workflow.rule.type:cloud_configuration'
           }),
           page: expect.objectContaining({
             limit: 50

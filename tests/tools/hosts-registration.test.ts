@@ -87,7 +87,9 @@ describe('registerHostsTool', () => {
   it('should throw error for unknown action', async () => {
     registerHostsTool(mockServer, mockApi, limits, false)
 
-    await expect(registeredHandler({ action: 'unknown' })).rejects.toThrow('Unknown action: unknown')
+    await expect(registeredHandler({ action: 'unknown' })).rejects.toThrow(
+      'Unknown action: unknown'
+    )
   })
 
   it('should throw error for mute without hostName', async () => {

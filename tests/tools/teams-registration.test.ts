@@ -73,7 +73,9 @@ describe('registerTeamsTool', () => {
   it('should throw error for unknown action', async () => {
     registerTeamsTool(mockServer, mockApi, limits)
 
-    await expect(registeredHandler({ action: 'unknown' })).rejects.toThrow('Unknown action: unknown')
+    await expect(registeredHandler({ action: 'unknown' })).rejects.toThrow(
+      'Unknown action: unknown'
+    )
   })
 
   it('should throw error for get without id', async () => {

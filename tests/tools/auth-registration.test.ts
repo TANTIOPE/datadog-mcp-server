@@ -46,6 +46,8 @@ describe('registerAuthTool', () => {
   it('should throw error for unknown action', async () => {
     registerAuthTool(mockServer, mockClients)
 
-    await expect(registeredHandler({ action: 'unknown' })).rejects.toThrow('Unknown action: unknown')
+    await expect(registeredHandler({ action: 'unknown' })).rejects.toThrow(
+      'Unknown action: unknown'
+    )
   })
 })

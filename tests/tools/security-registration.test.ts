@@ -88,6 +88,8 @@ describe('registerSecurityTool', () => {
   it('should throw error for unknown action', async () => {
     registerSecurityTool(mockServer, mockApi, limits)
 
-    await expect(registeredHandler({ action: 'unknown' })).rejects.toThrow('Unknown action: unknown')
+    await expect(registeredHandler({ action: 'unknown' })).rejects.toThrow(
+      'Unknown action: unknown'
+    )
   })
 })
