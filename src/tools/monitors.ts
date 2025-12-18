@@ -91,8 +91,8 @@ async function listMonitors(
 }
 
 async function getMonitor(api: v1.MonitorsApi, id: string, site: string) {
-  const monitorId = parseInt(id, 10)
-  if (isNaN(monitorId)) {
+  const monitorId = Number.parseInt(id, 10)
+  if (Number.isNaN(monitorId)) {
     throw new Error(`Invalid monitor ID: ${id}`)
   }
 
@@ -206,7 +206,7 @@ async function createMonitor(api: v1.MonitorsApi, config: Record<string, unknown
 }
 
 async function updateMonitor(api: v1.MonitorsApi, id: string, config: Record<string, unknown>) {
-  const monitorId = parseInt(id, 10)
+  const monitorId = Number.parseInt(id, 10)
   const body = normalizeMonitorConfig(config) as unknown as v1.MonitorUpdateRequest
   const monitor = await api.updateMonitor({ monitorId, body })
   return {
@@ -216,13 +216,13 @@ async function updateMonitor(api: v1.MonitorsApi, id: string, config: Record<str
 }
 
 async function deleteMonitor(api: v1.MonitorsApi, id: string) {
-  const monitorId = parseInt(id, 10)
+  const monitorId = Number.parseInt(id, 10)
   await api.deleteMonitor({ monitorId })
   return { success: true, message: `Monitor ${id} deleted` }
 }
 
 async function muteMonitor(api: v1.MonitorsApi, id: string, params: { end?: number }) {
-  const monitorId = parseInt(id, 10)
+  const monitorId = Number.parseInt(id, 10)
   // Use validate endpoint with mute options
   const monitor = await api.getMonitor({ monitorId })
 
@@ -240,7 +240,7 @@ async function muteMonitor(api: v1.MonitorsApi, id: string, params: { end?: numb
 }
 
 async function unmuteMonitor(api: v1.MonitorsApi, id: string) {
-  const monitorId = parseInt(id, 10)
+  const monitorId = Number.parseInt(id, 10)
   const monitor = await api.getMonitor({ monitorId })
 
   // Update the monitor to remove silenced option

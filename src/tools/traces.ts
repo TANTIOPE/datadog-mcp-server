@@ -207,12 +207,7 @@ function buildTraceQuery(params: {
 
   // Resource name filter (endpoint/query name)
   if (params.resource) {
-    // Support wildcards by wrapping in quotes if contains special chars
-    if (params.resource.includes('*') || params.resource.includes(' ')) {
-      parts.push(`resource_name:${params.resource}`)
-    } else {
-      parts.push(`resource_name:${params.resource}`)
-    }
+    parts.push(`resource_name:${params.resource}`)
   }
 
   // Span status filter (ok/error)
@@ -244,7 +239,7 @@ function buildTraceQuery(params: {
     const status = params.httpStatus.toLowerCase()
     if (status.endsWith('xx')) {
       // Handle ranges like "5xx", "4xx"
-      const base = parseInt(status[0] ?? '0', 10) * 100
+      const base = Number.parseInt(status[0] ?? '0', 10) * 100
       parts.push(`@http.status_code:[${base} TO ${base + 99}]`)
     } else if (status.startsWith('>=')) {
       parts.push(`@http.status_code:>=${status.slice(2)}`)

@@ -35,7 +35,7 @@ function parseArgs(): ParsedArgs {
         const nextArg = argv[i + 1]
         if (nextArg && !nextArg.startsWith('--')) {
           strings[argName] = nextArg
-          i++
+          i += 1
         } else {
           // Boolean flag (no value)
           booleans.add(argName)
@@ -71,14 +71,14 @@ export function loadConfig(): Config {
       name: 'datadog-mcp',
       version: '1.0.0',
       transport: args.strings.transport ?? process.env.MCP_TRANSPORT ?? 'stdio',
-      port: parseInt(args.strings.port ?? process.env.MCP_PORT ?? '3000', 10),
+      port: Number.parseInt(args.strings.port ?? process.env.MCP_PORT ?? '3000', 10),
       host: args.strings.host ?? process.env.MCP_HOST ?? 'localhost'
     },
     limits: {
-      maxResults: parseInt(process.env.MCP_MAX_RESULTS ?? '100', 10),
-      maxLogLines: parseInt(process.env.MCP_MAX_LOG_LINES ?? '500', 10),
-      maxMetricDataPoints: parseInt(process.env.MCP_MAX_METRIC_POINTS ?? '1000', 10),
-      defaultTimeRangeHours: parseInt(process.env.MCP_DEFAULT_TIME_RANGE ?? '24', 10)
+      maxResults: Number.parseInt(process.env.MCP_MAX_RESULTS ?? '100', 10),
+      maxLogLines: Number.parseInt(process.env.MCP_MAX_LOG_LINES ?? '500', 10),
+      maxMetricDataPoints: Number.parseInt(process.env.MCP_MAX_METRIC_POINTS ?? '1000', 10),
+      defaultTimeRangeHours: Number.parseInt(process.env.MCP_DEFAULT_TIME_RANGE ?? '24', 10)
     },
     features: {
       readOnly: args.booleans.has('read-only') || process.env.MCP_READ_ONLY === 'true',
