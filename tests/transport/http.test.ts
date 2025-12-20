@@ -25,7 +25,7 @@ vi.mock('@modelcontextprotocol/sdk/types.js', () => ({
 vi.mock('@modelcontextprotocol/sdk/server/streamableHttp.js', () => ({
   StreamableHTTPServerTransport: vi.fn().mockImplementation(function (
     this: MockTransport,
-    _options: unknown
+    options: unknown
   ) {
     this.sessionId = undefined
     this.onclose = undefined
