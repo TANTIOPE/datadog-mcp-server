@@ -148,16 +148,14 @@ export function formatSpan(span: v2.Span): SpanSummary {
   }
 
   // Get status - prioritize direct attrs field, then custom, then tags
-  const status =
-    (attrs.status as string) ?? (custom['status'] as string) ?? tagMap['status'] ?? ''
+  const status = (attrs.status as string) ?? (custom['status'] as string) ?? tagMap['status'] ?? ''
 
   return {
     traceId: attrs.traceId ?? '',
     spanId: attrs.spanId ?? '',
     service: attrs.service ?? '',
     resource: attrs.resourceName ?? '',
-    operation:
-      (attrs.operationName as string) ?? (custom['operation_name'] as string) ?? '',
+    operation: (attrs.operationName as string) ?? (custom['operation_name'] as string) ?? '',
     type: attrs.type ?? '',
     status,
     duration: formatDurationNs(durationNs),
@@ -168,8 +166,13 @@ export function formatSpan(span: v2.Span): SpanSummary {
       url: tagMap['http.url'] ?? ''
     },
     error: {
-      type: (attrsError['type'] as string) ?? (customError['type'] as string) ?? tagMap['error.type'] ?? '',
-      message: (customError['message'] as string) ?? tagMap['error.message'] ?? tagMap['error.msg'] ?? ''
+      type:
+        (attrsError['type'] as string) ??
+        (customError['type'] as string) ??
+        tagMap['error.type'] ??
+        '',
+      message:
+        (customError['message'] as string) ?? tagMap['error.message'] ?? tagMap['error.msg'] ?? ''
     },
     env: attrs.env ?? tagMap['env'] ?? '',
     tags
