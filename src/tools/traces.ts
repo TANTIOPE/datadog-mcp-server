@@ -123,6 +123,8 @@ export function formatSpan(span: v2.Span): SpanSummary {
   const tags = (attrs.tags as string[]) ?? []
   const nestedAttrs = (attrs.attributes ?? {}) as Record<string, unknown>
   const custom = (attrs.custom ?? {}) as Record<string, unknown>
+  const attrsError = (attrs.error ?? {}) as Record<string, unknown>
+  const customError = (custom.error ?? {}) as Record<string, unknown>
 
   // Extract common tags into a map
   const tagMap: Record<string, string> = {}
@@ -143,9 +145,9 @@ export function formatSpan(span: v2.Span): SpanSummary {
     durationNs = custom['duration']
   }
 
-  // Get status from nested attributes or custom
+  // Get status - prioritize direct attrs field, then custom, then tags
   const status =
-    (nestedAttrs['status'] as string) ?? (custom['status'] as string) ?? tagMap['status'] ?? ''
+    (attrs.status as string) ?? (custom['status'] as string) ?? tagMap['status'] ?? ''
 
   return {
     traceId: attrs.traceId ?? '',
@@ -153,7 +155,7 @@ export function formatSpan(span: v2.Span): SpanSummary {
     service: attrs.service ?? '',
     resource: attrs.resourceName ?? '',
     operation:
-      (nestedAttrs['operation_name'] as string) ?? (custom['operation_name'] as string) ?? '',
+      (attrs.operationName as string) ?? (custom['operation_name'] as string) ?? '',
     type: attrs.type ?? '',
     status,
     duration: formatDurationNs(durationNs),
@@ -164,8 +166,8 @@ export function formatSpan(span: v2.Span): SpanSummary {
       url: tagMap['http.url'] ?? ''
     },
     error: {
-      type: tagMap['error.type'] ?? '',
-      message: tagMap['error.message'] ?? tagMap['error.msg'] ?? ''
+      type: (attrsError['type'] as string) ?? (customError['type'] as string) ?? tagMap['error.type'] ?? '',
+      message: (customError['message'] as string) ?? tagMap['error.message'] ?? tagMap['error.msg'] ?? ''
     },
     env: attrs.env ?? tagMap['env'] ?? '',
     tags
@@ -489,7 +491,7 @@ export async function listApmServices(
   const services = buckets
     .map((bucket) => ({
       name: bucket.attributes?.by?.['service'] ?? '',
-      spanCount: bucket.attributes?.computes?.['c0'] ?? 0
+      spanCount: bucket.attributes?.compute?.['c0'] ?? 0
     }))
     .filter((s) => s.name !== '')
 

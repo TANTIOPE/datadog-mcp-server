@@ -26,7 +26,9 @@ const InputSchema = {
   groupStates: z
     .array(z.string())
     .optional()
-    .describe('Filter by group states: alert, warn, no data, ok'),
+    .describe(
+      'Filter multi-alert monitors by group states (e.g., alert by host). Does NOT filter by overall monitor status. Values: alert, warn, no data, ok'
+    ),
   limit: z.number().optional().describe('Maximum number of monitors to return'),
   config: z.record(z.unknown()).optional().describe('Monitor configuration (for create/update)'),
   message: z.string().optional().describe('Mute message (for mute action)'),
