@@ -119,7 +119,9 @@ interface SpanSummary {
 }
 
 export function formatSpan(span: v2.Span): SpanSummary {
-  const attrs = span.attributes ?? {}
+  // SDK types are incomplete - actual API returns more fields than typed
+  // Using any to access real API fields: error, status, operationName
+  const attrs = (span.attributes ?? {}) as any
   const tags = (attrs.tags as string[]) ?? []
   const nestedAttrs = (attrs.attributes ?? {}) as Record<string, unknown>
   const custom = (attrs.custom ?? {}) as Record<string, unknown>
@@ -481,10 +483,11 @@ export async function listApmServices(
   const response = await api.aggregateSpans({ body })
 
   // Extract service names from aggregation buckets
+  // SDK types define 'computes' but API returns 'compute' (singular)
   const buckets = (response.data ?? []) as Array<{
     attributes?: {
       by?: Record<string, string>
-      computes?: Record<string, number>
+      compute?: Record<string, number>
     }
   }>
 
