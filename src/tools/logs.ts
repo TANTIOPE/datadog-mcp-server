@@ -58,7 +58,7 @@ const InputSchema = {
     .boolean()
     .optional()
     .describe(
-      'Strip custom attributes for token efficiency. Keeps: id, timestamp, service, status, message (truncated), dd.trace_id, error info'
+      'Strip custom attributes for token efficiency. Keeps: id, timestamp, service, host, status, message (truncated), dd.trace_id, dd.span_id, pod_name, kube_namespace, kube_container_name, error info'
     ),
   groupBy: z.array(z.string()).optional().describe('Fields to group by (for aggregate)'),
   compute: z.record(z.unknown()).optional().describe('Compute operations (for aggregate)')
@@ -108,6 +108,9 @@ interface CompactLogEntry {
   message: string // truncated to 500 chars
   traceId: string // extracted from dd.trace_id for correlation
   spanId: string
+  podName?: string // extracted from pod_name tag
+  namespace?: string // extracted from kube_namespace tag
+  container?: string // extracted from kube_container_name tag
   error?: {
     type: string
     message: string
@@ -119,6 +122,17 @@ type FormattedLog = LogEntry | CompactLogEntry
 export function formatLogCompact(log: v2.Log): CompactLogEntry {
   const attrs = log.attributes ?? {}
   const nestedAttrs = (attrs.attributes as Record<string, unknown>) ?? {}
+  const tags = (attrs.tags as string[]) ?? []
+
+  // Parse Kubernetes fields from tags (format: "key:value")
+  const findTagValue = (tagPrefix: string): string => {
+    const tag = tags.find((t) => t.startsWith(tagPrefix + ':'))
+    return tag ? tag.substring(tagPrefix.length + 1) : ''
+  }
+
+  const podName = findTagValue('pod_name')
+  const namespace = findTagValue('kube_namespace')
+  const container = findTagValue('kube_container_name')
 
   // Handle timestamp
   let timestamp = ''
@@ -161,6 +175,11 @@ export function formatLogCompact(log: v2.Log): CompactLogEntry {
     traceId,
     spanId
   }
+
+  // Add Kubernetes fields if present
+  if (podName) entry.podName = podName
+  if (namespace) entry.namespace = namespace
+  if (container) entry.container = container
 
   // Only include error if present
   if (errorType || errorMessage) {

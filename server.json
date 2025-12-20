@@ -6,13 +6,13 @@
     "url": "https://github.com/tantiope/datadog-mcp-server",
     "source": "github"
   },
-  "version": "1.0.9",
+  "version": "1.0.10",
   "packages": [
     {
       "registryType": "npm",
       "registryBaseUrl": "https://registry.npmjs.org",
       "identifier": "datadog-mcp",
-      "version": "1.0.9",
+      "version": "1.0.10",
       "transport": {
         "type": "stdio"
       },
