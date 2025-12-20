@@ -4,17 +4,29 @@ import { createExpressApp } from '../../src/transport/http.js'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import type { ServerConfig } from '../../src/config/schema.js'
 
+// Type for mock transport instance
+interface MockTransport {
+  sessionId?: string
+  onclose?: () => void
+  handleRequest: ReturnType<typeof vi.fn>
+}
+
+// Type for mock response
+interface MockResponse {
+  json: (data: unknown) => void
+}
+
 // Mock isInitializeRequest to recognize our test requests
 vi.mock('@modelcontextprotocol/sdk/types.js', () => ({
-  isInitializeRequest: (body: any) => body?.method === 'initialize'
+  isInitializeRequest: (body: unknown) => (body as { method?: string })?.method === 'initialize'
 }))
 
 // Mock the StreamableHTTPServerTransport
 vi.mock('@modelcontextprotocol/sdk/server/streamableHttp.js', () => ({
-  StreamableHTTPServerTransport: vi.fn().mockImplementation(function (this: any, options: any) {
+  StreamableHTTPServerTransport: vi.fn().mockImplementation(function (this: MockTransport, _options: unknown) {
     this.sessionId = undefined
     this.onclose = undefined
-    this.handleRequest = vi.fn(async (_req: any, res: any, body?: any) => {
+    this.handleRequest = vi.fn(async (_req: unknown, res: MockResponse, body?: unknown) => {
       if (body) {
         res.json({ result: 'success', sessionId: this.sessionId })
       } else {

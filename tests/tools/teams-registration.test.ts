@@ -8,7 +8,7 @@ describe('registerTeamsTool', () => {
   let mockServer: McpServer
   let mockApi: v2.TeamsApi
   let limits: LimitsConfig
-  let registeredHandler: any
+  let registeredHandler: (params: Record<string, unknown>) => Promise<unknown>
 
   beforeEach(() => {
     mockServer = {

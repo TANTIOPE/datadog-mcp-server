@@ -8,7 +8,7 @@ describe('registerUsersTool', () => {
   let mockServer: McpServer
   let mockApi: v2.UsersApi
   let limits: LimitsConfig
-  let registeredHandler: any
+  let registeredHandler: (params: Record<string, unknown>) => Promise<unknown>
 
   beforeEach(() => {
     mockServer = {

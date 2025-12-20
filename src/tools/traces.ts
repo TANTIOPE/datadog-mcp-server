@@ -118,10 +118,32 @@ interface SpanSummary {
   tags: string[]
 }
 
+// SDK types are incomplete - extend with actual API response fields
+interface SpanAttributesExtended {
+  tags?: string[]
+  attributes?: Record<string, unknown>
+  custom?: {
+    error?: Record<string, unknown>
+    [key: string]: unknown
+  }
+  error?: Record<string, unknown>
+  status?: string
+  operationName?: string
+  startTimestamp?: Date
+  endTimestamp?: Date
+  traceId?: string
+  spanId?: string
+  service?: string
+  resourceName?: string
+  type?: string
+  env?: string
+  [key: string]: unknown
+}
+
 export function formatSpan(span: v2.Span): SpanSummary {
   // SDK types are incomplete - actual API returns more fields than typed
-  // Using any to access real API fields: error, status, operationName
-  const attrs = (span.attributes ?? {}) as any
+  // Using SpanAttributesExtended to access real API fields: error, status, operationName
+  const attrs = (span.attributes ?? {}) as SpanAttributesExtended
   const tags = (attrs.tags as string[]) ?? []
   const nestedAttrs = (attrs.attributes ?? {}) as Record<string, unknown>
   const custom = (attrs.custom ?? {}) as Record<string, unknown>

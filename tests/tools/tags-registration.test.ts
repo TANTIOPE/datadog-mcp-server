@@ -8,7 +8,7 @@ describe('registerTagsTool', () => {
   let mockServer: McpServer
   let mockApi: v1.TagsApi
   let limits: LimitsConfig
-  let registeredHandler: any
+  let registeredHandler: (params: Record<string, unknown>) => Promise<unknown>
 
   beforeEach(() => {
     mockServer = {
