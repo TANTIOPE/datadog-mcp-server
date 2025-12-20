@@ -54,6 +54,12 @@
     "access": "public",
     "provenance": true
   },
+  "lint-staged": {
+    "*.ts": [
+      "prettier --write",
+      "eslint --fix"
+    ]
+  },
   "dependencies": {
     "@datadog/datadog-api-client": "^1.34.0",
     "@modelcontextprotocol/sdk": "^1.24.0",
@@ -76,6 +82,7 @@
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-prettier": "^5.5.4",
     "husky": "^9.1.7",
+    "lint-staged": "^16.2.7",
     "msw": "^2.7.0",
     "prettier": "^3.7.4",
     "semantic-release": "^24.2.9",
