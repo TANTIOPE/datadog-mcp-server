@@ -218,8 +218,8 @@ export const traces = {
   aggregate: {
     data: {
       buckets: [
-        { by: { service: 'web-api' }, computes: { c0: 100, c1: 150000000 } },
-        { by: { service: 'auth' }, computes: { c0: 50, c1: 75000000 } }
+        { by: { service: 'web-api' }, compute: { c0: 100, c1: 150000000 } },
+        { by: { service: 'auth' }, compute: { c0: 50, c1: 75000000 } }
       ]
     }
   },

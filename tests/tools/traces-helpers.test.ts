@@ -15,6 +15,8 @@ describe('Traces Helper Functions', () => {
           resourceName: 'GET /api/users',
           type: 'web',
           env: 'production',
+          operationName: 'express.request',
+          status: 'ok',
           startTimestamp: new Date('2024-01-15T12:00:00.000Z'),
           endTimestamp: new Date('2024-01-15T12:00:00.500Z'), // 500ms duration
           tags: [
@@ -22,11 +24,7 @@ describe('Traces Helper Functions', () => {
             'http.status_code:200',
             'http.method:GET',
             'http.url:api.example.com/users'
-          ],
-          attributes: {
-            operation_name: 'express.request',
-            status: 'ok'
-          }
+          ]
         }
       }
 
@@ -71,16 +69,14 @@ describe('Traces Helper Functions', () => {
           service: 'db-service',
           resourceName: 'SELECT * FROM users',
           type: 'sql',
+          status: 'error',
           startTimestamp: new Date('2024-01-15T12:00:00.000Z'),
           endTimestamp: new Date('2024-01-15T12:00:02.000Z'), // 2s duration
           tags: [
             'error.type:TimeoutError',
             'error.message:Connection timeout after 2s',
             'status:error'
-          ],
-          attributes: {
-            status: 'error'
-          }
+          ]
         }
       }
 
@@ -154,24 +150,6 @@ describe('Traces Helper Functions', () => {
 
       expect(result.duration).toBe('250.0ms')
       expect(result.durationNs).toBe(250_000_000)
-    })
-
-    it('should get status from nested attributes', () => {
-      const span: v2.Span = {
-        type: 'span',
-        id: 'span-status',
-        attributes: {
-          service: 'test',
-          resourceName: 'test',
-          attributes: {
-            status: 'ok'
-          }
-        }
-      }
-
-      const result = formatSpan(span)
-
-      expect(result.status).toBe('ok')
     })
 
     it('should get status from custom attributes', () => {

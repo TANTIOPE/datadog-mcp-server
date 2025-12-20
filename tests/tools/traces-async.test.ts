@@ -24,13 +24,13 @@ describe('Traces Async Functions', () => {
             {
               attributes: {
                 by: { service: 'web-api' },
-                computes: { c0: 1000 }
+                compute: { c0: 1000 }
               }
             },
             {
               attributes: {
                 by: { service: 'auth-service' },
-                computes: { c0: 500 }
+                compute: { c0: 500 }
               }
             }
           ]
@@ -53,7 +53,7 @@ describe('Traces Async Functions', () => {
             {
               attributes: {
                 by: { service: 'web-api' },
-                computes: { c0: 1000 }
+                compute: { c0: 1000 }
               }
             }
           ]
@@ -151,19 +151,19 @@ describe('Traces Async Functions', () => {
             {
               attributes: {
                 by: { service: 'web-api' },
-                computes: { c0: 1000 }
+                compute: { c0: 1000 }
               }
             },
             {
               attributes: {
                 by: { service: '' }, // Empty service name
-                computes: { c0: 100 }
+                compute: { c0: 100 }
               }
             },
             {
               attributes: {
                 // Missing 'by' field
-                computes: { c0: 50 }
+                compute: { c0: 50 }
               }
             }
           ]
@@ -178,14 +178,14 @@ describe('Traces Async Functions', () => {
       expect(result.total).toBe(1)
     })
 
-    it('should handle buckets without computes', async () => {
+    it('should handle buckets without compute', async () => {
       const mockApi = {
         aggregateSpans: vi.fn().mockResolvedValue({
           data: [
             {
               attributes: {
                 by: { service: 'web-api' }
-                // Missing computes
+                // Missing compute
               }
             }
           ]
@@ -241,19 +241,19 @@ describe('Traces Async Functions', () => {
             {
               attributes: {
                 by: { service: 'web-api' },
-                computes: { c0: 1000 }
+                compute: { c0: 1000 }
               }
             },
             {
               attributes: {
                 by: { service: 'auth-service' },
-                computes: { c0: 500 }
+                compute: { c0: 500 }
               }
             },
             {
               attributes: {
                 by: { service: 'payment-service' },
-                computes: { c0: 300 }
+                compute: { c0: 300 }
               }
             }
           ]
