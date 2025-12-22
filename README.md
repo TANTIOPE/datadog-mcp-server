@@ -207,7 +207,7 @@ When running with `--transport=http`:
 
 ### Compact Mode (Logs)
 
-Use `compact: true` when searching logs to reduce payload size. Strips custom attributes and keeps only essential fields:
+Use `compact: true` when searching logs to reduce token usage. Strips custom attributes and keeps only essential fields:
 
 ```
 logs({ action: "search", status: "error", compact: true })
