@@ -6,27 +6,11 @@ on:
       - main
     paths-ignore:
       - '**.md'
-      - 'LICENSE'
-      - '.gitignore'
-      - '.nvmrc'
-      - '.claude/**'
-      - '.github/CODEOWNERS'
-      - 'renovate.json'
-      - 'smithery.yaml'
-      - 'sonar-project.properties'
   pull_request:
     branches:
       - main
     paths-ignore:
       - '**.md'
-      - 'LICENSE'
-      - '.gitignore'
-      - '.nvmrc'
-      - '.claude/**'
-      - '.github/CODEOWNERS'
-      - 'renovate.json'
-      - 'smithery.yaml'
-      - 'sonar-project.properties'
 
 permissions:
   contents: write
