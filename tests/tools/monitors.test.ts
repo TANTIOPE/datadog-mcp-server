@@ -191,7 +191,9 @@ describe('Monitors Tool', () => {
 
       expect(result.monitors).toHaveLength(1)
       expect(result.monitors[0].id).toBe(12345)
+      expect(result.monitors[0].url).toBe('https://app.datadoghq.com/monitors/12345')
       expect(result.metadata.totalCount).toBeDefined()
+      expect(result.datadog_url).toContain('query=cpu')
     })
   })
 

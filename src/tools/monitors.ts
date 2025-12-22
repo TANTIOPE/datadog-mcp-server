@@ -123,7 +123,8 @@ export async function searchMonitors(
     name: m.name ?? '',
     status: String(m.status ?? 'unknown'),
     type: m.type ?? '',
-    tags: m.tags ?? []
+    tags: m.tags ?? [],
+    url: buildMonitorUrl(m.id ?? 0, site)
   }))
 
   return {
