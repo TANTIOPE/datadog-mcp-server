@@ -13,6 +13,7 @@ permissions:
   issues: write
   pull-requests: write
   id-token: write
+  packages: write
 
 jobs:
   release:
@@ -61,3 +62,47 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: npx semantic-release
+
+      - name: Set up QEMU
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3
+
+      - name: Set up Docker Buildx
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+
+      - name: Log in to GitHub Container Registry
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Get version from package.json
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        id: package-version
+        run: echo "version=$(node -p "require('./package.json').version")" >> $GITHUB_OUTPUT
+
+      - name: Extract metadata (tags, labels)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        id: meta
+        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/datadog-mcp
+          tags: |
+            type=semver,pattern={{version}},value=v${{ steps.package-version.outputs.version }}
+            type=semver,pattern={{major}}.{{minor}},value=v${{ steps.package-version.outputs.version }}
+            type=raw,value=latest
+
+      - name: Build and push Docker image
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
