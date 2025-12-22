@@ -169,21 +169,21 @@ describe('URL Builders', () => {
     })
 
     it('should build monitors list URL with query', () => {
-      const url = buildMonitorsListUrl('status:alert')
+      const url = buildMonitorsListUrl({ name: 'status:alert' })
 
       expect(url).toContain('https://app.datadoghq.com/monitors/manage?')
       expect(url).toContain('query=status%3Aalert')
     })
 
     it('should build monitors list URL with empty string query', () => {
-      const url = buildMonitorsListUrl('')
+      const url = buildMonitorsListUrl({ name: '' })
 
       // Empty string is falsy, so should return URL without params
       expect(url).toBe('https://app.datadoghq.com/monitors/manage')
     })
 
     it('should build monitors list URL with EU site', () => {
-      const url = buildMonitorsListUrl('tag:prod', 'datadoghq.eu')
+      const url = buildMonitorsListUrl({ name: 'tag:prod' }, 'datadoghq.eu')
 
       expect(url).toContain('https://app.datadoghq.eu/monitors/manage?')
     })
