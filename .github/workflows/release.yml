@@ -64,39 +64,58 @@ jobs:
         run: npx semantic-release
 
       - name: Set up QEMU
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: steps.version-check.outputs.rebuild_needed == 'true'
         uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3
 
       - name: Set up Docker Buildx
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: steps.version-check.outputs.rebuild_needed == 'true'
         uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
 
       - name: Log in to GitHub Container Registry
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: steps.version-check.outputs.rebuild_needed == 'true'
         uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef # v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Get version from package.json
+      - name: Check if Docker rebuild needed
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        id: package-version
-        run: echo "version=$(node -p "require('./package.json').version")" >> $GITHUB_OUTPUT
+        id: version-check
+        run: |
+          # Get latest GitHub release version
+          LATEST_RELEASE=$(gh api repos/${{ github.repository }}/releases/latest --jq '.tag_name' | sed 's/^v//')
+          echo "latest_release=$LATEST_RELEASE" >> $GITHUB_OUTPUT
+          echo "Latest GitHub release: $LATEST_RELEASE"
+
+          # Get latest Docker image tag from GHCR (exclude 'latest' tag, get most recent version tag)
+          DOCKER_VERSION=$(gh api /user/packages/container/datadog-mcp/versions \
+            --jq '[.[].metadata.container.tags[] | select(test("^[0-9]+\\.[0-9]+\\.[0-9]+$"))] | .[0]' 2>/dev/null || echo "none")
+          echo "docker_version=$DOCKER_VERSION" >> $GITHUB_OUTPUT
+          echo "Latest Docker tag: $DOCKER_VERSION"
+
+          # Compare versions
+          if [ "$LATEST_RELEASE" != "$DOCKER_VERSION" ]; then
+            echo "rebuild_needed=true" >> $GITHUB_OUTPUT
+            echo "✓ Rebuild needed: GitHub release ($LATEST_RELEASE) != Docker ($DOCKER_VERSION)"
+          else
+            echo "rebuild_needed=false" >> $GITHUB_OUTPUT
+            echo "✓ Versions match, skipping Docker build"
+          fi
 
       - name: Extract metadata (tags, labels)
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: steps.version-check.outputs.rebuild_needed == 'true'
         id: meta
         uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5
         with:
           images: ghcr.io/${{ github.repository_owner }}/datadog-mcp
           tags: |
-            type=semver,pattern={{version}},value=v${{ steps.package-version.outputs.version }}
-            type=semver,pattern={{major}}.{{minor}},value=v${{ steps.package-version.outputs.version }}
+            type=semver,pattern={{version}},value=v${{ steps.version-check.outputs.latest_release }}
+            type=semver,pattern={{major}}.{{minor}},value=v${{ steps.version-check.outputs.latest_release }}
             type=raw,value=latest
 
       - name: Build and push Docker image
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: steps.version-check.outputs.rebuild_needed == 'true'
         uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6
         with:
           context: .
