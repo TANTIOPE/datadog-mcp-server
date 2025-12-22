@@ -82,6 +82,8 @@ jobs:
       - name: Check if Docker rebuild needed
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         id: version-check
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           # Get latest GitHub release version
           LATEST_RELEASE=$(gh api repos/${{ github.repository }}/releases/latest --jq '.tag_name' | sed 's/^v//')
