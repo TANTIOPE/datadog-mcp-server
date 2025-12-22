@@ -48,6 +48,7 @@ describe('Monitors Tool', () => {
       expect(result.monitors[0].id).toBe(12345)
       expect(result.monitors[0].name).toBe('High CPU Usage')
       expect(result.monitors[0].status).toBe('Alert')
+      expect(result.monitors[0].url).toBe('https://app.datadoghq.com/monitors/12345')
       expect(result.summary.total).toBe(2)
     })
 
@@ -68,6 +69,39 @@ describe('Monitors Tool', () => {
 
       expect(result.monitors).toHaveLength(1)
       expect(result.monitors[0].name).toContain('CPU')
+      expect(result.monitors[0].url).toContain('monitors/')
+      expect(result.datadog_url).toContain('query=CPU')
+    })
+
+    it('should preserve tags and groupStates in datadog_url', async () => {
+      server.use(
+        http.get(endpoints.listMonitors, () => {
+          return jsonResponse(fixtures.list)
+        })
+      )
+
+      const result = await listMonitors(
+        api,
+        { tags: ['env:prod', 'team:ops'], groupStates: ['alert', 'warn'] },
+        defaultLimits,
+        defaultSite
+      )
+
+      expect(result.datadog_url).toContain('tags=env%3Aprod%2Cteam%3Aops')
+      expect(result.datadog_url).toContain('group_states=alert%2Cwarn')
+    })
+
+    it('should generate URLs with correct site', async () => {
+      server.use(
+        http.get(endpoints.listMonitors, () => {
+          return jsonResponse(fixtures.list)
+        })
+      )
+
+      const result = await listMonitors(api, {}, defaultLimits, 'datadoghq.eu')
+
+      expect(result.monitors[0].url).toBe('https://app.datadoghq.eu/monitors/12345')
+      expect(result.datadog_url).toContain('datadoghq.eu')
     })
 
     it('should handle 401 unauthorized error', async () => {
@@ -120,7 +154,8 @@ describe('Monitors Tool', () => {
       expect(result.monitor.id).toBe(12345)
       expect(result.monitor.name).toBe('High CPU Usage')
       expect(result.monitor.query).toContain('system.cpu.user')
-      expect(result.datadog_url).toContain('datadoghq.com')
+      expect(result.monitor.url).toBe('https://app.datadoghq.com/monitors/12345')
+      expect(result.datadog_url).toBe('https://app.datadoghq.com/monitors/12345')
     })
 
     it('should handle 404 not found error', async () => {
@@ -156,7 +191,9 @@ describe('Monitors Tool', () => {
 
       expect(result.monitors).toHaveLength(1)
       expect(result.monitors[0].id).toBe(12345)
+      expect(result.monitors[0].url).toBe('https://app.datadoghq.com/monitors/12345')
       expect(result.metadata.totalCount).toBeDefined()
+      expect(result.datadog_url).toContain('query=cpu')
     })
   })
 
@@ -187,6 +224,7 @@ describe('Monitors Tool', () => {
       expect(result.success).toBe(true)
       expect(result.monitor.id).toBe(12347)
       expect(result.monitor.name).toBe('New Test Monitor')
+      expect(result.monitor.url).toBe('https://app.datadoghq.com/monitors/12347')
     })
 
     it('should validate required fields', async () => {
@@ -232,6 +270,7 @@ describe('Monitors Tool', () => {
 
       expect(result.success).toBe(true)
       expect(result.monitor.name).toBe('Updated Monitor Name')
+      expect(result.monitor.url).toBe('https://app.datadoghq.com/monitors/12345')
     })
   })
 

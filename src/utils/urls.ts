@@ -153,16 +153,28 @@ export function buildMonitorUrl(
 /**
  * Build a Datadog Monitors List URL with optional query filters
  *
- * @param query - Optional search query
+ * @param options - Filter options (name, tags, groupStates)
  * @param site - Datadog site (default: datadoghq.com)
  */
-export function buildMonitorsListUrl(query?: string, site: string = 'datadoghq.com'): string {
+export function buildMonitorsListUrl(
+  options?: { name?: string; tags?: string[]; groupStates?: string[] },
+  site: string = 'datadoghq.com'
+): string {
   const base = getAppBaseUrl(site)
-  if (query) {
-    const params = new URLSearchParams({ query })
-    return `${base}/monitors/manage?${params.toString()}`
+  const params = new URLSearchParams()
+
+  if (options?.name) {
+    params.set('query', options.name)
   }
-  return `${base}/monitors/manage`
+  if (options?.tags && options.tags.length > 0) {
+    params.set('tags', options.tags.join(','))
+  }
+  if (options?.groupStates && options.groupStates.length > 0) {
+    params.set('group_states', options.groupStates.join(','))
+  }
+
+  const queryString = params.toString()
+  return queryString ? `${base}/monitors/manage?${queryString}` : `${base}/monitors/manage`
 }
 
 /**

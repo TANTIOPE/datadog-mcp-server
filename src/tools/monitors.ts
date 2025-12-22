@@ -45,11 +45,13 @@ interface MonitorSummary {
   query: string
   created: string
   modified: string
+  url: string
 }
 
-export function formatMonitor(m: v1.Monitor): MonitorSummary {
+export function formatMonitor(m: v1.Monitor, site: string = 'datadoghq.com'): MonitorSummary {
+  const monitorId = m.id ?? 0
   return {
-    id: m.id ?? 0,
+    id: monitorId,
     name: m.name ?? '',
     type: String(m.type ?? 'unknown'),
     status: String(m.overallState ?? 'unknown'),
@@ -57,7 +59,8 @@ export function formatMonitor(m: v1.Monitor): MonitorSummary {
     tags: m.tags ?? [],
     query: m.query ?? '',
     created: m.created ? new Date(m.created).toISOString() : '',
-    modified: m.modified ? new Date(m.modified).toISOString() : ''
+    modified: m.modified ? new Date(m.modified).toISOString() : '',
+    url: buildMonitorUrl(monitorId, site)
   }
 }
 
@@ -75,7 +78,7 @@ export async function listMonitors(
     groupStates: params.groupStates?.join(',')
   })
 
-  const monitors = response.slice(0, effectiveLimit).map(formatMonitor)
+  const monitors = response.slice(0, effectiveLimit).map((m) => formatMonitor(m, site))
 
   const statusCounts = {
     total: response.length,
@@ -88,7 +91,10 @@ export async function listMonitors(
   return {
     monitors,
     summary: statusCounts,
-    datadog_url: buildMonitorsListUrl(params.name, site)
+    datadog_url: buildMonitorsListUrl(
+      { name: params.name, tags: params.tags, groupStates: params.groupStates },
+      site
+    )
   }
 }
 
@@ -100,7 +106,7 @@ export async function getMonitor(api: v1.MonitorsApi, id: string, site: string) 
 
   const monitor = await api.getMonitor({ monitorId })
   return {
-    monitor: formatMonitor(monitor),
+    monitor: formatMonitor(monitor, site),
     datadog_url: buildMonitorUrl(monitorId, site)
   }
 }
@@ -117,7 +123,8 @@ export async function searchMonitors(
     name: m.name ?? '',
     status: String(m.status ?? 'unknown'),
     type: m.type ?? '',
-    tags: m.tags ?? []
+    tags: m.tags ?? [],
+    url: buildMonitorUrl(m.id ?? 0, site)
   }))
 
   return {
@@ -127,7 +134,7 @@ export async function searchMonitors(
       pageCount: response.metadata?.pageCount ?? 1,
       page: response.metadata?.page ?? 0
     },
-    datadog_url: buildMonitorsListUrl(query, site)
+    datadog_url: buildMonitorsListUrl({ name: query }, site)
   }
 }
 
@@ -201,26 +208,31 @@ export function normalizeMonitorConfig(
   return normalized
 }
 
-export async function createMonitor(api: v1.MonitorsApi, config: Record<string, unknown>) {
+export async function createMonitor(
+  api: v1.MonitorsApi,
+  config: Record<string, unknown>,
+  site: string = 'datadoghq.com'
+) {
   const body = normalizeMonitorConfig(config) as unknown as v1.Monitor
   const monitor = await api.createMonitor({ body })
   return {
     success: true,
-    monitor: formatMonitor(monitor)
+    monitor: formatMonitor(monitor, site)
   }
 }
 
 export async function updateMonitor(
   api: v1.MonitorsApi,
   id: string,
-  config: Record<string, unknown>
+  config: Record<string, unknown>,
+  site: string = 'datadoghq.com'
 ) {
   const monitorId = Number.parseInt(id, 10)
   const body = normalizeMonitorConfig(config, true) as unknown as v1.MonitorUpdateRequest
   const monitor = await api.updateMonitor({ monitorId, body })
   return {
     success: true,
-    monitor: formatMonitor(monitor)
+    monitor: formatMonitor(monitor, site)
   }
 }
 
@@ -299,13 +311,13 @@ TIP: For alert HISTORY (which monitors triggered), use the events tool with tags
 
           case 'create': {
             const monitorConfig = requireParam(config, 'config', 'create')
-            return toolResult(await createMonitor(api, monitorConfig))
+            return toolResult(await createMonitor(api, monitorConfig, site))
           }
 
           case 'update': {
             const monitorId = requireParam(id, 'id', 'update')
             const updateConfig = requireParam(config, 'config', 'update')
-            return toolResult(await updateMonitor(api, monitorId, updateConfig))
+            return toolResult(await updateMonitor(api, monitorId, updateConfig, site))
           }
 
           case 'delete': {
