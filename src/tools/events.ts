@@ -15,7 +15,8 @@ const ActionSchema = z.enum([
   'aggregate',
   'top',
   'timeseries',
-  'incidents'
+  'incidents',
+  'discover'
 ])
 
 const InputSchema = {
@@ -56,7 +57,22 @@ const InputSchema = {
   enrich: z
     .boolean()
     .optional()
-    .describe('Enrich events with monitor metadata (slower, adds monitor details)')
+    .describe('Enrich events with monitor metadata (slower, adds monitor details)'),
+  // Context tag extraction for top action
+  contextTags: z
+    .array(z.string())
+    .optional()
+    .describe(
+      'Tag prefixes for context breakdown in top action (default: queue, service, ingress, pod_name, kube_namespace, kube_container_name)'
+    ),
+  maxEvents: z
+    .number()
+    .min(1)
+    .max(10000)
+    .optional()
+    .describe(
+      'Maximum events to fetch for grouping in top action (default: 10000). Higher = more accurate but slower'
+    )
 }
 
 // v1 Event summary format
@@ -322,6 +338,75 @@ export function formatEventV2(e: v2.EventResponse): EventSummaryV2 {
             priority: monitorInfo.priority
           }
         : undefined
+  }
+}
+
+// ============ Helper Functions for Context Tag Extraction ============
+
+/**
+ * Find the first matching context tag from event tags
+ * Context tags are used to group alerts by service, queue, ingress, pod, etc.
+ */
+export function findFirstContextTag(tags: string[], prefixes: Set<string>): string | null {
+  for (const tag of tags) {
+    const colonIndex = tag.indexOf(':')
+    if (colonIndex > 0) {
+      const prefix = tag.substring(0, colonIndex)
+      if (prefixes.has(prefix)) {
+        return tag
+      }
+    }
+  }
+  return null
+}
+
+/**
+ * Discover available tag prefixes in alert data
+ * Useful for understanding what context tags are available before aggregating
+ */
+export async function discoverTagsV2(
+  api: v2.EventsApi,
+  params: {
+    query?: string
+    from?: string
+    to?: string
+    sources?: string[]
+    tags?: string[]
+  },
+  limits: LimitsConfig,
+  site: string
+) {
+  // Fetch a sample of 200 events
+  const result = await searchEventsV2(
+    api,
+    {
+      ...params,
+      limit: 200
+    },
+    limits,
+    site
+  )
+
+  // Extract unique tag prefixes
+  const prefixSet = new Set<string>()
+  for (const event of result.events) {
+    for (const tag of event.tags) {
+      if (tag.includes(':')) {
+        const prefix = tag.split(':')[0]
+        if (prefix) {
+          prefixSet.add(prefix)
+        }
+      }
+    }
+  }
+
+  return {
+    tagPrefixes: Array.from(prefixSet).sort((a, b) => a.localeCompare(b)),
+    sampleSize: result.events.length,
+    meta: {
+      from: result.meta.from,
+      to: result.meta.to
+    }
   }
 }
 
@@ -627,8 +712,9 @@ export async function aggregateEventsV2(
 }
 
 /**
- * Top N events by count - convenience wrapper for aggregate
- * Direct answer to "which monitors triggered the most alerts"
+ * Top N monitors with context breakdown
+ * Returns monitors ranked by alert count with nested breakdown by queue, service, ingress, pod, etc.
+ * Perfect for weekly/daily alert reports
  */
 export async function topEventsV2(
   api: v2.EventsApi,
@@ -638,44 +724,119 @@ export async function topEventsV2(
     to?: string
     sources?: string[]
     tags?: string[]
-    groupBy?: string[]
     limit?: number
+    contextTags?: string[]
+    maxEvents?: number
   },
   limits: LimitsConfig,
   site: string
 ) {
+  // Validate contextTags if provided
+  if (params.contextTags !== undefined) {
+    if (!Array.isArray(params.contextTags)) {
+      throw new Error('contextTags must be an array')
+    }
+    if (params.contextTags.some((tag) => typeof tag !== 'string' || tag.trim() === '')) {
+      throw new Error('contextTags must be an array of non-empty strings')
+    }
+  }
+
   // Default to source:alert for alert-related queries
   const effectiveQuery = params.query ?? 'source:alert'
   const effectiveTags = params.tags ?? ['source:alert']
 
-  const result = await aggregateEventsV2(
+  // Step 1: Fetch events for accurate grouping
+  // maxEvents controls how many events to fetch (default 10k). Higher values = more accurate
+  // aggregation but slower performance. If there are more events than maxEvents, results
+  // may be incomplete. Narrow time range or use filters (query, tags) if incomplete.
+  const result = await searchEventsV2(
     api,
     {
-      ...params,
       query: effectiveQuery,
+      from: params.from,
+      to: params.to,
+      sources: params.sources,
       tags: effectiveTags,
-      groupBy: params.groupBy ?? ['monitor_name'],
-      limit: params.limit ?? 10
+      limit: params.maxEvents ?? 10000
     },
     limits,
     site
   )
 
-  // Format for easier consumption
-  return {
-    top: result.buckets.map((bucket, index) => ({
-      rank: index + 1,
-      name: bucket.key,
-      monitorId: bucket.sample.monitorId,
-      alertCount: bucket.count,
-      lastAlert: bucket.sample.timestamp,
-      sample: {
-        title: bucket.sample.title,
-        source: bucket.sample.source,
-        alertType: bucket.sample.alertType
+  // Step 2: Group by monitor
+  const monitorGroups = new Map<
+    string,
+    {
+      name: string
+      monitorId: number
+      events: EventSummaryV2[]
+    }
+  >()
+
+  for (const event of result.events) {
+    const monitorName = event.monitorInfo?.name ?? event.title
+    const monitorId = event.monitorId ?? 0
+    const key = `${monitorId}|${monitorName}`
+
+    let monitorGroup = monitorGroups.get(key)
+    if (!monitorGroup) {
+      monitorGroup = { name: monitorName, monitorId, events: [] }
+      monitorGroups.set(key, monitorGroup)
+    }
+    monitorGroup.events.push(event)
+  }
+
+  // Step 3: For each monitor, extract context breakdown
+  const contextPrefixes = new Set(
+    params.contextTags ?? [
+      'queue',
+      'service',
+      'ingress',
+      'pod_name',
+      'kube_namespace',
+      'kube_container_name'
+    ]
+  )
+
+  const monitors = Array.from(monitorGroups.values())
+    .map((monitor) => {
+      const contextGroups = new Map<string, number>()
+
+      for (const event of monitor.events) {
+        const contextTag = findFirstContextTag(event.tags, contextPrefixes)
+        if (contextTag) {
+          contextGroups.set(contextTag, (contextGroups.get(contextTag) || 0) + 1)
+        }
       }
-    })),
-    meta: result.meta
+
+      return {
+        name: monitor.name,
+        monitor_id: monitor.monitorId,
+        total_count: monitor.events.length,
+        by_context: Array.from(contextGroups.entries())
+          .map(([context, count]) => ({ context, count }))
+          .sort((a, b) => b.count - a.count) // Sort by count desc
+      }
+    })
+    .filter((monitor) => monitor.by_context.length > 0)
+
+  // Step 4: Sort by total_count, apply limit, add rank
+  const topMonitors = monitors
+    .sort((a, b) => b.total_count - a.total_count)
+    .slice(0, params.limit ?? 10)
+    .map((m, i) => ({ rank: i + 1, ...m }))
+
+  return {
+    top: topMonitors,
+    meta: {
+      query: effectiveQuery,
+      from: result.meta.from,
+      to: result.meta.to,
+      totalMonitors: monitorGroups.size,
+      totalEvents: result.events.length,
+      contextPrefixes,
+      datadog_url: result.meta.datadog_url
+    }
   }
 }
 
@@ -1120,16 +1281,15 @@ export function registerEventsTool(
 ): void {
   server.tool(
     'events',
-    `Track Datadog events. Actions: list, get, create, search, aggregate, top, timeseries, incidents.
-IMPORTANT: For monitor alert history, use tags: ["source:alert"] to find all triggered monitors.
-Filters: query (text search), sources, tags, priority, time range.
-Use for: monitor alerts, deployments, incidents, change tracking.
+    `Track Datadog events. Actions: list, get, create, search, aggregate, top, timeseries, incidents, discover.
+For monitor alerts, use tags: ["source:alert"].
 
-Use action:"top" with from:"7d" to find the noisiest monitors.
-Use action:"aggregate" with groupBy:["monitor_name"] for alert counts per monitor.
-Use action:"timeseries" with interval:"1h" to see alert trends over time.
-Use action:"incidents" with dedupeWindow:"5m" to deduplicate alerts into incidents.
-Use enrich:true with search to get monitor metadata (slower).`,
+top: Returns monitors with context breakdown. Example: {name, monitor_id, total_count, by_context: [{context: "queue:X", count: 30}]}
+discover: Returns available tag prefixes from events.
+aggregate: Custom groupBy, returns pipe-delimited keys.
+search: Full event details.
+timeseries: Time-bucketed trends with interval.
+incidents: Deduplicate alerts with dedupeWindow.`,
     InputSchema,
     async ({
       action,
@@ -1148,7 +1308,8 @@ Use enrich:true with search to get monitor metadata (slower).`,
       cursor,
       interval,
       dedupeWindow,
-      enrich
+      enrich,
+      contextTags
     }) => {
       try {
         checkReadOnly(action, readOnly)
@@ -1243,8 +1404,24 @@ Use enrich:true with search to get monitor metadata (slower).`,
                   to,
                   sources,
                   tags,
-                  groupBy,
-                  limit
+                  limit,
+                  contextTags
+                },
+                limits,
+                site
+              )
+            )
+
+          case 'discover':
+            return toolResult(
+              await discoverTagsV2(
+                apiV2,
+                {
+                  query,
+                  from,
+                  to,
+                  sources,
+                  tags
                 },
                 limits,
                 site

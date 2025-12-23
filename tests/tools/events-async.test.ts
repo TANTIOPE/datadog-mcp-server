@@ -6,6 +6,7 @@ import {
   searchEventsV2,
   aggregateEventsV2,
   topEventsV2,
+  discoverTagsV2,
   timeseriesEventsV2,
   incidentsEventsV2,
   enrichWithMonitorMetadata
@@ -572,11 +573,147 @@ describe('Events V2 API Functions', () => {
     })
   })
 
+  describe('discoverTagsV2', () => {
+    it('should extract and sort tag prefixes from events', async () => {
+      const mockEvents = [
+        createMockEventV2({
+          attributes: {
+            tags: ['source:alert', 'queue:tasks', 'service:api', 'monitor:123']
+          }
+        }),
+        createMockEventV2({
+          attributes: {
+            tags: ['source:alert', 'queue:orders', 'ingress:backoffice']
+          }
+        })
+      ]
+
+      const mockApi = {
+        searchEvents: vi.fn().mockResolvedValue({
+          data: mockEvents,
+          meta: { page: {} }
+        })
+      } as unknown as v2.EventsApi
+
+      const result = await discoverTagsV2(mockApi, {}, limits, 'datadoghq.com')
+
+      expect(result.tagPrefixes).toEqual(['ingress', 'monitor', 'queue', 'service', 'source'])
+      expect(result.sampleSize).toBe(2)
+    })
+
+    it('should deduplicate tag prefixes', async () => {
+      const mockEvents = [
+        createMockEventV2({
+          attributes: { tags: ['queue:tasks', 'queue:orders'] }
+        }),
+        createMockEventV2({
+          attributes: { tags: ['queue:emails'] }
+        })
+      ]
+
+      const mockApi = {
+        searchEvents: vi.fn().mockResolvedValue({
+          data: mockEvents,
+          meta: { page: {} }
+        })
+      } as unknown as v2.EventsApi
+
+      const result = await discoverTagsV2(mockApi, {}, limits, 'datadoghq.com')
+
+      expect(result.tagPrefixes).toEqual(['queue'])
+    })
+
+    it('should ignore tags without colons', async () => {
+      const mockEvents = [
+        createMockEventV2({
+          attributes: { tags: ['source:alert', 'no-colon-tag', 'service:api'] }
+        })
+      ]
+
+      const mockApi = {
+        searchEvents: vi.fn().mockResolvedValue({
+          data: mockEvents,
+          meta: { page: {} }
+        })
+      } as unknown as v2.EventsApi
+
+      const result = await discoverTagsV2(mockApi, {}, limits, 'datadoghq.com')
+
+      expect(result.tagPrefixes).toEqual(['service', 'source'])
+    })
+
+    it('should handle empty events list', async () => {
+      const mockApi = {
+        searchEvents: vi.fn().mockResolvedValue({
+          data: [],
+          meta: { page: {} }
+        })
+      } as unknown as v2.EventsApi
+
+      const result = await discoverTagsV2(mockApi, {}, limits, 'datadoghq.com')
+
+      expect(result.tagPrefixes).toEqual([])
+      expect(result.sampleSize).toBe(0)
+    })
+
+    it('should call searchEventsV2 with limit 200', async () => {
+      const mockApi = {
+        searchEvents: vi.fn().mockResolvedValue({
+          data: [],
+          meta: { page: {} }
+        })
+      } as unknown as v2.EventsApi
+
+      await discoverTagsV2(mockApi, { query: 'test' }, limits, 'datadoghq.com')
+
+      expect(mockApi.searchEvents).toHaveBeenCalledWith({
+        body: expect.objectContaining({
+          page: { limit: 200 }
+        })
+      })
+    })
+
+    it('should pass through query parameters', async () => {
+      const mockApi = {
+        searchEvents: vi.fn().mockResolvedValue({
+          data: [],
+          meta: { page: {} }
+        })
+      } as unknown as v2.EventsApi
+
+      await discoverTagsV2(
+        mockApi,
+        {
+          query: 'source:alert',
+          from: '2024-01-01T00:00:00Z',
+          to: '2024-01-02T00:00:00Z',
+          tags: ['priority:high']
+        },
+        limits,
+        'datadoghq.com'
+      )
+
+      expect(mockApi.searchEvents).toHaveBeenCalledWith({
+        body: expect.objectContaining({
+          filter: expect.objectContaining({
+            query: 'source:alert priority:high',
+            from: '2024-01-01T00:00:00.000Z',
+            to: '2024-01-02T00:00:00.000Z'
+          })
+        })
+      })
+    })
+  })
+
   describe('topEventsV2', () => {
     it('should return top events with default query', async () => {
       const mockEvents = [
-        createMockEventV2({ attributes: { message: 'Monitor A', tags: ['source:alert'] } }),
-        createMockEventV2({ attributes: { message: 'Monitor A', tags: ['source:alert'] } })
+        createMockEventV2({
+          attributes: { message: 'Monitor A', tags: ['source:alert', 'queue:tasks'] }
+        }),
+        createMockEventV2({
+          attributes: { message: 'Monitor A', tags: ['source:alert', 'queue:tasks'] }
+        })
       ]
 
       const mockApi = {
@@ -590,7 +727,7 @@ describe('Events V2 API Functions', () => {
 
       expect(result.top).toBeDefined()
       expect(result.top[0].rank).toBe(1)
-      expect(result.top[0].alertCount).toBe(2)
+      expect(result.top[0].total_count).toBe(2)
     })
 
     it('should default to source:alert query', async () => {
@@ -609,7 +746,7 @@ describe('Events V2 API Functions', () => {
       })
     })
 
-    it('should respect limit parameter', async () => {
+    it('should use default maxEvents of 10000', async () => {
       const mockApi = {
         searchEvents: vi.fn().mockResolvedValue({ data: [], meta: { page: {} } })
       } as unknown as v2.EventsApi
@@ -618,9 +755,181 @@ describe('Events V2 API Functions', () => {
 
       expect(mockApi.searchEvents).toHaveBeenCalledWith({
         body: expect.objectContaining({
-          page: { limit: 1000 }
+          page: { limit: 10000 }
         })
       })
+    })
+
+    it('should respect maxEvents parameter', async () => {
+      const mockApi = {
+        searchEvents: vi.fn().mockResolvedValue({ data: [], meta: { page: {} } })
+      } as unknown as v2.EventsApi
+
+      await topEventsV2(mockApi, { maxEvents: 5000 }, limits, 'datadoghq.com')
+
+      expect(mockApi.searchEvents).toHaveBeenCalledWith({
+        body: expect.objectContaining({
+          page: { limit: 5000 }
+        })
+      })
+    })
+
+    it('should extract context tags and populate by_context array', async () => {
+      const mockEvents = [
+        createMockEventV2({
+          attributes: {
+            message: 'Monitor A',
+            tags: ['source:alert', 'queue:tasks', 'service:api', 'monitor_id:123']
+          }
+        }),
+        createMockEventV2({
+          attributes: {
+            message: 'Monitor A',
+            tags: ['source:alert', 'queue:orders', 'monitor_id:123']
+          }
+        }),
+        createMockEventV2({
+          attributes: {
+            message: 'Monitor A',
+            tags: ['source:alert', 'queue:tasks', 'monitor_id:123']
+          }
+        })
+      ]
+
+      const mockApi = {
+        searchEvents: vi.fn().mockResolvedValue({
+          data: mockEvents,
+          meta: { page: {} }
+        })
+      } as unknown as v2.EventsApi
+
+      const result = await topEventsV2(mockApi, {}, limits, 'datadoghq.com')
+
+      expect(result.top).toHaveLength(1)
+      expect(result.top[0].by_context).toEqual([
+        { context: 'queue:tasks', count: 2 },
+        { context: 'queue:orders', count: 1 }
+      ])
+    })
+
+    it('should respect custom contextTags parameter', async () => {
+      const mockEvents = [
+        createMockEventV2({
+          attributes: {
+            message: 'Monitor A',
+            tags: ['source:alert', 'custom_tag:value1', 'monitor_id:123']
+          }
+        }),
+        createMockEventV2({
+          attributes: {
+            message: 'Monitor A',
+            tags: ['source:alert', 'custom_tag:value2', 'monitor_id:123']
+          }
+        })
+      ]
+
+      const mockApi = {
+        searchEvents: vi.fn().mockResolvedValue({
+          data: mockEvents,
+          meta: { page: {} }
+        })
+      } as unknown as v2.EventsApi
+
+      const result = await topEventsV2(
+        mockApi,
+        { contextTags: ['custom_tag'] },
+        limits,
+        'datadoghq.com'
+      )
+
+      expect(result.top[0].by_context).toEqual([
+        { context: 'custom_tag:value1', count: 1 },
+        { context: 'custom_tag:value2', count: 1 }
+      ])
+    })
+
+    it('should filter out monitors without matching context tags', async () => {
+      const mockEvents = [
+        createMockEventV2({
+          attributes: {
+            message: 'Monitor A',
+            tags: ['source:alert', 'unrelated:tag', 'monitor_id:123']
+          }
+        })
+      ]
+
+      const mockApi = {
+        searchEvents: vi.fn().mockResolvedValue({
+          data: mockEvents,
+          meta: { page: {} }
+        })
+      } as unknown as v2.EventsApi
+
+      const result = await topEventsV2(mockApi, {}, limits, 'datadoghq.com')
+
+      // Monitors without context tags should be filtered out
+      expect(result.top).toEqual([])
+    })
+
+    it('should group multiple monitors with different contexts', async () => {
+      const mockEvents = [
+        createMockEventV2({
+          attributes: {
+            message: 'Monitor A',
+            tags: ['source:alert', 'queue:tasks', 'monitor_id:123']
+          }
+        }),
+        createMockEventV2({
+          attributes: {
+            message: 'Monitor B',
+            tags: ['source:alert', 'service:api', 'monitor_id:456']
+          }
+        }),
+        createMockEventV2({
+          attributes: {
+            message: 'Monitor A',
+            tags: ['source:alert', 'queue:tasks', 'monitor_id:123']
+          }
+        })
+      ]
+
+      const mockApi = {
+        searchEvents: vi.fn().mockResolvedValue({
+          data: mockEvents,
+          meta: { page: {} }
+        })
+      } as unknown as v2.EventsApi
+
+      const result = await topEventsV2(mockApi, {}, limits, 'datadoghq.com')
+
+      expect(result.top).toHaveLength(2)
+      expect(result.top[0].total_count).toBe(2) // Monitor A
+      expect(result.top[0].by_context).toEqual([{ context: 'queue:tasks', count: 2 }])
+      expect(result.top[1].total_count).toBe(1) // Monitor B
+      expect(result.top[1].by_context).toEqual([{ context: 'service:api', count: 1 }])
+    })
+
+    it('should prioritize context tags in order (queue > service > ingress)', async () => {
+      const mockEvents = [
+        createMockEventV2({
+          attributes: {
+            message: 'Monitor A',
+            tags: ['source:alert', 'queue:tasks', 'service:api', 'ingress:web', 'monitor_id:123']
+          }
+        })
+      ]
+
+      const mockApi = {
+        searchEvents: vi.fn().mockResolvedValue({
+          data: mockEvents,
+          meta: { page: {} }
+        })
+      } as unknown as v2.EventsApi
+
+      const result = await topEventsV2(mockApi, {}, limits, 'datadoghq.com')
+
+      // Should use queue (first in priority), not service or ingress
+      expect(result.top[0].by_context).toEqual([{ context: 'queue:tasks', count: 1 }])
     })
   })
 
