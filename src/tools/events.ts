@@ -391,7 +391,7 @@ export async function discoverTagsV2(
   }
 
   return {
-    tagPrefixes: Array.from(prefixSet).sort(),
+    tagPrefixes: Array.from(prefixSet).sort((a, b) => a.localeCompare(b)),
     sampleSize: result.events.length,
     meta: {
       from: result.meta.from,
