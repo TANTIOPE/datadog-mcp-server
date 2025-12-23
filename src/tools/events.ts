@@ -123,6 +123,7 @@ interface IncidentEvent {
 interface EnrichedEvent extends EventSummaryV2 {
   monitorMetadata?: {
     id: number
+    name: string
     type: string
     message: string
     tags: string[]
@@ -1091,6 +1092,7 @@ export async function enrichWithMonitorMetadata(
       if (monitor) {
         enriched.monitorMetadata = {
           id: monitor.id ?? 0,
+          name: monitor.name ?? '',
           type: String(monitor.type ?? ''),
           message: monitor.message ?? '',
           tags: monitor.tags ?? [],
