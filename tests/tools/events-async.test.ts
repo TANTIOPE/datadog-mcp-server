@@ -746,7 +746,7 @@ describe('Events V2 API Functions', () => {
       })
     })
 
-    it('should use default maxEvents of 10000', async () => {
+    it('should use default maxEvents of 5000', async () => {
       const mockApi = {
         searchEvents: vi.fn().mockResolvedValue({ data: [], meta: { page: {} } })
       } as unknown as v2.EventsApi
@@ -755,7 +755,7 @@ describe('Events V2 API Functions', () => {
 
       expect(mockApi.searchEvents).toHaveBeenCalledWith({
         body: expect.objectContaining({
-          page: { limit: 10000 }
+          page: { limit: 5000 }
         })
       })
     })
