@@ -840,27 +840,33 @@ export async function topEventsV2(
     ]
   )
 
-  const groups = Array.from(eventGroups.values())
-    .map((group) => {
-      const contextGroups = new Map<string, number>()
+  const groups = Array.from(eventGroups.values()).map((group) => {
+    const contextGroups = new Map<string, number>()
 
-      for (const event of group.events) {
-        const contextTag = findFirstContextTag(event.tags, contextPrefixes)
-        if (contextTag) {
-          contextGroups.set(contextTag, (contextGroups.get(contextTag) || 0) + 1)
-        }
+    for (const event of group.events) {
+      const contextTag = findFirstContextTag(event.tags, contextPrefixes)
+      if (contextTag) {
+        contextGroups.set(contextTag, (contextGroups.get(contextTag) || 0) + 1)
       }
+    }
 
-      return {
-        ...group.groupValues,
-        message: group.message,
-        total_count: group.events.length,
-        by_context: Array.from(contextGroups.entries())
-          .map(([context, count]) => ({ context, count }))
-          .sort((a, b) => b.count - a.count) // Sort by count desc
-      }
-    })
-    .filter((group) => group.by_context.length > 0)
+    const contextBreakdown = Array.from(contextGroups.entries())
+      .map(([context, count]) => ({ context, count }))
+      .sort((a, b) => b.count - a.count)
+
+    // Include groups with no context tags as "no_context"
+    const byContext =
+      contextBreakdown.length > 0
+        ? contextBreakdown
+        : [{ context: 'no_context', count: group.events.length }]
+
+    return {
+      ...group.groupValues,
+      message: group.message,
+      total_count: group.events.length,
+      by_context: byContext
+    }
+  })
 
   // Step 4: Sort by total_count, apply limit, add rank
   const topGroups = groups

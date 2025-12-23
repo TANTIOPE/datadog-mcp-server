@@ -127,7 +127,7 @@ When running with `--transport=http`:
 | `monitors` | delete | Alerting | Delete a monitor | `monitors_write` |
 | `monitors` | mute | Alerting | Mute a monitor | `monitors_write` |
 | `monitors` | unmute | Alerting | Unmute a monitor | `monitors_write` |
-| `monitors` | top | Alerting | Top N monitors by alert frequency with real monitor names and context breakdown | `monitors_read` |
+| `monitors` | top | Alerting | Top N monitors by alert frequency with real monitor names and context breakdown. Groups without context tags are included as "no_context" | `monitors_read` |
 | `dashboards` | list | Visualization | List all dashboards | `dashboards_read` |
 | `dashboards` | get | Visualization | Get dashboard by ID | `dashboards_read` |
 | `dashboards` | create | Visualization | Create a new dashboard | `dashboards_write` |
@@ -147,7 +147,7 @@ When running with `--transport=http`:
 | `events` | create | Events | Create an event | `events_read` |
 | `events` | search | Events | Search events with v2 API and cursor pagination | `events_read` |
 | `events` | aggregate | Events | Client-side aggregation by monitor_name, source, etc. | `events_read` |
-| `events` | top | Events | Top N event groups by count with generic groupBy support (deployments, configs, alerts, etc.) | `events_read` |
+| `events` | top | Events | Top N event groups by count with generic groupBy support (deployments, configs, alerts, etc.). Groups without context tags are included as "no_context" | `events_read` |
 | `events` | timeseries | Events | Time-bucketed alert trends (hourly/daily counts) | `events_read` |
 | `events` | incidents | Events | Deduplicate alerts into incidents with Trigger/Recover pairing | `events_read` |
 | `incidents` | list | Incidents | List incidents | `incident_read` |
