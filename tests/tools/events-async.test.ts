@@ -590,7 +590,7 @@ describe('Events V2 API Functions', () => {
 
       expect(result.top).toBeDefined()
       expect(result.top[0].rank).toBe(1)
-      expect(result.top[0].alertCount).toBe(2)
+      expect(result.top[0].total_count).toBe(2)
     })
 
     it('should default to source:alert query', async () => {
@@ -618,7 +618,7 @@ describe('Events V2 API Functions', () => {
 
       expect(mockApi.searchEvents).toHaveBeenCalledWith({
         body: expect.objectContaining({
-          page: { limit: 1000 }
+          page: { limit: 10000 }
         })
       })
     })
