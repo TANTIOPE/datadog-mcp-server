@@ -269,7 +269,7 @@ Returns nested structure perfect for reports:
       "name": "High number of ready messages",
       "monitor_id": 67860480,
       "total_count": 50,
-      "by_service": [
+      "by_context": [
         {"context": "queue:state-status_tasks", "count": 30},
         {"context": "queue:updated_order_service", "count": 20}
       ]
@@ -279,7 +279,7 @@ Returns nested structure perfect for reports:
       "name": "Nginx 5XX errors",
       "monitor_id": 134611486,
       "total_count": 42,
-      "by_service": [
+      "by_context": [
         {"context": "ingress:trusk-api", "count": 29},
         {"context": "ingress:backoffice", "count": 13}
       ]
