@@ -526,7 +526,7 @@ describe('Monitors Async Functions', () => {
       expect(result.meta.contextPrefixes).toEqual(['env', 'team'])
     })
 
-    it('should filter out monitors without context tags', async () => {
+    it('should include monitors without context tags as "no_context"', async () => {
       const mockEvents = [
         createMockEventV2({
           message: '[[Monitor](/monitors/123)]',
@@ -557,9 +557,16 @@ describe('Monitors Async Functions', () => {
 
       const result = await topMonitors(mockEventsApi, mockMonitorsApi, {}, limits, 'datadoghq.com')
 
-      // Only monitor 456 should be returned (has context tags)
-      expect(result.top).toHaveLength(1)
-      expect(result.top[0].monitor_id).toBe(456)
+      // Both monitors should be returned
+      expect(result.top).toHaveLength(2)
+
+      // Monitor 123 (no context) should have "no_context" entry
+      const monitor123 = result.top.find((m) => m.monitor_id === 123)
+      expect(monitor123?.by_context).toEqual([{ context: 'no_context', count: 1 }])
+
+      // Monitor 456 (with context) should have queue context
+      const monitor456 = result.top.find((m) => m.monitor_id === 456)
+      expect(monitor456?.by_context).toEqual([{ context: 'queue:tasks', count: 1 }])
     })
 
     it('should respect limit parameter', async () => {

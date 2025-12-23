@@ -444,17 +444,24 @@ export async function topMonitors(
         message: ''
       }
 
+      const contextBreakdown = Array.from(group.contextBreakdown.entries())
+        .map(([context, count]) => ({ context, count }))
+        .sort((a, b) => b.count - a.count)
+
+      // Include monitors with no context tags as "no_context"
+      const byContext =
+        contextBreakdown.length > 0
+          ? contextBreakdown
+          : [{ context: 'no_context', count: group.eventCount }]
+
       return {
         monitor_id: group.monitorId,
         name: monitorInfo.name,
         message: monitorInfo.message,
         total_count: group.eventCount,
-        by_context: Array.from(group.contextBreakdown.entries())
-          .map(([context, count]) => ({ context, count }))
-          .sort((a, b) => b.count - a.count)
+        by_context: byContext
       }
     })
-    .filter((monitor) => monitor.by_context.length > 0) // Filter out monitors without context tags
     .sort((a, b) => b.total_count - a.total_count)
     .slice(0, params.limit ?? 10)
     .map((m, i) => ({ rank: i + 1, ...m }))
