@@ -1048,32 +1048,33 @@ export async function enrichWithMonitorMetadata(
   events: EventSummaryV2[],
   monitorsApi: v1.MonitorsApi
 ): Promise<EnrichedEvent[]> {
-  // Extract unique monitor names
-  const monitorNames = new Set<string>()
+  // Extract unique monitor IDs
+  const monitorIds = new Set<number>()
   for (const event of events) {
-    if (event.monitorInfo?.name) {
-      monitorNames.add(event.monitorInfo.name)
+    if (event.monitorId) {
+      monitorIds.add(event.monitorId)
     }
   }
 
-  if (monitorNames.size === 0) {
+  if (monitorIds.size === 0) {
     return events as EnrichedEvent[]
   }
 
-  // Fetch monitors - search by name
-  const monitorCache = new Map<string, v1.Monitor>()
+  // Fetch all monitors and filter by ID
+  // Note: The TypeScript client doesn't support monitorIds parameter
+  // so we fetch all and filter in memory
+  const monitorCache = new Map<number, v1.Monitor>()
 
   try {
-    // Fetch all monitors and filter locally
-    // The API doesn't support searching by exact name, so we need to filter
     const response = await monitorsApi.listMonitors({
       pageSize: 1000
     })
 
     const monitors = response ?? []
+    // Filter to only the monitors we need
     for (const monitor of monitors) {
-      if (monitor.name) {
-        monitorCache.set(monitor.name, monitor)
+      if (monitor.id && monitorIds.has(monitor.id)) {
+        monitorCache.set(monitor.id, monitor)
       }
     }
   } catch {
@@ -1085,8 +1086,8 @@ export async function enrichWithMonitorMetadata(
   return events.map((event) => {
     const enriched: EnrichedEvent = { ...event }
 
-    if (event.monitorInfo?.name) {
-      const monitor = monitorCache.get(event.monitorInfo.name)
+    if (event.monitorId) {
+      const monitor = monitorCache.get(event.monitorId)
       if (monitor) {
         enriched.monitorMetadata = {
           id: monitor.id ?? 0,
