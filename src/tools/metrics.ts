@@ -26,7 +26,18 @@ const InputSchema = {
   to: z.string().optional().describe('End time (ONLY for query action). Same formats as "from".'),
   metric: z.string().optional().describe('Metric name (for metadata action)'),
   tag: z.string().optional().describe('Filter by tag'),
-  limit: z.number().optional().describe('Maximum number of results (for search/list)')
+  limit: z
+    .number()
+    .min(1)
+    .optional()
+    .describe('Maximum number of results (for search/list, default: 50)'),
+  pointLimit: z
+    .number()
+    .min(1)
+    .optional()
+    .describe(
+      'Maximum data points per timeseries (for query action). AI controls resolution vs token usage (default: 1000).'
+    )
 }
 
 interface MetricSeriesData {
@@ -42,6 +53,7 @@ export async function queryMetrics(
     query: string
     from?: string
     to?: string
+    pointLimit?: number
   },
   limits: LimitsConfig,
   site: string
@@ -63,10 +75,12 @@ export async function queryMetrics(
 
   const series: MetricSeriesData[] = (response.series ?? []).map((s) => ({
     metric: s.metric ?? '',
-    points: (s.pointlist ?? []).slice(0, limits.maxMetricDataPoints).map((p) => ({
-      timestamp: p[0] ?? 0,
-      value: p[1] ?? 0
-    })),
+    points: (s.pointlist ?? [])
+      .slice(0, params.pointLimit ?? limits.defaultMetricDataPoints)
+      .map((p) => ({
+        timestamp: p[0] ?? 0,
+        value: p[1] ?? 0
+      })),
     scope: s.scope ?? '',
     tags: s.tagSet ?? []
   }))
@@ -101,7 +115,7 @@ export async function searchMetrics(
   // Filter by query (grep-like on metric name)
   const filtered = allMetrics
     .filter((name) => name.toLowerCase().includes(lowerQuery))
-    .slice(0, params.limit ?? limits.maxResults)
+    .slice(0, params.limit ?? limits.defaultLimit)
 
   return {
     metrics: filtered,
@@ -113,7 +127,7 @@ export async function searchMetrics(
 export async function listMetrics(
   api: v1.MetricsApi,
   params: { query?: string },
-  limits: LimitsConfig
+  _limits: LimitsConfig
 ) {
   const response = await api.listActiveMetrics({
     from: hoursAgo(24),
@@ -121,7 +135,7 @@ export async function listMetrics(
     tagFilter: params.query
   })
 
-  const metrics = (response.metrics ?? []).slice(0, limits.maxResults)
+  const metrics = response.metrics ?? []
 
   return {
     metrics,
@@ -164,7 +178,7 @@ APM METRICS (auto-generated from traces):
 - trace.{service}.duration - Latency (use avg:, p95:, max:)
 Example: max:trace.{service}.request.duration{*}`,
     InputSchema,
-    async ({ action, query, from, to, metric, limit }) => {
+    async ({ action, query, from, to, metric, limit, pointLimit }) => {
       try {
         switch (action) {
           case 'query': {
@@ -175,7 +189,8 @@ Example: max:trace.{service}.request.duration{*}`,
                 {
                   query: metricsQuery,
                   from,
-                  to
+                  to,
+                  pointLimit
                 },
                 limits,
                 site

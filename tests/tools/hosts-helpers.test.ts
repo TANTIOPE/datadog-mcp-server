@@ -187,20 +187,21 @@ describe('listHosts', () => {
     })
   })
 
-  it('should respect limits.maxResults', async () => {
+  it('should use AI-specified count without capping', async () => {
     const mockResponse = {
       hostList: []
     }
 
     mockApi.listHosts = vi.fn().mockResolvedValue(mockResponse)
 
-    const smallLimits = { maxResults: 50 }
+    const limits = { defaultLimit: 50 }
 
-    await listHosts(mockApi, { count: 200 }, smallLimits)
+    await listHosts(mockApi, { count: 200 }, limits)
 
+    // AI controls limits - no server-side cap
     expect(mockApi.listHosts).toHaveBeenCalledWith(
       expect.objectContaining({
-        count: 50
+        count: 200
       })
     )
   })

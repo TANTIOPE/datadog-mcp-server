@@ -58,7 +58,7 @@ describe('getTeamMembers', () => {
     getTeamMemberships: vi.fn()
   } as unknown as v2.TeamsApi
 
-  const limits = { maxResults: 100 }
+  const limits = { defaultLimit: 50 }
 
   it('should get team members', async () => {
     const mockResponse = {
@@ -103,7 +103,7 @@ describe('getTeamMembers', () => {
     expect(result.meta.totalCount).toBe(2)
     expect(mockApi.getTeamMemberships).toHaveBeenCalledWith({
       teamId: 'team-123',
-      pageSize: 100
+      pageSize: 50
     })
   })
 
@@ -120,20 +120,20 @@ describe('getTeamMembers', () => {
     expect(result.meta.totalCount).toBe(0)
   })
 
-  it('should respect limits.maxResults', async () => {
+  it('should use defaultLimit when no params provided', async () => {
     const mockResponse = {
       data: []
     }
 
     mockApi.getTeamMemberships = vi.fn().mockResolvedValue(mockResponse)
 
-    const smallLimits = { maxResults: 50 }
+    const customLimits = { defaultLimit: 25 }
 
-    await getTeamMembers(mockApi, 'team-456', smallLimits)
+    await getTeamMembers(mockApi, 'team-456', customLimits)
 
     expect(mockApi.getTeamMemberships).toHaveBeenCalledWith({
       teamId: 'team-456',
-      pageSize: 50
+      pageSize: 25
     })
   })
 

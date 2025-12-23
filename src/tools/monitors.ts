@@ -29,7 +29,11 @@ const InputSchema = {
     .describe(
       'Filter multi-alert monitors by group states (e.g., alert by host). Does NOT filter by overall monitor status. Values: alert, warn, no data, ok'
     ),
-  limit: z.number().optional().describe('Maximum number of monitors to return'),
+  limit: z
+    .number()
+    .min(1)
+    .optional()
+    .describe('Maximum number of monitors to return (default: 50)'),
   config: z.record(z.unknown()).optional().describe('Monitor configuration (for create/update)'),
   message: z.string().optional().describe('Mute message (for mute action)'),
   end: z.number().optional().describe('Mute end timestamp (for mute action)')
@@ -70,7 +74,7 @@ export async function listMonitors(
   limits: LimitsConfig,
   site: string
 ) {
-  const effectiveLimit = Math.min(params.limit ?? limits.maxResults, limits.maxResults)
+  const effectiveLimit = params.limit ?? limits.defaultLimit
 
   const response = await api.listMonitors({
     name: params.name,
@@ -118,7 +122,7 @@ export async function searchMonitors(
   site: string
 ) {
   const response = await api.searchMonitors({ query })
-  const monitors = (response.monitors ?? []).slice(0, limits.maxResults).map((m) => ({
+  const monitors = (response.monitors ?? []).map((m) => ({
     id: m.id ?? 0,
     name: m.name ?? '',
     status: String(m.status ?? 'unknown'),

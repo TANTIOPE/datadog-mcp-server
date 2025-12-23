@@ -8,11 +8,10 @@ import { listApmServices } from '../../src/tools/traces.js'
 import type { LimitsConfig } from '../../src/config/schema.js'
 
 const defaultLimits: LimitsConfig = {
-  maxResults: 100,
-  maxLogLines: 500,
-  maxMetricDataPoints: 1000,
-  defaultTimeRangeHours: 24,
-  defaultLimit: 25
+  defaultLimit: 50,
+  defaultLogLines: 200,
+  defaultMetricDataPoints: 1000,
+  defaultTimeRangeHours: 24
 }
 
 describe('Traces Async Functions', () => {
@@ -116,16 +115,14 @@ describe('Traces Async Functions', () => {
       expect(call.body.data?.attributes?.filter?.to).toBeDefined()
     })
 
-    it('should respect maxResults limit for service discovery', async () => {
-      const limits = { ...defaultLimits, maxResults: 50 }
-
+    it('should use defaultLimit for service discovery groupBy', async () => {
       const mockApi = {
         aggregateSpans: vi.fn().mockResolvedValue({
           data: []
         })
       } as unknown as v2.SpansApi
 
-      await listApmServices(mockApi, {}, limits)
+      await listApmServices(mockApi, {}, defaultLimits)
 
       const call = mockApi.aggregateSpans.mock.calls[0][0]
       expect(call.body.data?.attributes?.groupBy?.[0]?.limit).toBe(50)

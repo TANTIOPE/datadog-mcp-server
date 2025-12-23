@@ -12,7 +12,11 @@ const InputSchema = {
   id: z.string().optional().describe('Downtime ID (required for get/update/cancel)'),
   monitorId: z.number().optional().describe('Monitor ID (required for listByMonitor)'),
   currentOnly: z.boolean().optional().describe('Only return active downtimes (for list)'),
-  limit: z.number().optional().describe('Maximum number of downtimes to return'),
+  limit: z
+    .number()
+    .min(1)
+    .optional()
+    .describe('Maximum number of downtimes to return (default: 50)'),
   config: z
     .record(z.unknown())
     .optional()
@@ -74,7 +78,7 @@ export async function listDowntimes(
   params: { currentOnly?: boolean; limit?: number },
   limits: LimitsConfig
 ) {
-  const effectiveLimit = Math.min(params.limit ?? limits.maxResults, limits.maxResults)
+  const effectiveLimit = params.limit ?? limits.defaultLimit
 
   const response = await api.listDowntimes({
     currentOnly: params.currentOnly
@@ -232,10 +236,10 @@ export function formatMonitorDowntime(
 export async function listMonitorDowntimes(
   api: v2.DowntimesApi,
   monitorId: number,
-  limits: LimitsConfig
+  _limits: LimitsConfig
 ) {
   const response = await api.listMonitorDowntimes({ monitorId })
-  const downtimes = (response.data ?? []).slice(0, limits.maxResults).map(formatMonitorDowntime)
+  const downtimes = (response.data ?? []).map(formatMonitorDowntime)
 
   return {
     downtimes,

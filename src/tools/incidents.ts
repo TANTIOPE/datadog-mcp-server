@@ -15,7 +15,11 @@ const InputSchema = {
     .enum(['active', 'stable', 'resolved'])
     .optional()
     .describe('Filter by status (for list)'),
-  limit: z.number().optional().describe('Maximum number of incidents to return'),
+  limit: z
+    .number()
+    .min(1)
+    .optional()
+    .describe('Maximum number of incidents to return (default: 50)'),
   config: z
     .record(z.unknown())
     .optional()
@@ -73,7 +77,7 @@ export async function listIncidents(
   params: { status?: 'active' | 'stable' | 'resolved'; limit?: number },
   limits: LimitsConfig
 ) {
-  const effectiveLimit = Math.min(params.limit ?? limits.maxResults, limits.maxResults)
+  const effectiveLimit = params.limit ?? limits.defaultLimit
 
   // Note: listIncidents is an unstable operation that requires enablement
   const response = await api.listIncidents({
@@ -106,7 +110,7 @@ export async function getIncident(api: v2.IncidentsApi, id: string) {
 export async function searchIncidents(api: v2.IncidentsApi, query: string, limits: LimitsConfig) {
   const response = await api.searchIncidents({
     query,
-    pageSize: limits.maxResults
+    pageSize: limits.defaultLimit
   })
 
   const incidents = (response.data?.attributes?.incidents ?? []).map(

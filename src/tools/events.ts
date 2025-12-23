@@ -30,7 +30,7 @@ const InputSchema = {
   priority: z.enum(['normal', 'low']).optional().describe('Event priority'),
   sources: z.array(z.string()).optional().describe('Filter by sources'),
   tags: z.array(z.string()).optional().describe('Filter by tags'),
-  limit: z.number().optional().describe('Maximum number of events to return'),
+  limit: z.number().min(1).optional().describe('Maximum number of events to return (default: 50)'),
   title: z.string().optional().describe('Event title (for create)'),
   text: z.string().optional().describe('Event text (for create)'),
   alertType: z
@@ -123,6 +123,7 @@ interface IncidentEvent {
 interface EnrichedEvent extends EventSummaryV2 {
   monitorMetadata?: {
     id: number
+    name: string
     type: string
     message: string
     tags: string[]
@@ -339,7 +340,7 @@ export async function listEventsV1(
   },
   limits: LimitsConfig
 ) {
-  const effectiveLimit = Math.min(params.limit ?? limits.defaultLimit, limits.maxResults)
+  const effectiveLimit = params.limit ?? limits.defaultLimit
   const defaultFrom = hoursAgo(limits.defaultTimeRangeHours)
   const defaultTo = now()
 
@@ -478,7 +479,7 @@ export async function searchEventsV2(
     priority: params.priority
   })
 
-  const effectiveLimit = Math.min(params.limit ?? limits.defaultLimit, limits.maxResults)
+  const effectiveLimit = params.limit ?? limits.defaultLimit
 
   const body: v2.EventsListRequest = {
     filter: {
@@ -1091,6 +1092,7 @@ export async function enrichWithMonitorMetadata(
       if (monitor) {
         enriched.monitorMetadata = {
           id: monitor.id ?? 0,
+          name: monitor.name ?? '',
           type: String(monitor.type ?? ''),
           message: monitor.message ?? '',
           tags: monitor.tags ?? [],

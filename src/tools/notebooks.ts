@@ -43,7 +43,7 @@ const InputSchema = {
     .optional()
     .describe('Time configuration for notebook'),
   status: z.enum(['published']).optional().describe('Notebook status'),
-  pageSize: z.number().optional().describe('Number of notebooks to return'),
+  pageSize: z.number().min(1).optional().describe('Number of notebooks to return'),
   pageNumber: z.number().optional().describe('Page number for pagination')
 }
 
@@ -144,8 +144,8 @@ export async function listNotebooks(
     authorHandle: params.authorHandle,
     excludeAuthorHandle: params.excludeAuthorHandle,
     includeCells: params.includeCells ?? false,
-    count: Math.min(params.pageSize ?? limits.maxResults, limits.maxResults),
-    start: (params.pageNumber ?? 0) * (params.pageSize ?? limits.maxResults)
+    count: params.pageSize ?? limits.defaultLimit,
+    start: (params.pageNumber ?? 0) * (params.pageSize ?? limits.defaultLimit)
   })
 
   const notebooks = (response.data ?? []).map(formatNotebookSummary)

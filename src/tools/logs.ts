@@ -46,7 +46,7 @@ const InputSchema = {
     .optional()
     .describe('Filter by log status/level'),
   indexes: z.array(z.string()).optional().describe('Log indexes to search'),
-  limit: z.number().optional().describe('Maximum number of logs to return'),
+  limit: z.number().min(1).optional().describe('Maximum number of logs to return (default: 200)'),
   sort: z.enum(['timestamp', '-timestamp']).optional().describe('Sort order'),
   sample: z
     .enum(['first', 'spread', 'diverse'])
@@ -249,6 +249,12 @@ export function diverseSample<T extends { message: string }>(
 }
 
 /**
+ * Multiplier for fetching extra logs when using diverse/spread sampling
+ * to ensure sufficient samples after deduplication or distribution
+ */
+const SAMPLE_DIVERSITY_MULTIPLIER = 4
+
+/**
  * Build a Datadog log query from various filter parameters
  */
 export function buildLogQuery(params: {
@@ -340,12 +346,12 @@ export async function searchLogs(
     status: params.status
   })
 
-  const requestedLimit = params.limit ?? limits.defaultLimit
+  const requestedLimit = params.limit ?? limits.defaultLogLines
   const sampleMode = params.sample ?? 'first'
 
   // For spread/diverse sampling, fetch more logs to sample from
-  const fetchMultiplier = sampleMode === 'first' ? 1 : 4
-  const fetchLimit = Math.min(requestedLimit * fetchMultiplier, limits.maxLogLines)
+  const fetchMultiplier = sampleMode === 'first' ? 1 : SAMPLE_DIVERSITY_MULTIPLIER
+  const fetchLimit = requestedLimit * fetchMultiplier
 
   const body: v2.LogsListRequest = {
     filter: {

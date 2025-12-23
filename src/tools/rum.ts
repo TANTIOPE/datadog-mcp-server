@@ -28,7 +28,7 @@ const InputSchema = {
     .optional()
     .describe('RUM event type filter'),
   sort: z.enum(['timestamp', '-timestamp']).optional().describe('Sort order for events'),
-  limit: z.number().optional().describe('Maximum number of events to return'),
+  limit: z.number().min(1).optional().describe('Maximum number of events to return (default: 50)'),
   groupBy: z
     .array(z.string())
     .optional()
@@ -227,7 +227,7 @@ export async function searchEvents(
     filterFrom: new Date(fromTime * 1000),
     filterTo: new Date(toTime * 1000),
     sort: params.sort === 'timestamp' ? 'timestamp' : '-timestamp',
-    pageLimit: Math.min(params.limit ?? limits.maxResults, limits.maxResults)
+    pageLimit: params.limit ?? limits.defaultLimit
   })
 
   const events = (response.data ?? []).map(formatEvent)
@@ -565,7 +565,7 @@ export async function getSessionWaterfall(
   const response = await api.listRUMEvents({
     filterQuery: queryParts.join(' '),
     sort: 'timestamp',
-    pageLimit: Math.min(limits.maxResults, 1000)
+    pageLimit: limits.defaultLimit
   })
 
   const events = (response.data ?? []).map(formatWaterfallEvent)

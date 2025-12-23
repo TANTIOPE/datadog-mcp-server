@@ -23,6 +23,12 @@ DD_APP_KEY=your-app-key
 
 ```bash
 DD_SITE=datadoghq.com  # Default. Use datadoghq.eu for EU, etc.
+
+# Limit defaults (fallbacks when AI doesn't specify)
+MCP_DEFAULT_LIMIT=50              # General tools default limit
+MCP_DEFAULT_LOG_LINES=200         # Logs tool default limit
+MCP_DEFAULT_METRIC_POINTS=1000    # Metrics timeseries data points
+MCP_DEFAULT_TIME_RANGE=24         # Default time range in hours
 ```
 
 ### Optional Flags
@@ -204,6 +210,18 @@ When running with `--transport=http`:
 | `auth` | validate | Auth | Test API and App key validity | — |
 
 ## Token Efficiency
+
+### Limit Control
+
+AI assistants have full control over query limits. The environment variables set what value is used when the AI doesn't specify a limit. They do NOT cap what the AI can request.
+
+| Tool | Default | Parameter | Description |
+|------|---------|-----------|-------------|
+| Logs | 200 | `limit` | Log lines to return |
+| Metrics (timeseries) | 1000 | `pointLimit` | Data points per series (controls resolution) |
+| General tools | 50 | `limit` | Results to return |
+
+Defaults can be configured via `MCP_DEFAULT_*` environment variables.
 
 ### Compact Mode (Logs)
 

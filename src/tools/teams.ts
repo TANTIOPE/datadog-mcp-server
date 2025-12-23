@@ -11,7 +11,7 @@ const InputSchema = {
   action: ActionSchema.describe('Action to perform'),
   id: z.string().optional().describe('Team ID (required for get/members actions)'),
   filter: z.string().optional().describe('Filter teams by name'),
-  pageSize: z.number().optional().describe('Number of teams to return per page'),
+  pageSize: z.number().min(1).optional().describe('Number of teams to return per page'),
   pageNumber: z.number().optional().describe('Page number for pagination')
 }
 
@@ -81,7 +81,7 @@ export async function listTeams(
 ) {
   const response = await api.listTeams({
     filterKeyword: params.filter,
-    pageSize: Math.min(params.pageSize ?? limits.maxResults, limits.maxResults),
+    pageSize: params.pageSize ?? limits.defaultLimit,
     pageNumber: params.pageNumber ?? 0
   })
 
@@ -110,7 +110,7 @@ export async function getTeam(api: v2.TeamsApi, teamId: string) {
 export async function getTeamMembers(api: v2.TeamsApi, teamId: string, limits: LimitsConfig) {
   const response = await api.getTeamMemberships({
     teamId,
-    pageSize: limits.maxResults
+    pageSize: limits.defaultLimit
   })
 
   const members = (response.data ?? []).map(formatTeamMember)

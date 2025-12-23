@@ -104,9 +104,9 @@ export function loadConfig(): Config {
       host: args.strings.host ?? process.env.MCP_HOST ?? 'localhost'
     },
     limits: {
-      maxResults: Number.parseInt(process.env.MCP_MAX_RESULTS ?? '100', 10),
-      maxLogLines: Number.parseInt(process.env.MCP_MAX_LOG_LINES ?? '500', 10),
-      maxMetricDataPoints: Number.parseInt(process.env.MCP_MAX_METRIC_POINTS ?? '1000', 10),
+      defaultLimit: Number.parseInt(process.env.MCP_DEFAULT_LIMIT ?? '50', 10),
+      defaultLogLines: Number.parseInt(process.env.MCP_DEFAULT_LOG_LINES ?? '200', 10),
+      defaultMetricDataPoints: Number.parseInt(process.env.MCP_DEFAULT_METRIC_POINTS ?? '1000', 10),
       defaultTimeRangeHours: Number.parseInt(process.env.MCP_DEFAULT_TIME_RANGE ?? '24', 10)
     },
     features: {

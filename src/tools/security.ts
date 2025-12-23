@@ -22,7 +22,7 @@ const InputSchema = {
     .enum(['open', 'under_review', 'archived'])
     .optional()
     .describe('Filter signals by status'),
-  pageSize: z.number().optional().describe('Number of results to return'),
+  pageSize: z.number().min(1).optional().describe('Number of results to return'),
   pageCursor: z.string().optional().describe('Cursor for pagination')
 }
 
@@ -110,7 +110,7 @@ export async function listRules(
   limits: LimitsConfig
 ) {
   const response = await api.listSecurityMonitoringRules({
-    pageSize: Math.min(params.pageSize ?? limits.maxResults, limits.maxResults),
+    pageSize: params.pageSize ?? limits.defaultLimit,
     pageNumber: 0
   })
 
@@ -168,7 +168,7 @@ export async function searchSignals(
         to: new Date(toTime * 1000)
       },
       page: {
-        limit: Math.min(params.pageSize ?? limits.maxResults, limits.maxResults),
+        limit: params.pageSize ?? limits.defaultLimit,
         cursor: params.pageCursor
       },
       sort: 'timestamp' as v2.SecurityMonitoringSignalsSort
@@ -211,7 +211,7 @@ export async function listFindings(
         to: new Date()
       },
       page: {
-        limit: Math.min(params.pageSize ?? limits.maxResults, limits.maxResults),
+        limit: params.pageSize ?? limits.defaultLimit,
         cursor: params.pageCursor
       }
     }

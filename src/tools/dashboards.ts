@@ -12,7 +12,11 @@ const InputSchema = {
   id: z.string().optional().describe('Dashboard ID (required for get/update/delete)'),
   name: z.string().optional().describe('Filter by name'),
   tags: z.array(z.string()).optional().describe('Filter by tags'),
-  limit: z.number().optional().describe('Maximum number of dashboards to return'),
+  limit: z
+    .number()
+    .min(1)
+    .optional()
+    .describe('Maximum number of dashboards to return (default: 50)'),
   config: z.record(z.unknown()).optional().describe('Dashboard configuration (for create/update)')
 }
 
@@ -45,7 +49,7 @@ export async function listDashboards(
   params: { name?: string; tags?: string[]; limit?: number },
   limits: LimitsConfig
 ) {
-  const effectiveLimit = Math.min(params.limit ?? limits.maxResults, limits.maxResults)
+  const effectiveLimit = params.limit ?? limits.defaultLimit
 
   const response = await api.listDashboards({
     filterShared: false

@@ -20,7 +20,7 @@ const InputSchema = {
     .describe('Test type filter (for list) or type for create'),
   locations: z.array(z.string()).optional().describe('Filter by locations (for list)'),
   tags: z.array(z.string()).optional().describe('Filter by tags (for list)'),
-  limit: z.number().optional().describe('Maximum number of tests to return'),
+  limit: z.number().min(1).optional().describe('Maximum number of tests to return (default: 50)'),
   config: z
     .record(z.unknown())
     .optional()
@@ -60,7 +60,7 @@ export async function listTests(
   params: { locations?: string[]; tags?: string[]; limit?: number },
   limits: LimitsConfig
 ) {
-  const effectiveLimit = Math.min(params.limit ?? limits.maxResults, limits.maxResults)
+  const effectiveLimit = params.limit ?? limits.defaultLimit
 
   // Note: listTests API only accepts pageSize/pageNumber, filtering done client-side
   const response = await api.listTests({
