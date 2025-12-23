@@ -310,8 +310,12 @@ export function formatEventV2(e: v2.EventResponse): EventSummaryV2 {
   if (!monitorId) {
     const monitorIdTag = tags.find((t) => t.startsWith('monitor_id:'))
     if (monitorIdTag) {
-      const id = Number.parseInt(monitorIdTag.split(':')[1], 10)
-      monitorId = Number.isNaN(id) ? undefined : id
+      const parts = monitorIdTag.split(':', 2)
+      const value = parts[1]
+      if (value !== undefined) {
+        const id = Number.parseInt(value, 10)
+        monitorId = Number.isNaN(id) ? undefined : id
+      }
     }
   }
 

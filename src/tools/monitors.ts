@@ -405,23 +405,34 @@ export async function topMonitors(
     }
   }
 
-  // Step 3: Fetch real monitor names for unique monitor_ids
+  // Step 3: Fetch real monitor names for unique monitor_ids (in parallel)
   const monitorIds = Array.from(monitorGroups.keys())
   const monitorNames = new Map<number, { name: string; message: string }>()
 
-  for (const monitorId of monitorIds) {
+  // Parallelize monitor fetches with Promise.allSettled to reduce latency
+  const monitorPromises = monitorIds.map(async (monitorId) => {
     try {
       const monitor = await monitorsApi.getMonitor({ monitorId })
-      monitorNames.set(monitorId, {
+      return {
+        monitorId,
         name: monitor.name ?? `Monitor ${monitorId}`,
         message: monitor.message ?? ''
-      })
+      }
     } catch {
       // Fallback if monitor fetch fails (e.g., deleted monitor)
-      monitorNames.set(monitorId, {
+      return {
+        monitorId,
         name: `Monitor ${monitorId}`,
         message: ''
-      })
+      }
+    }
+  })
+
+  const results = await Promise.allSettled(monitorPromises)
+  for (const result of results) {
+    if (result.status === 'fulfilled') {
+      const { monitorId, name, message } = result.value
+      monitorNames.set(monitorId, { name, message })
     }
   }
 
