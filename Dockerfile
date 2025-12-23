@@ -48,9 +48,9 @@ ENV MCP_HOST=0.0.0.0
 # Expose port for HTTP transport
 EXPOSE 3000
 
-# Health check for HTTP mode
+# Health check for HTTP mode (uses Node.js http module - no external dependencies)
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-  CMD if [ "$MCP_TRANSPORT" = "http" ]; then wget --no-verbose --tries=1 --spider http://localhost:${MCP_PORT}/health || exit 1; else exit 0; fi
+  CMD if [ "$MCP_TRANSPORT" = "http" ]; then node -e "require('http').get('http://localhost:${MCP_PORT}/health', (r) => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"; else exit 0; fi
 
 # Default to stdio mode
 CMD ["node", "dist/index.js"]
