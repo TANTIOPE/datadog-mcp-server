@@ -8,11 +8,10 @@ import { searchLogs, aggregateLogs } from '../../src/tools/logs.js'
 import type { LimitsConfig } from '../../src/config/schema.js'
 
 const defaultLimits: LimitsConfig = {
-  maxResults: 100,
-  maxLogLines: 500,
-  maxMetricDataPoints: 1000,
-  defaultTimeRangeHours: 24,
-  defaultLimit: 25
+  defaultLimit: 50,
+  defaultLogLines: 200,
+  defaultMetricDataPoints: 1000,
+  defaultTimeRangeHours: 24
 }
 
 // Factory function for creating mock logs
@@ -79,9 +78,7 @@ describe('Logs Async Functions', () => {
       expect(result.meta.count).toBe(3)
     })
 
-    it('should respect maxLogLines limit in fetch', async () => {
-      const limits = { ...defaultLimits, maxLogLines: 2 }
-
+    it('should use AI-specified limit without capping', async () => {
       const mockApi = {
         listLogs: vi.fn().mockResolvedValue({
           data: [createMockLog({ id: 'log-1' })],
@@ -89,11 +86,11 @@ describe('Logs Async Functions', () => {
         })
       } as unknown as v2.LogsApi
 
-      await searchLogs(mockApi, { query: '*' }, limits, 'datadoghq.com')
+      await searchLogs(mockApi, { query: '*', limit: 500 }, defaultLimits, 'datadoghq.com')
 
-      // Should request with maxLogLines limit
+      // AI controls limit - no server-side cap
       const call = mockApi.listLogs.mock.calls[0][0]
-      expect(call.body.page?.limit).toBeLessThanOrEqual(limits.maxLogLines)
+      expect(call.body.page?.limit).toBe(500)
     })
 
     it('should build query with keyword filter', async () => {

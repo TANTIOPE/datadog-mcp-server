@@ -68,7 +68,7 @@ export async function listHosts(
   const response = await api.listHosts({
     filter: params.filter,
     from: params.from,
-    count: Math.min(params.count ?? limits.maxResults, limits.maxResults),
+    count: params.count ?? limits.defaultLimit,
     sortField: params.sortField,
     sortDir: params.sortDir
   })

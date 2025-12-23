@@ -70,7 +70,7 @@ export async function listUsers(
   const response = await api.listUsers({
     filter: params.filter,
     filterStatus: params.status,
-    pageSize: Math.min(params.pageSize ?? limits.maxResults, limits.maxResults),
+    pageSize: params.pageSize ?? limits.defaultLimit,
     pageNumber: params.pageNumber ?? 0
   })
 

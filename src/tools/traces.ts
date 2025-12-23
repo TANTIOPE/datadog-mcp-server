@@ -87,7 +87,7 @@ const InputSchema = {
     .string()
     .optional()
     .describe('Filter by error message (grep-like). Example: "timeout", "connection refused"'),
-  limit: z.number().optional().describe('Maximum number of results'),
+  limit: z.number().optional().describe('Maximum number of results (default: 50)'),
   sort: z.enum(['timestamp', '-timestamp']).optional().describe('Sort order'),
   groupBy: z
     .array(z.string())
@@ -361,7 +361,7 @@ export async function searchTraces(
         },
         sort: params.sort === 'timestamp' ? 'timestamp' : '-timestamp',
         page: {
-          limit: Math.min(params.limit ?? limits.maxResults, limits.maxResults)
+          limit: params.limit ?? limits.defaultLimit
         }
       }
     }
@@ -498,7 +498,7 @@ export async function listApmServices(
         groupBy: [
           {
             facet: 'service',
-            limit: limits.maxResults
+            limit: limits.defaultLimit
           }
         ]
       }

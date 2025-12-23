@@ -33,10 +33,9 @@ describe('Config Schema', () => {
           host: '0.0.0.0'
         },
         limits: {
-          maxResults: 200,
-          maxLogLines: 200,
-          defaultLimit: 50,
-          maxMetricDataPoints: 2000,
+          defaultLimit: 100,
+          defaultLogLines: 300,
+          defaultMetricDataPoints: 2000,
           defaultTimeRangeHours: 48
         },
         features: {
@@ -50,7 +49,9 @@ describe('Config Schema', () => {
       expect(result.datadog.site).toBe('datadoghq.eu')
       expect(result.server.transport).toBe('http')
       expect(result.server.port).toBe(8080)
-      expect(result.limits.maxResults).toBe(200)
+      expect(result.limits.defaultLimit).toBe(100)
+      expect(result.limits.defaultLogLines).toBe(300)
+      expect(result.limits.defaultMetricDataPoints).toBe(2000)
       expect(result.features.readOnly).toBe(true)
       expect(result.features.disabledTools).toEqual(['synthetics', 'rum'])
     })
@@ -82,10 +83,9 @@ describe('Config Schema', () => {
 
       const result = configSchema.parse(config)
 
-      expect(result.limits.maxResults).toBe(100)
-      expect(result.limits.maxLogLines).toBe(100)
-      expect(result.limits.defaultLimit).toBe(25)
-      expect(result.limits.maxMetricDataPoints).toBe(1000)
+      expect(result.limits.defaultLimit).toBe(50)
+      expect(result.limits.defaultLogLines).toBe(200)
+      expect(result.limits.defaultMetricDataPoints).toBe(1000)
       expect(result.limits.defaultTimeRangeHours).toBe(24)
     })
 

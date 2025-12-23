@@ -7,7 +7,7 @@ describe('searchSignals', () => {
     searchSecurityMonitoringSignals: vi.fn()
   } as unknown as v2.SecurityMonitoringApi
 
-  const limits = { maxResults: 100 }
+  const limits = { defaultLimit: 50 }
 
   it('should search signals with query filter', async () => {
     const mockResponse = {
@@ -158,7 +158,7 @@ describe('searchSignals', () => {
     expect(call.body.filter.to).toBeInstanceOf(Date)
   })
 
-  it('should respect limits.maxResults', async () => {
+  it('should use AI-specified pageSize without capping', async () => {
     const mockResponse = {
       data: [],
       meta: {}
@@ -166,21 +166,19 @@ describe('searchSignals', () => {
 
     mockApi.searchSecurityMonitoringSignals = vi.fn().mockResolvedValue(mockResponse)
 
-    const smallLimits = { maxResults: 20 }
-
     await searchSignals(
       mockApi,
       {
         pageSize: 1000
       },
-      smallLimits
+      limits
     )
 
     expect(mockApi.searchSecurityMonitoringSignals).toHaveBeenCalledWith(
       expect.objectContaining({
         body: expect.objectContaining({
           page: expect.objectContaining({
-            limit: 20
+            limit: 1000
           })
         })
       })
@@ -226,7 +224,7 @@ describe('listFindings', () => {
     searchSecurityMonitoringSignals: vi.fn()
   } as unknown as v2.SecurityMonitoringApi
 
-  const limits = { maxResults: 100 }
+  const limits = { defaultLimit: 50 }
 
   it('should list findings with default workload security query', async () => {
     const mockResponse = {
@@ -294,7 +292,7 @@ describe('listFindings', () => {
     )
   })
 
-  it('should respect limits.maxResults', async () => {
+  it('should use AI-specified pageSize without capping', async () => {
     const mockResponse = {
       data: [],
       meta: {}
@@ -302,21 +300,19 @@ describe('listFindings', () => {
 
     mockApi.searchSecurityMonitoringSignals = vi.fn().mockResolvedValue(mockResponse)
 
-    const smallLimits = { maxResults: 25 }
-
     await listFindings(
       mockApi,
       {
         pageSize: 500
       },
-      smallLimits
+      limits
     )
 
     expect(mockApi.searchSecurityMonitoringSignals).toHaveBeenCalledWith(
       expect.objectContaining({
         body: expect.objectContaining({
           page: expect.objectContaining({
-            limit: 25
+            limit: 500
           })
         })
       })

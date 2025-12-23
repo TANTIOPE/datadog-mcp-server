@@ -7,7 +7,7 @@ describe('listIncidents', () => {
     listIncidents: vi.fn()
   } as unknown as v2.IncidentsApi
 
-  const limits = { maxResults: 100 }
+  const limits = { defaultLimit: 50 }
 
   it('should list all incidents without status filter', async () => {
     const mockResponse = {
@@ -37,7 +37,7 @@ describe('listIncidents', () => {
 
     expect(result.incidents).toHaveLength(2)
     expect(result.total).toBe(2)
-    expect(mockApi.listIncidents).toHaveBeenCalledWith({ pageSize: 100 })
+    expect(mockApi.listIncidents).toHaveBeenCalledWith({ pageSize: 50 })
   })
 
   it('should filter incidents by active status', async () => {
@@ -127,18 +127,16 @@ describe('listIncidents', () => {
     expect(result.incidents[0]?.state).toBe('stable')
   })
 
-  it('should respect limits.maxResults', async () => {
+  it('should use AI-specified limit without capping', async () => {
     const mockResponse = {
       data: []
     }
 
     mockApi.listIncidents = vi.fn().mockResolvedValue(mockResponse)
 
-    const smallLimits = { maxResults: 50 }
+    await listIncidents(mockApi, { limit: 200 }, limits)
 
-    await listIncidents(mockApi, { limit: 200 }, smallLimits)
-
-    expect(mockApi.listIncidents).toHaveBeenCalledWith({ pageSize: 50 })
+    expect(mockApi.listIncidents).toHaveBeenCalledWith({ pageSize: 200 })
   })
 
   it('should handle empty data array', async () => {

@@ -42,10 +42,9 @@ export const configSchema = z.object({
     .default({}),
   limits: z
     .object({
-      maxResults: z.number().default(100),
-      maxLogLines: z.number().default(100), // Reduced from 500 for token efficiency
-      defaultLimit: z.number().default(25), // Default limit for initial queries
-      maxMetricDataPoints: z.number().default(1000),
+      defaultLimit: z.number().default(50), // Fallback when AI doesn't specify limit
+      defaultLogLines: z.number().default(200), // Fallback when AI doesn't specify log limit
+      defaultMetricDataPoints: z.number().default(1000), // Fallback for timeseries data points
       defaultTimeRangeHours: z.number().default(24)
     })
     .default({}),

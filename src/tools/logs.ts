@@ -46,7 +46,7 @@ const InputSchema = {
     .optional()
     .describe('Filter by log status/level'),
   indexes: z.array(z.string()).optional().describe('Log indexes to search'),
-  limit: z.number().optional().describe('Maximum number of logs to return'),
+  limit: z.number().optional().describe('Maximum number of logs to return (default: 200)'),
   sort: z.enum(['timestamp', '-timestamp']).optional().describe('Sort order'),
   sample: z
     .enum(['first', 'spread', 'diverse'])
@@ -340,12 +340,12 @@ export async function searchLogs(
     status: params.status
   })
 
-  const requestedLimit = params.limit ?? limits.defaultLimit
+  const requestedLimit = params.limit ?? limits.defaultLogLines
   const sampleMode = params.sample ?? 'first'
 
-  // For spread/diverse sampling, fetch more logs to sample from
+  // For spread/diverse sampling, fetch more logs to sample from (4x multiplier)
   const fetchMultiplier = sampleMode === 'first' ? 1 : 4
-  const fetchLimit = Math.min(requestedLimit * fetchMultiplier, limits.maxLogLines)
+  const fetchLimit = requestedLimit * fetchMultiplier
 
   const body: v2.LogsListRequest = {
     filter: {

@@ -38,9 +38,9 @@ describe('Config Loading', () => {
       process.env.MCP_TRANSPORT = 'http'
       process.env.MCP_PORT = '8080'
       process.env.MCP_HOST = '0.0.0.0'
-      process.env.MCP_MAX_RESULTS = '200'
-      process.env.MCP_MAX_LOG_LINES = '1000'
-      process.env.MCP_MAX_METRIC_POINTS = '2000'
+      process.env.MCP_DEFAULT_LIMIT = '100'
+      process.env.MCP_DEFAULT_LOG_LINES = '300'
+      process.env.MCP_DEFAULT_METRIC_POINTS = '2000'
       process.env.MCP_DEFAULT_TIME_RANGE = '48'
       process.env.MCP_READ_ONLY = 'true'
 
@@ -50,9 +50,9 @@ describe('Config Loading', () => {
       expect(config.server.transport).toBe('http')
       expect(config.server.port).toBe(8080)
       expect(config.server.host).toBe('0.0.0.0')
-      expect(config.limits.maxResults).toBe(200)
-      expect(config.limits.maxLogLines).toBe(1000)
-      expect(config.limits.maxMetricDataPoints).toBe(2000)
+      expect(config.limits.defaultLimit).toBe(100)
+      expect(config.limits.defaultLogLines).toBe(300)
+      expect(config.limits.defaultMetricDataPoints).toBe(2000)
       expect(config.limits.defaultTimeRangeHours).toBe(48)
       expect(config.features.readOnly).toBe(true)
     })
@@ -199,20 +199,20 @@ describe('Config Loading', () => {
 
       const config = loadConfig()
 
-      expect(config.limits.maxResults).toBe(100)
-      expect(config.limits.maxLogLines).toBe(500)
-      expect(config.limits.maxMetricDataPoints).toBe(1000)
+      expect(config.limits.defaultLimit).toBe(50)
+      expect(config.limits.defaultLogLines).toBe(200)
+      expect(config.limits.defaultMetricDataPoints).toBe(1000)
       expect(config.limits.defaultTimeRangeHours).toBe(24)
     })
 
-    it('should have default limit of 25 in schema', () => {
+    it('should have default limit of 50 in schema', () => {
       process.env.DD_API_KEY = 'key'
       process.env.DD_APP_KEY = 'key'
 
       const config = loadConfig()
 
-      // defaultLimit comes from schema default
-      expect(config.limits.defaultLimit).toBe(25)
+      // defaultLimit comes from config loader default
+      expect(config.limits.defaultLimit).toBe(50)
     })
   })
 

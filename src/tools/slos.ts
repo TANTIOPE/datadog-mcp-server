@@ -14,7 +14,7 @@ const InputSchema = {
   ids: z.array(z.string()).optional().describe('Multiple SLO IDs (for list with specific IDs)'),
   query: z.string().optional().describe('Search query (for list)'),
   tags: z.array(z.string()).optional().describe('Filter by tags (for list)'),
-  limit: z.number().optional().describe('Maximum number of SLOs to return'),
+  limit: z.number().optional().describe('Maximum number of SLOs to return (default: 50)'),
   config: z
     .record(z.unknown())
     .optional()
@@ -71,7 +71,7 @@ export async function listSlos(
   params: { ids?: string[]; query?: string; tags?: string[]; limit?: number },
   limits: LimitsConfig
 ) {
-  const effectiveLimit = Math.min(params.limit ?? limits.maxResults, limits.maxResults)
+  const effectiveLimit = params.limit ?? limits.defaultLimit
 
   const response = await api.listSLOs({
     ids: params.ids?.join(','),

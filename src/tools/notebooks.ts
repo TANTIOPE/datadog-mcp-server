@@ -144,8 +144,8 @@ export async function listNotebooks(
     authorHandle: params.authorHandle,
     excludeAuthorHandle: params.excludeAuthorHandle,
     includeCells: params.includeCells ?? false,
-    count: Math.min(params.pageSize ?? limits.maxResults, limits.maxResults),
-    start: (params.pageNumber ?? 0) * (params.pageSize ?? limits.maxResults)
+    count: params.pageSize ?? limits.defaultLimit,
+    start: (params.pageNumber ?? 0) * (params.pageSize ?? limits.defaultLimit)
   })
 
   const notebooks = (response.data ?? []).map(formatNotebookSummary)
