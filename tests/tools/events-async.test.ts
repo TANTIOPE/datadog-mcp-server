@@ -848,7 +848,7 @@ describe('Events V2 API Functions', () => {
       ])
     })
 
-    it('should filter out monitors without matching context tags', async () => {
+    it('should include groups without context tags as "no_context"', async () => {
       const mockEvents = [
         createMockEventV2({
           attributes: {
@@ -867,8 +867,9 @@ describe('Events V2 API Functions', () => {
 
       const result = await topEventsV2(mockApi, {}, limits, 'datadoghq.com')
 
-      // Monitors without context tags should be filtered out
-      expect(result.top).toEqual([])
+      // Groups without context tags should be included with "no_context"
+      expect(result.top).toHaveLength(1)
+      expect(result.top[0].by_context).toEqual([{ context: 'no_context', count: 1 }])
     })
 
     it('should group multiple monitors with different contexts', async () => {
