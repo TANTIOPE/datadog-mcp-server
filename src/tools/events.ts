@@ -64,6 +64,14 @@ const InputSchema = {
     .optional()
     .describe(
       'Tag prefixes for context breakdown in top action (default: queue, service, ingress, pod_name, kube_namespace, kube_container_name)'
+    ),
+  maxEvents: z
+    .number()
+    .min(1)
+    .max(10000)
+    .optional()
+    .describe(
+      'Maximum events to fetch for grouping in top action (default: 10000). Higher = more accurate but slower'
     )
 }
 
@@ -339,10 +347,12 @@ export function formatEventV2(e: v2.EventResponse): EventSummaryV2 {
  * Find the first matching context tag from event tags
  * Context tags are used to group alerts by service, queue, ingress, pod, etc.
  */
-export function findFirstContextTag(tags: string[], prefixes: string[]): string | null {
+export function findFirstContextTag(tags: string[], prefixes: Set<string>): string | null {
   for (const tag of tags) {
-    for (const prefix of prefixes) {
-      if (tag.startsWith(prefix + ':')) {
+    const colonIndex = tag.indexOf(':')
+    if (colonIndex > 0) {
+      const prefix = tag.substring(0, colonIndex)
+      if (prefixes.has(prefix)) {
         return tag
       }
     }
@@ -716,15 +726,29 @@ export async function topEventsV2(
     tags?: string[]
     limit?: number
     contextTags?: string[]
+    maxEvents?: number
   },
   limits: LimitsConfig,
   site: string
 ) {
+  // Validate contextTags if provided
+  if (params.contextTags !== undefined) {
+    if (!Array.isArray(params.contextTags)) {
+      throw new Error('contextTags must be an array')
+    }
+    if (params.contextTags.some((tag) => typeof tag !== 'string' || tag.trim() === '')) {
+      throw new Error('contextTags must be an array of non-empty strings')
+    }
+  }
+
   // Default to source:alert for alert-related queries
   const effectiveQuery = params.query ?? 'source:alert'
   const effectiveTags = params.tags ?? ['source:alert']
 
-  // Step 1: Fetch all events for accurate grouping (up to 10k)
+  // Step 1: Fetch events for accurate grouping
+  // maxEvents controls how many events to fetch (default 10k). Higher values = more accurate
+  // aggregation but slower performance. If there are more events than maxEvents, results
+  // may be incomplete. Narrow time range or use filters (query, tags) if incomplete.
   const result = await searchEventsV2(
     api,
     {
@@ -733,7 +757,7 @@ export async function topEventsV2(
       to: params.to,
       sources: params.sources,
       tags: effectiveTags,
-      limit: 10000 // Fetch all events for accurate grouping
+      limit: params.maxEvents ?? 10000
     },
     limits,
     site
@@ -754,41 +778,47 @@ export async function topEventsV2(
     const monitorId = event.monitorId ?? 0
     const key = `${monitorId}|${monitorName}`
 
-    if (!monitorGroups.has(key)) {
-      monitorGroups.set(key, { name: monitorName, monitorId, events: [] })
+    let monitorGroup = monitorGroups.get(key)
+    if (!monitorGroup) {
+      monitorGroup = { name: monitorName, monitorId, events: [] }
+      monitorGroups.set(key, monitorGroup)
     }
-    monitorGroups.get(key)!.events.push(event)
+    monitorGroup.events.push(event)
   }
 
   // Step 3: For each monitor, extract context breakdown
-  const contextPrefixes = params.contextTags ?? [
-    'queue',
-    'service',
-    'ingress',
-    'pod_name',
-    'kube_namespace',
-    'kube_container_name'
-  ]
+  const contextPrefixes = new Set(
+    params.contextTags ?? [
+      'queue',
+      'service',
+      'ingress',
+      'pod_name',
+      'kube_namespace',
+      'kube_container_name'
+    ]
+  )
 
-  const monitors = Array.from(monitorGroups.values()).map((monitor) => {
-    const contextGroups = new Map<string, number>()
+  const monitors = Array.from(monitorGroups.values())
+    .map((monitor) => {
+      const contextGroups = new Map<string, number>()
 
-    for (const event of monitor.events) {
-      const contextTag = findFirstContextTag(event.tags, contextPrefixes)
-      if (contextTag) {
-        contextGroups.set(contextTag, (contextGroups.get(contextTag) || 0) + 1)
+      for (const event of monitor.events) {
+        const contextTag = findFirstContextTag(event.tags, contextPrefixes)
+        if (contextTag) {
+          contextGroups.set(contextTag, (contextGroups.get(contextTag) || 0) + 1)
+        }
       }
-    }
 
-    return {
-      name: monitor.name,
-      monitor_id: monitor.monitorId,
-      total_count: monitor.events.length,
-      by_service: Array.from(contextGroups.entries())
-        .map(([context, count]) => ({ context, count }))
-        .sort((a, b) => b.count - a.count) // Sort by count desc
-    }
-  })
+      return {
+        name: monitor.name,
+        monitor_id: monitor.monitorId,
+        total_count: monitor.events.length,
+        by_context: Array.from(contextGroups.entries())
+          .map(([context, count]) => ({ context, count }))
+          .sort((a, b) => b.count - a.count) // Sort by count desc
+      }
+    })
+    .filter((monitor) => monitor.by_context.length > 0)
 
   // Step 4: Sort by total_count, apply limit, add rank
   const topMonitors = monitors
@@ -1254,7 +1284,7 @@ export function registerEventsTool(
     `Track Datadog events. Actions: list, get, create, search, aggregate, top, timeseries, incidents, discover.
 For monitor alerts, use tags: ["source:alert"].
 
-top: Returns monitors with context breakdown. Example: {name, monitor_id, total_count, by_service: [{context: "queue:X", count: 30}]}
+top: Returns monitors with context breakdown. Example: {name, monitor_id, total_count, by_context: [{context: "queue:X", count: 30}]}
 discover: Returns available tag prefixes from events.
 aggregate: Custom groupBy, returns pipe-delimited keys.
 search: Full event details.

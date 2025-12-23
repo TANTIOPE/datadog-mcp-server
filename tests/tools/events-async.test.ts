@@ -708,8 +708,12 @@ describe('Events V2 API Functions', () => {
   describe('topEventsV2', () => {
     it('should return top events with default query', async () => {
       const mockEvents = [
-        createMockEventV2({ attributes: { message: 'Monitor A', tags: ['source:alert'] } }),
-        createMockEventV2({ attributes: { message: 'Monitor A', tags: ['source:alert'] } })
+        createMockEventV2({
+          attributes: { message: 'Monitor A', tags: ['source:alert', 'queue:tasks'] }
+        }),
+        createMockEventV2({
+          attributes: { message: 'Monitor A', tags: ['source:alert', 'queue:tasks'] }
+        })
       ]
 
       const mockApi = {
@@ -742,7 +746,7 @@ describe('Events V2 API Functions', () => {
       })
     })
 
-    it('should respect limit parameter', async () => {
+    it('should use default maxEvents of 10000', async () => {
       const mockApi = {
         searchEvents: vi.fn().mockResolvedValue({ data: [], meta: { page: {} } })
       } as unknown as v2.EventsApi
@@ -752,6 +756,20 @@ describe('Events V2 API Functions', () => {
       expect(mockApi.searchEvents).toHaveBeenCalledWith({
         body: expect.objectContaining({
           page: { limit: 10000 }
+        })
+      })
+    })
+
+    it('should respect maxEvents parameter', async () => {
+      const mockApi = {
+        searchEvents: vi.fn().mockResolvedValue({ data: [], meta: { page: {} } })
+      } as unknown as v2.EventsApi
+
+      await topEventsV2(mockApi, { maxEvents: 5000 }, limits, 'datadoghq.com')
+
+      expect(mockApi.searchEvents).toHaveBeenCalledWith({
+        body: expect.objectContaining({
+          page: { limit: 5000 }
         })
       })
     })
@@ -788,7 +806,7 @@ describe('Events V2 API Functions', () => {
       const result = await topEventsV2(mockApi, {}, limits, 'datadoghq.com')
 
       expect(result.top).toHaveLength(1)
-      expect(result.top[0].by_service).toEqual([
+      expect(result.top[0].by_context).toEqual([
         { context: 'queue:tasks', count: 2 },
         { context: 'queue:orders', count: 1 }
       ])
@@ -824,13 +842,13 @@ describe('Events V2 API Functions', () => {
         'datadoghq.com'
       )
 
-      expect(result.top[0].by_service).toEqual([
+      expect(result.top[0].by_context).toEqual([
         { context: 'custom_tag:value1', count: 1 },
         { context: 'custom_tag:value2', count: 1 }
       ])
     })
 
-    it('should handle monitors without matching context tags', async () => {
+    it('should filter out monitors without matching context tags', async () => {
       const mockEvents = [
         createMockEventV2({
           attributes: {
@@ -849,7 +867,8 @@ describe('Events V2 API Functions', () => {
 
       const result = await topEventsV2(mockApi, {}, limits, 'datadoghq.com')
 
-      expect(result.top[0].by_service).toEqual([])
+      // Monitors without context tags should be filtered out
+      expect(result.top).toEqual([])
     })
 
     it('should group multiple monitors with different contexts', async () => {
@@ -885,9 +904,9 @@ describe('Events V2 API Functions', () => {
 
       expect(result.top).toHaveLength(2)
       expect(result.top[0].total_count).toBe(2) // Monitor A
-      expect(result.top[0].by_service).toEqual([{ context: 'queue:tasks', count: 2 }])
+      expect(result.top[0].by_context).toEqual([{ context: 'queue:tasks', count: 2 }])
       expect(result.top[1].total_count).toBe(1) // Monitor B
-      expect(result.top[1].by_service).toEqual([{ context: 'service:api', count: 1 }])
+      expect(result.top[1].by_context).toEqual([{ context: 'service:api', count: 1 }])
     })
 
     it('should prioritize context tags in order (queue > service > ingress)', async () => {
@@ -910,7 +929,7 @@ describe('Events V2 API Functions', () => {
       const result = await topEventsV2(mockApi, {}, limits, 'datadoghq.com')
 
       // Should use queue (first in priority), not service or ingress
-      expect(result.top[0].by_service).toEqual([{ context: 'queue:tasks', count: 1 }])
+      expect(result.top[0].by_context).toEqual([{ context: 'queue:tasks', count: 1 }])
     })
   })
 

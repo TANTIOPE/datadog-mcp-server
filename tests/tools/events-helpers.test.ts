@@ -678,7 +678,7 @@ describe('Events Helper Functions', () => {
   describe('findFirstContextTag', () => {
     it('should find first matching context tag', () => {
       const tags = ['monitor', 'source:alert', 'queue:state-status_tasks', 'service:trusk-api']
-      const prefixes = ['queue', 'service', 'ingress']
+      const prefixes = new Set(['queue', 'service', 'ingress'])
 
       const result = findFirstContextTag(tags, prefixes)
 
@@ -687,7 +687,7 @@ describe('Events Helper Functions', () => {
 
     it('should find service tag when queue is not present', () => {
       const tags = ['monitor', 'source:alert', 'service:trusk-api', 'ingress:backoffice']
-      const prefixes = ['queue', 'service', 'ingress']
+      const prefixes = new Set(['queue', 'service', 'ingress'])
 
       const result = findFirstContextTag(tags, prefixes)
 
@@ -696,7 +696,7 @@ describe('Events Helper Functions', () => {
 
     it('should find ingress tag', () => {
       const tags = ['monitor', 'ingress:trusk-api', 'status:5']
-      const prefixes = ['queue', 'service', 'ingress']
+      const prefixes = new Set(['queue', 'service', 'ingress'])
 
       const result = findFirstContextTag(tags, prefixes)
 
@@ -705,7 +705,7 @@ describe('Events Helper Functions', () => {
 
     it('should return null when no matching prefix found', () => {
       const tags = ['monitor', 'source:alert', 'priority:p1']
-      const prefixes = ['queue', 'service', 'ingress']
+      const prefixes = new Set(['queue', 'service', 'ingress'])
 
       const result = findFirstContextTag(tags, prefixes)
 
@@ -713,14 +713,14 @@ describe('Events Helper Functions', () => {
     })
 
     it('should return null for empty tags array', () => {
-      const result = findFirstContextTag([], ['queue', 'service'])
+      const result = findFirstContextTag([], new Set(['queue', 'service']))
 
       expect(result).toBeNull()
     })
 
     it('should return null for empty prefixes array', () => {
       const tags = ['queue:test', 'service:api']
-      const result = findFirstContextTag(tags, [])
+      const result = findFirstContextTag(tags, new Set([]))
 
       expect(result).toBeNull()
     })
@@ -732,7 +732,7 @@ describe('Events Helper Functions', () => {
         'kube_namespace:production',
         'kube_container_name:app'
       ]
-      const prefixes = ['pod_name', 'kube_namespace', 'kube_container_name']
+      const prefixes = new Set(['pod_name', 'kube_namespace', 'kube_container_name'])
 
       const result = findFirstContextTag(tags, prefixes)
 
@@ -741,7 +741,7 @@ describe('Events Helper Functions', () => {
 
     it('should match exact prefix with colon', () => {
       const tags = ['queued:false', 'queue:actual-queue'] // queued != queue
-      const prefixes = ['queue']
+      const prefixes = new Set(['queue'])
 
       const result = findFirstContextTag(tags, prefixes)
 
@@ -750,7 +750,7 @@ describe('Events Helper Functions', () => {
 
     it('should respect prefix priority order', () => {
       const tags = ['service:api', 'queue:tasks']
-      const prefixes = ['service', 'queue'] // service first
+      const prefixes = new Set(['service', 'queue']) // service first
 
       const result = findFirstContextTag(tags, prefixes)
 
@@ -759,7 +759,7 @@ describe('Events Helper Functions', () => {
 
     it('should respect tag order when same prefix priority', () => {
       const tags = ['service:api1', 'service:api2']
-      const prefixes = ['service']
+      const prefixes = new Set(['service'])
 
       const result = findFirstContextTag(tags, prefixes)
 
