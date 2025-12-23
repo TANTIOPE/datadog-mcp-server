@@ -68,10 +68,10 @@ const InputSchema = {
   maxEvents: z
     .number()
     .min(1)
-    .max(10000)
+    .max(5000)
     .optional()
     .describe(
-      'Maximum events to fetch for grouping in top action (default: 10000). Higher = more accurate but slower'
+      'Maximum events to fetch for grouping in top action (default: 5000, max: 5000). Higher = more accurate but slower'
     )
 }
 
@@ -746,7 +746,7 @@ export async function topEventsV2(
   const effectiveTags = params.tags ?? ['source:alert']
 
   // Step 1: Fetch events for accurate grouping
-  // maxEvents controls how many events to fetch (default 10k). Higher values = more accurate
+  // maxEvents controls how many events to fetch (default 5k, max 5k per Datadog API). Higher values = more accurate
   // aggregation but slower performance. If there are more events than maxEvents, results
   // may be incomplete. Narrow time range or use filters (query, tags) if incomplete.
   const result = await searchEventsV2(
@@ -757,7 +757,7 @@ export async function topEventsV2(
       to: params.to,
       sources: params.sources,
       tags: effectiveTags,
-      limit: params.maxEvents ?? 10000
+      limit: params.maxEvents ?? 5000
     },
     limits,
     site
