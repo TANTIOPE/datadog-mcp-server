@@ -127,6 +127,7 @@ When running with `--transport=http`:
 | `monitors` | delete | Alerting | Delete a monitor | `monitors_write` |
 | `monitors` | mute | Alerting | Mute a monitor | `monitors_write` |
 | `monitors` | unmute | Alerting | Unmute a monitor | `monitors_write` |
+| `monitors` | top | Alerting | Top N monitors by alert frequency with real monitor names and context breakdown | `monitors_read` |
 | `dashboards` | list | Visualization | List all dashboards | `dashboards_read` |
 | `dashboards` | get | Visualization | Get dashboard by ID | `dashboards_read` |
 | `dashboards` | create | Visualization | Create a new dashboard | `dashboards_write` |
@@ -146,7 +147,7 @@ When running with `--transport=http`:
 | `events` | create | Events | Create an event | `events_read` |
 | `events` | search | Events | Search events with v2 API and cursor pagination | `events_read` |
 | `events` | aggregate | Events | Client-side aggregation by monitor_name, source, etc. | `events_read` |
-| `events` | top | Events | Top N noisiest monitors (convenience wrapper) | `events_read` |
+| `events` | top | Events | Top N event groups by count with generic groupBy support (deployments, configs, alerts, etc.) | `events_read` |
 | `events` | timeseries | Events | Time-bucketed alert trends (hourly/daily counts) | `events_read` |
 | `events` | incidents | Events | Deduplicate alerts into incidents with Trigger/Recover pairing | `events_read` |
 | `incidents` | list | Incidents | List incidents | `incident_read` |
@@ -252,22 +253,23 @@ The `diverse` mode normalizes messages (strips UUIDs, timestamps, IPs, numbers) 
 
 ## Events Aggregation
 
-### Top Monitors Report (Best for Weekly/Daily Meteo)
+### Top Monitors Report (Monitor-Specific)
 
-Get top alerting monitors with automatic context breakdown by queue, service, ingress, pod, etc:
+**Use `monitors` tool for monitor alerts with real monitor names:**
 
 ```
-events({ action: "top", from: "7d", limit: 10 })
+monitors({ action: "top", from: "7d", limit: 10 })
 ```
 
-Returns nested structure perfect for reports:
+Returns monitors with **real names** (including {{template.vars}}) from monitors API:
 ```json
 {
   "top": [
     {
       "rank": 1,
-      "name": "High number of ready messages",
       "monitor_id": 67860480,
+      "name": "High number of ready messages on {{queue.name}}",
+      "message": "Queue {{queue.name}} has {{value}} ready messages",
       "total_count": 50,
       "by_context": [
         {"context": "queue:state-status_tasks", "count": 30},
@@ -276,8 +278,9 @@ Returns nested structure perfect for reports:
     },
     {
       "rank": 2,
-      "name": "Nginx 5XX errors",
       "monitor_id": 134611486,
+      "name": "Nginx some requests on errors (HTTP 5XX) on {{ingress.name}}",
+      "message": "Nginx request on ingress {{ingress.name}} contains some errors (HTTP 5XX)",
       "total_count": 42,
       "by_context": [
         {"context": "ingress:trusk-api", "count": 29},
@@ -287,6 +290,36 @@ Returns nested structure perfect for reports:
   ]
 }
 ```
+
+### Top Events Report (Generic)
+
+**Use `events` tool for any event type** (deployments, configs, custom events):
+
+```
+events({ action: "top", from: "7d", limit: 10, groupBy: ["service"] })
+```
+
+Returns event groups by custom fields:
+```json
+{
+  "top": [
+    {
+      "rank": 1,
+      "service": "api-server",
+      "message": "Deployment completed",
+      "total_count": 30,
+      "by_context": [
+        {"context": "env:prod", "count": 20},
+        {"context": "env:staging", "count": 10}
+      ]
+    }
+  ]
+}
+```
+
+**Key Differences:**
+- `monitors top`: Fetches real monitor names from monitors API (slower, monitor-specific)
+- `events top`: Fast generic grouping, returns event message text (any event type)
 
 Context tags are auto-extracted: `queue:`, `service:`, `ingress:`, `pod_name:`, `kube_namespace:`, `kube_container_name:`
 

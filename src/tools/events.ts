@@ -41,7 +41,9 @@ const InputSchema = {
   groupBy: z
     .array(z.string())
     .optional()
-    .describe('Fields to group by: monitor_name, priority, alert_type, source'),
+    .describe(
+      'Fields to group by (for aggregate and top actions). Top: custom fields like ["service"], ["user"]. Aggregate: monitor_name, priority, alert_type, source. Default for top: ["monitor_id"]'
+    ),
   cursor: z.string().optional().describe('Pagination cursor from previous response'),
   // Phase 2: Timeseries
   interval: z
@@ -299,10 +301,21 @@ export function formatEventV2(e: v2.EventResponse): EventSummaryV2 {
   }
 
   const monitorInfo = extractMonitorInfo(title)
-  const monitorId = extractMonitorIdFromMessage(message)
+
+  // Extract tags first (needed for monitor_id fallback)
+  const tags = (attrs.tags as string[]) ?? []
+
+  // Extract monitor_id from message URL first, then fallback to tags
+  let monitorId = extractMonitorIdFromMessage(message)
+  if (!monitorId) {
+    const monitorIdTag = tags.find((t) => t.startsWith('monitor_id:'))
+    if (monitorIdTag) {
+      const id = Number.parseInt(monitorIdTag.split(':')[1], 10)
+      monitorId = Number.isNaN(id) ? undefined : id
+    }
+  }
 
   // Extract source from tags or attributes
-  const tags = (attrs.tags as string[]) ?? []
   const sourceTag = tags.find((t) => t.startsWith('source:'))
   const source = sourceTag?.split(':')[1] ?? ''
 
@@ -712,9 +725,9 @@ export async function aggregateEventsV2(
 }
 
 /**
- * Top N monitors with context breakdown
- * Returns monitors ranked by alert count with nested breakdown by queue, service, ingress, pod, etc.
- * Perfect for weekly/daily alert reports
+ * Top N event groups with context breakdown
+ * Groups events by specified fields and ranks by count with nested breakdown by context tags
+ * Perfect for weekly/daily alert reports, deployment tracking, or custom event analysis
  */
 export async function topEventsV2(
   api: v2.EventsApi,
@@ -725,6 +738,7 @@ export async function topEventsV2(
     sources?: string[]
     tags?: string[]
     limit?: number
+    groupBy?: string[]
     contextTags?: string[]
     maxEvents?: number
   },
@@ -741,9 +755,14 @@ export async function topEventsV2(
     }
   }
 
-  // Default to source:alert for alert-related queries
-  const effectiveQuery = params.query ?? 'source:alert'
-  const effectiveTags = params.tags ?? ['source:alert']
+  // Default groupBy to monitor_id for backward compatibility
+  const groupByFields = params.groupBy ?? ['monitor_id']
+
+  // Default to source:alert only if groupBy is monitor_id
+  const effectiveQuery =
+    params.query ?? (groupByFields.includes('monitor_id') ? 'source:alert' : '*')
+  const effectiveTags =
+    params.tags ?? (groupByFields.includes('monitor_id') ? ['source:alert'] : undefined)
 
   // Step 1: Fetch events for accurate grouping
   // maxEvents controls how many events to fetch (default 5k, max 5k per Datadog API). Higher values = more accurate
@@ -763,30 +782,49 @@ export async function topEventsV2(
     site
   )
 
-  // Step 2: Group by monitor
-  const monitorGroups = new Map<
+  // Step 2: Group by specified fields
+  const eventGroups = new Map<
     string,
     {
-      name: string
-      monitorId: number
+      groupKey: string
+      groupValues: Record<string, any>
+      message: string
       events: EventSummaryV2[]
     }
   >()
 
   for (const event of result.events) {
-    const monitorName = event.monitorInfo?.name ?? event.title
-    const monitorId = event.monitorId ?? 0
-    const key = `${monitorId}|${monitorName}`
+    // Extract values for each groupBy field
+    const groupValues: Record<string, any> = {}
+    const keyParts: string[] = []
 
-    let monitorGroup = monitorGroups.get(key)
-    if (!monitorGroup) {
-      monitorGroup = { name: monitorName, monitorId, events: [] }
-      monitorGroups.set(key, monitorGroup)
+    for (const field of groupByFields) {
+      let value: any
+      if (field === 'monitor_id') {
+        value = event.monitorId ?? 0
+      } else if (field === 'monitor_name') {
+        value = event.monitorInfo?.name ?? event.title
+      } else {
+        // Extract from tags (format: field:value)
+        const tag = event.tags.find((t) => t.startsWith(`${field}:`))
+        value = tag ? tag.split(':', 2)[1] : 'unknown'
+      }
+      groupValues[field] = value
+      keyParts.push(`${field}:${value}`)
     }
-    monitorGroup.events.push(event)
+
+    const groupKey = keyParts.join('|')
+    const message = event.monitorInfo?.name ?? event.title
+
+    let group = eventGroups.get(groupKey)
+    if (!group) {
+      group = { groupKey, groupValues, message, events: [] }
+      eventGroups.set(groupKey, group)
+    }
+    group.events.push(event)
   }
 
-  // Step 3: For each monitor, extract context breakdown
+  // Step 3: For each group, extract context breakdown
   const contextPrefixes = new Set(
     params.contextTags ?? [
       'queue',
@@ -798,11 +836,11 @@ export async function topEventsV2(
     ]
   )
 
-  const monitors = Array.from(monitorGroups.values())
-    .map((monitor) => {
+  const groups = Array.from(eventGroups.values())
+    .map((group) => {
       const contextGroups = new Map<string, number>()
 
-      for (const event of monitor.events) {
+      for (const event of group.events) {
         const contextTag = findFirstContextTag(event.tags, contextPrefixes)
         if (contextTag) {
           contextGroups.set(contextTag, (contextGroups.get(contextTag) || 0) + 1)
@@ -810,31 +848,32 @@ export async function topEventsV2(
       }
 
       return {
-        name: monitor.name,
-        monitor_id: monitor.monitorId,
-        total_count: monitor.events.length,
+        ...group.groupValues,
+        message: group.message,
+        total_count: group.events.length,
         by_context: Array.from(contextGroups.entries())
           .map(([context, count]) => ({ context, count }))
           .sort((a, b) => b.count - a.count) // Sort by count desc
       }
     })
-    .filter((monitor) => monitor.by_context.length > 0)
+    .filter((group) => group.by_context.length > 0)
 
   // Step 4: Sort by total_count, apply limit, add rank
-  const topMonitors = monitors
+  const topGroups = groups
     .sort((a, b) => b.total_count - a.total_count)
     .slice(0, params.limit ?? 10)
-    .map((m, i) => ({ rank: i + 1, ...m }))
+    .map((g, i) => ({ rank: i + 1, ...g }))
 
   return {
-    top: topMonitors,
+    top: topGroups,
     meta: {
       query: effectiveQuery,
       from: result.meta.from,
       to: result.meta.to,
-      totalMonitors: monitorGroups.size,
+      groupBy: groupByFields,
+      totalGroups: eventGroups.size,
       totalEvents: result.events.length,
-      contextPrefixes,
+      contextPrefixes: Array.from(contextPrefixes),
       datadog_url: result.meta.datadog_url
     }
   }
@@ -1284,7 +1323,10 @@ export function registerEventsTool(
     `Track Datadog events. Actions: list, get, create, search, aggregate, top, timeseries, incidents, discover.
 For monitor alerts, use tags: ["source:alert"].
 
-top: Returns monitors with context breakdown. Example: {name, monitor_id, total_count, by_context: [{context: "queue:X", count: 30}]}
+top: Generic event grouping by any fields (groupBy parameter). Returns groups ranked by count with optional context breakdown.
+  - Example: {groupBy: ["service"], message: "...", service: "api", total_count: 50, by_context: [{context: "queue:X", count: 30}]}
+  - Use for deployments, configs, custom events, or monitor alerts
+  - Returns "message" field (event title), NOT monitor name (use monitors tool for real names)
 discover: Returns available tag prefixes from events.
 aggregate: Custom groupBy, returns pipe-delimited keys.
 search: Full event details.
@@ -1309,7 +1351,8 @@ incidents: Deduplicate alerts with dedupeWindow.`,
       interval,
       dedupeWindow,
       enrich,
-      contextTags
+      contextTags,
+      maxEvents
     }) => {
       try {
         checkReadOnly(action, readOnly)
@@ -1405,7 +1448,9 @@ incidents: Deduplicate alerts with dedupeWindow.`,
                   sources,
                   tags,
                   limit,
-                  contextTags
+                  groupBy,
+                  contextTags,
+                  maxEvents
                 },
                 limits,
                 site

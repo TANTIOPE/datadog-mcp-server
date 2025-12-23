@@ -32,7 +32,8 @@ export function registerAllTools(
   const { readOnly, disabledTools } = features
   const enabled = (tool: string) => !disabledTools.includes(tool)
 
-  if (enabled('monitors')) registerMonitorsTool(server, clients.monitors, limits, readOnly, site)
+  if (enabled('monitors'))
+    registerMonitorsTool(server, clients.monitors, clients.eventsV2, limits, readOnly, site)
   if (enabled('dashboards'))
     registerDashboardsTool(server, clients.dashboards, limits, readOnly, site)
   if (enabled('logs')) registerLogsTool(server, clients.logs, limits, site)

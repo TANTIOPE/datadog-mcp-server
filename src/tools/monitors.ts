@@ -1,9 +1,12 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
-import { v1 } from '@datadog/datadog-api-client'
+import { v1, v2 } from '@datadog/datadog-api-client'
 import { handleDatadogError, requireParam, checkReadOnly } from '../errors/datadog.js'
 import { toolResult } from '../utils/format.js'
 import { buildMonitorUrl, buildMonitorsListUrl } from '../utils/urls.js'
+import { hoursAgo, now, parseTime, ensureValidTimeRange } from '../utils/time.js'
+import { buildEventsUrl } from '../utils/urls.js'
+import { formatEventV2 } from './events.js'
 import type { LimitsConfig } from '../config/schema.js'
 
 const ActionSchema = z.enum([
@@ -14,7 +17,8 @@ const ActionSchema = z.enum([
   'update',
   'delete',
   'mute',
-  'unmute'
+  'unmute',
+  'top'
 ])
 
 const InputSchema = {
@@ -36,7 +40,25 @@ const InputSchema = {
     .describe('Maximum number of monitors to return (default: 50)'),
   config: z.record(z.unknown()).optional().describe('Monitor configuration (for create/update)'),
   message: z.string().optional().describe('Mute message (for mute action)'),
-  end: z.number().optional().describe('Mute end timestamp (for mute action)')
+  end: z.number().optional().describe('Mute end timestamp (for mute action)'),
+  // Top action parameters
+  from: z
+    .string()
+    .optional()
+    .describe('Start time (ISO 8601, relative like "1h", or Unix timestamp)'),
+  to: z.string().optional().describe('End time (ISO 8601, relative like "1h", or Unix timestamp)'),
+  contextTags: z
+    .array(z.string())
+    .optional()
+    .describe(
+      'Tag prefixes for context breakdown in top action (default: queue, service, ingress, pod_name, kube_namespace, kube_container_name)'
+    ),
+  maxEvents: z
+    .number()
+    .min(1)
+    .max(5000)
+    .optional()
+    .describe('Maximum events to fetch for top action (default: 5000, max: 5000)')
 }
 
 interface MonitorSummary {
@@ -281,20 +303,200 @@ export async function unmuteMonitor(api: v1.MonitorsApi, id: string) {
   return { success: true, message: `Monitor ${id} unmuted` }
 }
 
+/**
+ * Top N monitors with real names and context breakdown
+ * Fetches alert events, groups by monitor_id, and enriches with real monitor names from monitors API
+ */
+export async function topMonitors(
+  eventsApi: v2.EventsApi,
+  monitorsApi: v1.MonitorsApi,
+  params: {
+    from?: string
+    to?: string
+    tags?: string[]
+    limit?: number
+    contextTags?: string[]
+    maxEvents?: number
+  },
+  limits: LimitsConfig,
+  site: string
+) {
+  // Time range setup
+  const defaultFrom = hoursAgo(limits.defaultTimeRangeHours)
+  const defaultTo = now()
+  const [validFrom, validTo] = ensureValidTimeRange(
+    parseTime(params.from, defaultFrom),
+    parseTime(params.to, defaultTo)
+  )
+  const fromTime = new Date(validFrom * 1000).toISOString()
+  const toTime = new Date(validTo * 1000).toISOString()
+
+  // Build query for alert events
+  const queryParts: string[] = ['source:alert']
+  if (params.tags) {
+    queryParts.push(...params.tags)
+  }
+  const query = queryParts.join(' ')
+
+  // Step 1: Fetch alert events
+  const searchResponse = await eventsApi.searchEvents({
+    body: {
+      filter: {
+        query,
+        from: fromTime,
+        to: toTime
+      },
+      page: {
+        limit: Math.min(params.maxEvents ?? 5000, 5000)
+      },
+      sort: 'timestamp'
+    }
+  })
+
+  const rawEvents = searchResponse.data ?? []
+
+  // Format events to extract monitor_id and parse structure
+  const events = rawEvents.map(formatEventV2)
+
+  // Step 2: Group by monitor_id + extract context
+  const contextPrefixes = new Set(
+    params.contextTags ?? [
+      'queue',
+      'service',
+      'ingress',
+      'pod_name',
+      'kube_namespace',
+      'kube_container_name'
+    ]
+  )
+
+  const monitorGroups = new Map<
+    number,
+    {
+      monitorId: number
+      eventCount: number
+      contextBreakdown: Map<string, number>
+    }
+  >()
+
+  for (const event of events) {
+    const monitorId = event.monitorId
+    if (typeof monitorId !== 'number') continue
+
+    let group = monitorGroups.get(monitorId)
+    if (!group) {
+      group = {
+        monitorId,
+        eventCount: 0,
+        contextBreakdown: new Map()
+      }
+      monitorGroups.set(monitorId, group)
+    }
+    group.eventCount++
+
+    // Extract context tag
+    const tags = event.tags
+    for (const prefix of contextPrefixes) {
+      const tag = tags.find((t) => t.startsWith(`${prefix}:`))
+      if (tag) {
+        group.contextBreakdown.set(tag, (group.contextBreakdown.get(tag) || 0) + 1)
+        break // Only count first matching context tag
+      }
+    }
+  }
+
+  // Step 3: Fetch real monitor names for unique monitor_ids
+  const monitorIds = Array.from(monitorGroups.keys())
+  const monitorNames = new Map<number, { name: string; message: string }>()
+
+  for (const monitorId of monitorIds) {
+    try {
+      const monitor = await monitorsApi.getMonitor({ monitorId })
+      monitorNames.set(monitorId, {
+        name: monitor.name ?? `Monitor ${monitorId}`,
+        message: monitor.message ?? ''
+      })
+    } catch {
+      // Fallback if monitor fetch fails (e.g., deleted monitor)
+      monitorNames.set(monitorId, {
+        name: `Monitor ${monitorId}`,
+        message: ''
+      })
+    }
+  }
+
+  // Step 4: Build result with real monitor names
+  const topMonitors = Array.from(monitorGroups.values())
+    .map((group) => {
+      const monitorInfo = monitorNames.get(group.monitorId) ?? {
+        name: `Monitor ${group.monitorId}`,
+        message: ''
+      }
+
+      return {
+        monitor_id: group.monitorId,
+        name: monitorInfo.name,
+        message: monitorInfo.message,
+        total_count: group.eventCount,
+        by_context: Array.from(group.contextBreakdown.entries())
+          .map(([context, count]) => ({ context, count }))
+          .sort((a, b) => b.count - a.count)
+      }
+    })
+    .filter((monitor) => monitor.by_context.length > 0) // Filter out monitors without context tags
+    .sort((a, b) => b.total_count - a.total_count)
+    .slice(0, params.limit ?? 10)
+    .map((m, i) => ({ rank: i + 1, ...m }))
+
+  return {
+    top: topMonitors,
+    meta: {
+      query,
+      from: fromTime,
+      to: toTime,
+      totalMonitors: monitorGroups.size,
+      totalEvents: events.length,
+      contextPrefixes: Array.from(contextPrefixes),
+      datadog_url: buildEventsUrl(query, validFrom, validTo, site)
+    }
+  }
+}
+
 export function registerMonitorsTool(
   server: McpServer,
   api: v1.MonitorsApi,
+  eventsApi: v2.EventsApi,
   limits: LimitsConfig,
   readOnly: boolean = false,
   site: string = 'datadoghq.com'
 ): void {
   server.tool(
     'monitors',
-    `Manage Datadog monitors. Actions: list, get, search, create, update, delete, mute, unmute.
+    `Manage Datadog monitors. Actions: list, get, search, create, update, delete, mute, unmute, top.
 Filters: name, tags, groupStates (alert/warn/ok/no data).
-TIP: For alert HISTORY (which monitors triggered), use the events tool with tags: ["source:alert"].`,
+
+top: Ranked monitors by alert frequency with real monitor names and context breakdown.
+  - Returns: {rank, monitor_id, name (with {{template.vars}}), message (template), total_count, by_context}
+  - Perfect for weekly/daily alert reports
+  - Gets real monitor names from monitors API (not event titles)
+
+For generic event grouping (deployments, configs), use events tool instead.`,
     InputSchema,
-    async ({ action, id, query, name, tags, groupStates, limit, config, end }) => {
+    async ({
+      action,
+      id,
+      query,
+      name,
+      tags,
+      groupStates,
+      limit,
+      config,
+      end,
+      from,
+      to,
+      contextTags,
+      maxEvents
+    }) => {
       try {
         checkReadOnly(action, readOnly)
         switch (action) {
@@ -338,6 +540,24 @@ TIP: For alert HISTORY (which monitors triggered), use the events tool with tags
             const monitorId = requireParam(id, 'id', 'unmute')
             return toolResult(await unmuteMonitor(api, monitorId))
           }
+
+          case 'top':
+            return toolResult(
+              await topMonitors(
+                eventsApi,
+                api,
+                {
+                  from,
+                  to,
+                  tags,
+                  limit,
+                  contextTags,
+                  maxEvents
+                },
+                limits,
+                site
+              )
+            )
 
           default:
             throw new Error(`Unknown action: ${action}`)

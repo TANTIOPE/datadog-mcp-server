@@ -99,6 +99,7 @@ describe('Tool Registration', () => {
     expect(registerMonitorsTool).toHaveBeenCalledWith(
       mockServer,
       mockClients.monitors,
+      mockClients.eventsV2,
       mockLimits,
       false,
       'datadoghq.com'
@@ -211,6 +212,7 @@ describe('Tool Registration', () => {
     expect(registerMonitorsTool).toHaveBeenCalledWith(
       mockServer,
       mockClients.monitors,
+      mockClients.eventsV2,
       mockLimits,
       true,
       'datadoghq.com'
@@ -239,6 +241,7 @@ describe('Tool Registration', () => {
       expect.anything(),
       expect.anything(),
       expect.anything(),
+      expect.anything(),
       'datadoghq.eu'
     )
     expect(registerLogsTool).toHaveBeenCalledWith(
@@ -262,6 +265,7 @@ describe('Tool Registration', () => {
     registerAllTools(mockServer, mockClients, mockLimits, mockFeatures)
 
     expect(registerMonitorsTool).toHaveBeenCalledWith(
+      expect.anything(),
       expect.anything(),
       expect.anything(),
       expect.anything(),
