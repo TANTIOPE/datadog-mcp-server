@@ -252,23 +252,57 @@ The `diverse` mode normalizes messages (strips UUIDs, timestamps, IPs, numbers) 
 
 ## Events Aggregation
 
-Find the noisiest monitors with a single query:
+### Top Monitors Report (Best for Weekly/Daily Meteo)
+
+Get top alerting monitors with automatic context breakdown by queue, service, ingress, pod, etc:
 
 ```
 events({ action: "top", from: "7d", limit: 10 })
 ```
 
-Returns:
+Returns nested structure perfect for reports:
 ```json
 {
   "top": [
-    { "rank": 1, "name": "Error budget (SLI)", "alertCount": 44, "lastAlert": "..." },
-    { "rank": 2, "name": "High number of ready messages", "alertCount": 38, "lastAlert": "..." }
+    {
+      "rank": 1,
+      "name": "High number of ready messages",
+      "monitor_id": 67860480,
+      "total_count": 50,
+      "by_service": [
+        {"context": "queue:state-status_tasks", "count": 30},
+        {"context": "queue:updated_order_service", "count": 20}
+      ]
+    },
+    {
+      "rank": 2,
+      "name": "Nginx 5XX errors",
+      "monitor_id": 134611486,
+      "total_count": 42,
+      "by_service": [
+        {"context": "ingress:trusk-api", "count": 29},
+        {"context": "ingress:backoffice", "count": 13}
+      ]
+    }
   ]
 }
 ```
 
-For more control, use `aggregate` with custom groupBy:
+Context tags are auto-extracted: `queue:`, `service:`, `ingress:`, `pod_name:`, `kube_namespace:`, `kube_container_name:`
+
+### Tag Discovery
+
+Discover available tag prefixes in your alert data:
+
+```
+events({ action: "discover", from: "7d", tags: ["source:alert"] })
+```
+
+Returns: `{tagPrefixes: ["queue", "service", "ingress", "pod_name", "monitor", "priority"], sampleSize: 150}`
+
+### Custom Aggregation
+
+For custom grouping patterns, use `aggregate`:
 
 ```
 events({
@@ -279,7 +313,7 @@ events({
 })
 ```
 
-Supported groupBy fields: `monitor_name`, `priority`, `alert_type`, `source`, `status`, `host`
+Supported groupBy fields: `monitor_name`, `priority`, `alert_type`, `source`, `status`, `host`, or any tag prefix
 
 The aggregation uses v2 API with cursor pagination to stream through events efficiently (up to 10k events).
 

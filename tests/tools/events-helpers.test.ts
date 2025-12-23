@@ -8,6 +8,7 @@ import {
   formatEventV2,
   buildEventQuery,
   parseIntervalToMs,
+  findFirstContextTag,
   type EventSummaryV2
 } from '../../src/tools/events.js'
 import type { v1, v2 } from '@datadog/datadog-api-client'
@@ -671,6 +672,98 @@ describe('Events Helper Functions', () => {
       const result = parseIntervalToMs('1.5h')
 
       expect(result).toBe(5400000) // 1.5 hours
+    })
+  })
+
+  describe('findFirstContextTag', () => {
+    it('should find first matching context tag', () => {
+      const tags = ['monitor', 'source:alert', 'queue:state-status_tasks', 'service:trusk-api']
+      const prefixes = ['queue', 'service', 'ingress']
+
+      const result = findFirstContextTag(tags, prefixes)
+
+      expect(result).toBe('queue:state-status_tasks')
+    })
+
+    it('should find service tag when queue is not present', () => {
+      const tags = ['monitor', 'source:alert', 'service:trusk-api', 'ingress:backoffice']
+      const prefixes = ['queue', 'service', 'ingress']
+
+      const result = findFirstContextTag(tags, prefixes)
+
+      expect(result).toBe('service:trusk-api')
+    })
+
+    it('should find ingress tag', () => {
+      const tags = ['monitor', 'ingress:trusk-api', 'status:5']
+      const prefixes = ['queue', 'service', 'ingress']
+
+      const result = findFirstContextTag(tags, prefixes)
+
+      expect(result).toBe('ingress:trusk-api')
+    })
+
+    it('should return null when no matching prefix found', () => {
+      const tags = ['monitor', 'source:alert', 'priority:p1']
+      const prefixes = ['queue', 'service', 'ingress']
+
+      const result = findFirstContextTag(tags, prefixes)
+
+      expect(result).toBeNull()
+    })
+
+    it('should return null for empty tags array', () => {
+      const result = findFirstContextTag([], ['queue', 'service'])
+
+      expect(result).toBeNull()
+    })
+
+    it('should return null for empty prefixes array', () => {
+      const tags = ['queue:test', 'service:api']
+      const result = findFirstContextTag(tags, [])
+
+      expect(result).toBeNull()
+    })
+
+    it('should handle pod_name and kube_namespace tags', () => {
+      const tags = [
+        'monitor',
+        'pod_name:trusk-api-7d9f8b4c6-xyz',
+        'kube_namespace:production',
+        'kube_container_name:app'
+      ]
+      const prefixes = ['pod_name', 'kube_namespace', 'kube_container_name']
+
+      const result = findFirstContextTag(tags, prefixes)
+
+      expect(result).toBe('pod_name:trusk-api-7d9f8b4c6-xyz')
+    })
+
+    it('should match exact prefix with colon', () => {
+      const tags = ['queued:false', 'queue:actual-queue'] // queued != queue
+      const prefixes = ['queue']
+
+      const result = findFirstContextTag(tags, prefixes)
+
+      expect(result).toBe('queue:actual-queue')
+    })
+
+    it('should respect prefix priority order', () => {
+      const tags = ['service:api', 'queue:tasks']
+      const prefixes = ['service', 'queue'] // service first
+
+      const result = findFirstContextTag(tags, prefixes)
+
+      expect(result).toBe('service:api')
+    })
+
+    it('should respect tag order when same prefix priority', () => {
+      const tags = ['service:api1', 'service:api2']
+      const prefixes = ['service']
+
+      const result = findFirstContextTag(tags, prefixes)
+
+      expect(result).toBe('service:api1') // First in tags array
     })
   })
 })
