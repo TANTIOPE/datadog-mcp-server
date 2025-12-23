@@ -11,7 +11,7 @@ const InputSchema = {
   action: ActionSchema.describe('Action to perform'),
   id: z.string().optional().describe('Team ID (required for get/members actions)'),
   filter: z.string().optional().describe('Filter teams by name'),
-  pageSize: z.number().optional().describe('Number of teams to return per page'),
+  pageSize: z.number().min(1).optional().describe('Number of teams to return per page'),
   pageNumber: z.number().optional().describe('Page number for pagination')
 }
 

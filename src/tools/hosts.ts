@@ -11,7 +11,7 @@ const InputSchema = {
   action: ActionSchema.describe('Action to perform'),
   filter: z.string().optional().describe('Filter hosts by name, alias, or tag (e.g., "env:prod")'),
   from: z.number().optional().describe('Starting offset for pagination'),
-  count: z.number().optional().describe('Number of hosts to return'),
+  count: z.number().min(1).optional().describe('Number of hosts to return'),
   sortField: z.string().optional().describe('Field to sort by (e.g., "apps", "cpu", "name")'),
   sortDir: z.enum(['asc', 'desc']).optional().describe('Sort direction'),
   hostName: z.string().optional().describe('Host name (required for mute/unmute)'),

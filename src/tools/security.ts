@@ -22,7 +22,7 @@ const InputSchema = {
     .enum(['open', 'under_review', 'archived'])
     .optional()
     .describe('Filter signals by status'),
-  pageSize: z.number().optional().describe('Number of results to return'),
+  pageSize: z.number().min(1).optional().describe('Number of results to return'),
   pageCursor: z.string().optional().describe('Cursor for pagination')
 }
 

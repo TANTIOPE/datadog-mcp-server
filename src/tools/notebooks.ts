@@ -43,7 +43,7 @@ const InputSchema = {
     .optional()
     .describe('Time configuration for notebook'),
   status: z.enum(['published']).optional().describe('Notebook status'),
-  pageSize: z.number().optional().describe('Number of notebooks to return'),
+  pageSize: z.number().min(1).optional().describe('Number of notebooks to return'),
   pageNumber: z.number().optional().describe('Page number for pagination')
 }
 

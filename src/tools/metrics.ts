@@ -26,9 +26,14 @@ const InputSchema = {
   to: z.string().optional().describe('End time (ONLY for query action). Same formats as "from".'),
   metric: z.string().optional().describe('Metric name (for metadata action)'),
   tag: z.string().optional().describe('Filter by tag'),
-  limit: z.number().optional().describe('Maximum number of results (for search/list, default: 50)'),
+  limit: z
+    .number()
+    .min(1)
+    .optional()
+    .describe('Maximum number of results (for search/list, default: 50)'),
   pointLimit: z
     .number()
+    .min(1)
     .optional()
     .describe(
       'Maximum data points per timeseries (for query action). AI controls resolution vs token usage (default: 1000).'

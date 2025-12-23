@@ -15,7 +15,11 @@ const InputSchema = {
     .enum(['active', 'stable', 'resolved'])
     .optional()
     .describe('Filter by status (for list)'),
-  limit: z.number().optional().describe('Maximum number of incidents to return (default: 50)'),
+  limit: z
+    .number()
+    .min(1)
+    .optional()
+    .describe('Maximum number of incidents to return (default: 50)'),
   config: z
     .record(z.unknown())
     .optional()

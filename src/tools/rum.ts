@@ -28,7 +28,7 @@ const InputSchema = {
     .optional()
     .describe('RUM event type filter'),
   sort: z.enum(['timestamp', '-timestamp']).optional().describe('Sort order for events'),
-  limit: z.number().optional().describe('Maximum number of events to return (default: 50)'),
+  limit: z.number().min(1).optional().describe('Maximum number of events to return (default: 50)'),
   groupBy: z
     .array(z.string())
     .optional()

@@ -221,7 +221,7 @@ AI assistants have full control over query limits. The environment variables set
 | Metrics (timeseries) | 1000 | `pointLimit` | Data points per series (controls resolution) |
 | General tools | 50 | `limit` | Results to return |
 
-The MCP protocol's 25k token response limit is the real boundary. Defaults can be configured via `MCP_DEFAULT_*` environment variables.
+Defaults can be configured via `MCP_DEFAULT_*` environment variables.
 
 ### Compact Mode (Logs)
 

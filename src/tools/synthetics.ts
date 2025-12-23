@@ -20,7 +20,7 @@ const InputSchema = {
     .describe('Test type filter (for list) or type for create'),
   locations: z.array(z.string()).optional().describe('Filter by locations (for list)'),
   tags: z.array(z.string()).optional().describe('Filter by tags (for list)'),
-  limit: z.number().optional().describe('Maximum number of tests to return (default: 50)'),
+  limit: z.number().min(1).optional().describe('Maximum number of tests to return (default: 50)'),
   config: z
     .record(z.unknown())
     .optional()

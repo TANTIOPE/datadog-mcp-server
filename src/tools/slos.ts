@@ -14,7 +14,7 @@ const InputSchema = {
   ids: z.array(z.string()).optional().describe('Multiple SLO IDs (for list with specific IDs)'),
   query: z.string().optional().describe('Search query (for list)'),
   tags: z.array(z.string()).optional().describe('Filter by tags (for list)'),
-  limit: z.number().optional().describe('Maximum number of SLOs to return (default: 50)'),
+  limit: z.number().min(1).optional().describe('Maximum number of SLOs to return (default: 50)'),
   config: z
     .record(z.unknown())
     .optional()

@@ -12,7 +12,11 @@ const InputSchema = {
   id: z.string().optional().describe('Downtime ID (required for get/update/cancel)'),
   monitorId: z.number().optional().describe('Monitor ID (required for listByMonitor)'),
   currentOnly: z.boolean().optional().describe('Only return active downtimes (for list)'),
-  limit: z.number().optional().describe('Maximum number of downtimes to return (default: 50)'),
+  limit: z
+    .number()
+    .min(1)
+    .optional()
+    .describe('Maximum number of downtimes to return (default: 50)'),
   config: z
     .record(z.unknown())
     .optional()

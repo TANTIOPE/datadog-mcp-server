@@ -30,7 +30,7 @@ const InputSchema = {
   priority: z.enum(['normal', 'low']).optional().describe('Event priority'),
   sources: z.array(z.string()).optional().describe('Filter by sources'),
   tags: z.array(z.string()).optional().describe('Filter by tags'),
-  limit: z.number().optional().describe('Maximum number of events to return (default: 50)'),
+  limit: z.number().min(1).optional().describe('Maximum number of events to return (default: 50)'),
   title: z.string().optional().describe('Event title (for create)'),
   text: z.string().optional().describe('Event text (for create)'),
   alertType: z

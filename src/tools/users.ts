@@ -12,7 +12,7 @@ const InputSchema = {
   id: z.string().optional().describe('User ID (required for get action)'),
   filter: z.string().optional().describe('Filter users by name or email'),
   status: z.enum(['Active', 'Pending', 'Disabled']).optional().describe('Filter by user status'),
-  pageSize: z.number().optional().describe('Number of users to return per page'),
+  pageSize: z.number().min(1).optional().describe('Number of users to return per page'),
   pageNumber: z.number().optional().describe('Page number for pagination')
 }
 

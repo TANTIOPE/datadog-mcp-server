@@ -87,7 +87,7 @@ const InputSchema = {
     .string()
     .optional()
     .describe('Filter by error message (grep-like). Example: "timeout", "connection refused"'),
-  limit: z.number().optional().describe('Maximum number of results (default: 50)'),
+  limit: z.number().min(1).optional().describe('Maximum number of results (default: 50)'),
   sort: z.enum(['timestamp', '-timestamp']).optional().describe('Sort order'),
   groupBy: z
     .array(z.string())
