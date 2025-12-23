@@ -954,13 +954,13 @@ describe('Events V2 API Functions', () => {
       expect(result[0].monitorMetadata).toBeUndefined()
     })
 
-    it('should cache monitors by name', async () => {
+    it('should cache monitors by ID', async () => {
       const events = [
         createMockEventSummary({
-          monitorInfo: { name: 'Monitor A', status: 'triggered', scope: '' }
+          monitorId: 123
         }),
         createMockEventSummary({
-          monitorInfo: { name: 'Monitor A', status: 'triggered', scope: '' }
+          monitorId: 123
         })
       ]
 
