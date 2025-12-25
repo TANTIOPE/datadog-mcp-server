@@ -272,8 +272,8 @@ Returns monitors with **real names** (including {{template.vars}}) from monitors
       "message": "Queue {{queue.name}} has {{value}} ready messages",
       "total_count": 50,
       "by_context": [
-        {"context": "queue:state-status_tasks", "count": 30},
-        {"context": "queue:updated_order_service", "count": 20}
+        {"context": "queue:email-notifications", "count": 30},
+        {"context": "queue:payment-processing", "count": 20}
       ]
     },
     {
@@ -283,8 +283,8 @@ Returns monitors with **real names** (including {{template.vars}}) from monitors
       "message": "Nginx request on ingress {{ingress.name}} contains some errors (HTTP 5XX)",
       "total_count": 42,
       "by_context": [
-        {"context": "ingress:trusk-api", "count": 29},
-        {"context": "ingress:backoffice", "count": 13}
+        {"context": "ingress:api-gateway", "count": 29},
+        {"context": "ingress:admin-panel", "count": 13}
       ]
     }
   ]
