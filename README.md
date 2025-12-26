@@ -222,7 +222,26 @@ AI assistants have full control over query limits. The environment variables set
 | Metrics (timeseries) | 1000 | `pointLimit` | Data points per series (controls resolution) |
 | General tools | 50 | `limit` | Results to return |
 
-Defaults can be configured via `MCP_DEFAULT_*` environment variables.
+Defaults can be configured via `MCP_DEFAULT_*` environment variables:
+
+```json
+{
+  "mcpServers": {
+    "datadog": {
+      "command": "npx",
+      "args": ["-y", "datadog-mcp"],
+      "env": {
+        "DD_API_KEY": "your-api-key",
+        "DD_APP_KEY": "your-app-key",
+        "MCP_DEFAULT_LIMIT": "50",              // General fallback for most tools
+        "MCP_DEFAULT_LOG_LINES": "200",         // Logs search only
+        "MCP_DEFAULT_METRIC_POINTS": "1000",    // Metrics query timeseries only
+        "MCP_DEFAULT_TIME_RANGE": "24"          // Default time range in hours
+      }
+    }
+  }
+}
+```
 
 ### Compact Mode (Logs)
 
