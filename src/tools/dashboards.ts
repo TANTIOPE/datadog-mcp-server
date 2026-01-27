@@ -105,6 +105,28 @@ const SNAKE_TO_CAMEL_FIELDS: Record<string, string> = {
   restricted_roles: 'restrictedRoles'
 }
 
+// Template variable field mappings (handles reserved keywords and snake_case)
+const TEMPLATE_VAR_FIELD_MAPPINGS: Record<string, string> = {
+  default: '_default', // 'default' is a JS reserved keyword
+  available_values: 'availableValues'
+}
+
+// Normalize a single template variable object
+function normalizeTemplateVariable(tv: Record<string, unknown>): Record<string, unknown> {
+  const normalized = { ...tv }
+
+  for (const [oldKey, newKey] of Object.entries(TEMPLATE_VAR_FIELD_MAPPINGS)) {
+    if (oldKey in normalized) {
+      if (!(newKey in normalized)) {
+        normalized[newKey] = normalized[oldKey]
+      }
+      delete normalized[oldKey]
+    }
+  }
+
+  return normalized
+}
+
 export function normalizeDashboardConfig(config: Record<string, unknown>): Record<string, unknown> {
   const normalized = { ...config }
 
@@ -116,6 +138,16 @@ export function normalizeDashboardConfig(config: Record<string, unknown>): Recor
       }
       delete normalized[snakeCase]
     }
+  }
+
+  // Normalize template variables (handle nested field conversions)
+  if (Array.isArray(normalized.templateVariables)) {
+    normalized.templateVariables = normalized.templateVariables.map((tv: unknown) => {
+      if (tv && typeof tv === 'object' && !Array.isArray(tv)) {
+        return normalizeTemplateVariable(tv as Record<string, unknown>)
+      }
+      return tv
+    })
   }
 
   // Validate required field
