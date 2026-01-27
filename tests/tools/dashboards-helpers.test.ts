@@ -95,6 +95,70 @@ describe('Dashboards Helper Functions', () => {
 
       expect(config).toEqual(originalCopy)
     })
+
+    it('should convert template_variables to templateVariables', () => {
+      const config = {
+        title: 'Test Dashboard',
+        layout_type: 'ordered',
+        template_variables: [{ name: 'cluster', prefix: 'cluster_name', default: 'prod' }]
+      }
+
+      const result = normalizeDashboardConfig(config)
+
+      expect(result.templateVariables).toEqual([
+        { name: 'cluster', prefix: 'cluster_name', default: 'prod' }
+      ])
+      expect(result).not.toHaveProperty('template_variables')
+    })
+
+    it('should convert notify_list to notifyList', () => {
+      const config = {
+        title: 'Test Dashboard',
+        layoutType: 'ordered',
+        notify_list: ['user@example.com']
+      }
+
+      const result = normalizeDashboardConfig(config)
+
+      expect(result.notifyList).toEqual(['user@example.com'])
+      expect(result).not.toHaveProperty('notify_list')
+    })
+
+    it('should convert multiple snake_case fields at once', () => {
+      const config = {
+        title: 'Test Dashboard',
+        layout_type: 'ordered',
+        template_variables: [{ name: 'env' }],
+        notify_list: ['user@example.com'],
+        reflow_type: 'auto'
+      }
+
+      const result = normalizeDashboardConfig(config)
+
+      expect(result.layoutType).toBe('ordered')
+      expect(result.templateVariables).toEqual([{ name: 'env' }])
+      expect(result.notifyList).toEqual(['user@example.com'])
+      expect(result.reflowType).toBe('auto')
+      expect(result).not.toHaveProperty('layout_type')
+      expect(result).not.toHaveProperty('template_variables')
+      expect(result).not.toHaveProperty('notify_list')
+      expect(result).not.toHaveProperty('reflow_type')
+    })
+
+    it('should preserve camelCase if both snake_case and camelCase are present', () => {
+      const config = {
+        title: 'Test Dashboard',
+        layoutType: 'ordered',
+        template_variables: [{ name: 'old' }],
+        templateVariables: [{ name: 'new' }]
+      }
+
+      const result = normalizeDashboardConfig(config)
+
+      // camelCase takes precedence, snake_case is preserved
+      expect(result.templateVariables).toEqual([{ name: 'new' }])
+      expect(result.template_variables).toEqual([{ name: 'old' }])
+    })
   })
 
   describe('listDashboards with name filtering', () => {

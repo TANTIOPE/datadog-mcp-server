@@ -95,13 +95,25 @@ export async function getDashboard(api: v1.DashboardsApi, id: string) {
   }
 }
 
+// Common snake_case to camelCase field mappings for Datadog Dashboard API
+const SNAKE_TO_CAMEL_FIELDS: Record<string, string> = {
+  layout_type: 'layoutType',
+  template_variables: 'templateVariables',
+  notify_list: 'notifyList',
+  reflow_type: 'reflowType',
+  is_read_only: 'isReadOnly',
+  restricted_roles: 'restrictedRoles'
+}
+
 export function normalizeDashboardConfig(config: Record<string, unknown>): Record<string, unknown> {
   const normalized = { ...config }
 
-  // Handle layout_type -> layoutType
-  if ('layout_type' in normalized && !('layoutType' in normalized)) {
-    normalized.layoutType = normalized.layout_type
-    delete normalized.layout_type
+  // Convert snake_case fields to camelCase
+  for (const [snakeCase, camelCase] of Object.entries(SNAKE_TO_CAMEL_FIELDS)) {
+    if (snakeCase in normalized && !(camelCase in normalized)) {
+      normalized[camelCase] = normalized[snakeCase]
+      delete normalized[snakeCase]
+    }
   }
 
   // Validate required field
