@@ -95,13 +95,59 @@ export async function getDashboard(api: v1.DashboardsApi, id: string) {
   }
 }
 
+// Common snake_case to camelCase field mappings for Datadog Dashboard API
+const SNAKE_TO_CAMEL_FIELDS: Record<string, string> = {
+  layout_type: 'layoutType',
+  template_variables: 'templateVariables',
+  notify_list: 'notifyList',
+  reflow_type: 'reflowType',
+  is_read_only: 'isReadOnly',
+  restricted_roles: 'restrictedRoles'
+}
+
+// Template variable field mappings (handles reserved keywords and snake_case)
+const TEMPLATE_VAR_FIELD_MAPPINGS: Record<string, string> = {
+  default: '_default', // 'default' is a JS reserved keyword
+  available_values: 'availableValues'
+}
+
+// Normalize a single template variable object
+function normalizeTemplateVariable(tv: Record<string, unknown>): Record<string, unknown> {
+  const normalized = { ...tv }
+
+  for (const [oldKey, newKey] of Object.entries(TEMPLATE_VAR_FIELD_MAPPINGS)) {
+    if (oldKey in normalized) {
+      if (!(newKey in normalized)) {
+        normalized[newKey] = normalized[oldKey]
+      }
+      delete normalized[oldKey]
+    }
+  }
+
+  return normalized
+}
+
 export function normalizeDashboardConfig(config: Record<string, unknown>): Record<string, unknown> {
   const normalized = { ...config }
 
-  // Handle layout_type -> layoutType
-  if ('layout_type' in normalized && !('layoutType' in normalized)) {
-    normalized.layoutType = normalized.layout_type
-    delete normalized.layout_type
+  // Convert snake_case fields to camelCase (always remove snake_case version)
+  for (const [snakeCase, camelCase] of Object.entries(SNAKE_TO_CAMEL_FIELDS)) {
+    if (snakeCase in normalized) {
+      if (!(camelCase in normalized)) {
+        normalized[camelCase] = normalized[snakeCase]
+      }
+      delete normalized[snakeCase]
+    }
+  }
+
+  // Normalize template variables (handle nested field conversions)
+  if (Array.isArray(normalized.templateVariables)) {
+    normalized.templateVariables = normalized.templateVariables.map((tv: unknown) => {
+      if (tv && typeof tv === 'object' && !Array.isArray(tv)) {
+        return normalizeTemplateVariable(tv as Record<string, unknown>)
+      }
+      return tv
+    })
   }
 
   // Validate required field

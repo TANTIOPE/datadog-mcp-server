@@ -33,17 +33,17 @@ describe('Dashboards Helper Functions', () => {
       expect(result).not.toHaveProperty('layout_type')
     })
 
-    it('should preserve layoutType if already present', () => {
+    it('should use layoutType and remove layout_type if both are present', () => {
       const config = {
         title: 'Test Dashboard',
         layoutType: 'free',
-        layout_type: 'ordered' // Should be kept
+        layout_type: 'ordered' // Should be removed
       }
 
       const result = normalizeDashboardConfig(config)
 
       expect(result.layoutType).toBe('free')
-      expect(result.layout_type).toBe('ordered')
+      expect(result).not.toHaveProperty('layout_type')
     })
 
     it('should throw error if layoutType is missing', () => {
@@ -94,6 +94,179 @@ describe('Dashboards Helper Functions', () => {
       normalizeDashboardConfig(config)
 
       expect(config).toEqual(originalCopy)
+    })
+
+    it('should convert template_variables to templateVariables', () => {
+      const config = {
+        title: 'Test Dashboard',
+        layout_type: 'ordered',
+        template_variables: [{ name: 'cluster', prefix: 'cluster_name', default: 'prod' }]
+      }
+
+      const result = normalizeDashboardConfig(config)
+
+      expect(result.templateVariables).toEqual([
+        { name: 'cluster', prefix: 'cluster_name', _default: 'prod' } // default → _default
+      ])
+      expect(result).not.toHaveProperty('template_variables')
+    })
+
+    it('should convert notify_list to notifyList', () => {
+      const config = {
+        title: 'Test Dashboard',
+        layoutType: 'ordered',
+        notify_list: ['user@example.com']
+      }
+
+      const result = normalizeDashboardConfig(config)
+
+      expect(result.notifyList).toEqual(['user@example.com'])
+      expect(result).not.toHaveProperty('notify_list')
+    })
+
+    it('should convert multiple snake_case fields at once', () => {
+      const config = {
+        title: 'Test Dashboard',
+        layout_type: 'ordered',
+        template_variables: [{ name: 'env' }],
+        notify_list: ['user@example.com'],
+        reflow_type: 'auto'
+      }
+
+      const result = normalizeDashboardConfig(config)
+
+      expect(result.layoutType).toBe('ordered')
+      expect(result.templateVariables).toEqual([{ name: 'env' }])
+      expect(result.notifyList).toEqual(['user@example.com'])
+      expect(result.reflowType).toBe('auto')
+      expect(result).not.toHaveProperty('layout_type')
+      expect(result).not.toHaveProperty('template_variables')
+      expect(result).not.toHaveProperty('notify_list')
+      expect(result).not.toHaveProperty('reflow_type')
+    })
+
+    it('should use camelCase and remove snake_case if both are present', () => {
+      const config = {
+        title: 'Test Dashboard',
+        layoutType: 'ordered',
+        template_variables: [{ name: 'old' }],
+        templateVariables: [{ name: 'new' }]
+      }
+
+      const result = normalizeDashboardConfig(config)
+
+      // camelCase takes precedence, snake_case is always removed
+      expect(result.templateVariables).toEqual([{ name: 'new' }])
+      expect(result).not.toHaveProperty('template_variables')
+    })
+  })
+
+  describe('template variable nested field conversion', () => {
+    it('should convert default to _default in templateVariables', () => {
+      const config = {
+        title: 'Test Dashboard',
+        layoutType: 'ordered',
+        templateVariables: [
+          { name: 'env', prefix: 'env', default: 'prod' },
+          { name: 'cluster', prefix: 'cluster_name', default: 'main' }
+        ]
+      }
+
+      const result = normalizeDashboardConfig(config)
+      const tvars = result.templateVariables as Array<Record<string, unknown>>
+
+      expect(tvars[0]._default).toBe('prod')
+      expect(tvars[0]).not.toHaveProperty('default')
+      expect(tvars[1]._default).toBe('main')
+      expect(tvars[1]).not.toHaveProperty('default')
+    })
+
+    it('should convert available_values to availableValues in templateVariables', () => {
+      const config = {
+        title: 'Test Dashboard',
+        layoutType: 'ordered',
+        templateVariables: [
+          { name: 'env', prefix: 'env', available_values: ['prod', 'staging', 'dev'] }
+        ]
+      }
+
+      const result = normalizeDashboardConfig(config)
+      const tvars = result.templateVariables as Array<Record<string, unknown>>
+
+      expect(tvars[0].availableValues).toEqual(['prod', 'staging', 'dev'])
+      expect(tvars[0]).not.toHaveProperty('available_values')
+    })
+
+    it('should handle template variables with all snake_case fields', () => {
+      const config = {
+        title: 'Test Dashboard',
+        layout_type: 'ordered',
+        template_variables: [
+          {
+            name: 'env',
+            prefix: 'env',
+            default: 'prod',
+            available_values: ['prod', 'staging']
+          }
+        ]
+      }
+
+      const result = normalizeDashboardConfig(config)
+      const tvars = result.templateVariables as Array<Record<string, unknown>>
+
+      expect(result).not.toHaveProperty('template_variables')
+      expect(result).not.toHaveProperty('layout_type')
+      expect(tvars[0]._default).toBe('prod')
+      expect(tvars[0].availableValues).toEqual(['prod', 'staging'])
+      expect(tvars[0]).not.toHaveProperty('default')
+      expect(tvars[0]).not.toHaveProperty('available_values')
+    })
+
+    it('should preserve _default if both default and _default are present', () => {
+      const config = {
+        title: 'Test Dashboard',
+        layoutType: 'ordered',
+        templateVariables: [{ name: 'env', default: 'old', _default: 'new' }]
+      }
+
+      const result = normalizeDashboardConfig(config)
+      const tvars = result.templateVariables as Array<Record<string, unknown>>
+
+      expect(tvars[0]._default).toBe('new')
+      expect(tvars[0]).not.toHaveProperty('default')
+    })
+
+    it('should handle empty templateVariables array', () => {
+      const config = {
+        title: 'Test Dashboard',
+        layoutType: 'ordered',
+        templateVariables: []
+      }
+
+      const result = normalizeDashboardConfig(config)
+
+      expect(result.templateVariables).toEqual([])
+    })
+
+    it('should skip non-object items in templateVariables array', () => {
+      const config = {
+        title: 'Test Dashboard',
+        layoutType: 'ordered',
+        templateVariables: [
+          { name: 'env', default: 'prod' },
+          null,
+          'invalid',
+          { name: 'cluster', default: 'main' }
+        ]
+      }
+
+      const result = normalizeDashboardConfig(config)
+      const tvars = result.templateVariables as Array<unknown>
+
+      expect((tvars[0] as Record<string, unknown>)._default).toBe('prod')
+      expect(tvars[1]).toBeNull()
+      expect(tvars[2]).toBe('invalid')
+      expect((tvars[3] as Record<string, unknown>)._default).toBe('main')
     })
   })
 
