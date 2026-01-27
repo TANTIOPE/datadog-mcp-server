@@ -218,7 +218,7 @@ describe('Dashboards Async Functions', () => {
         title: 'Full Dashboard',
         description: 'Comprehensive dashboard',
         url: '/dashboard/full-123',
-        layout_type: 'ordered' as const,
+        layoutType: 'ordered' as const,
         widgets: [
           {
             id: 1,
@@ -228,15 +228,16 @@ describe('Dashboards Async Functions', () => {
             }
           }
         ],
-        template_variables: [
+        templateVariables: [
           {
             name: 'env',
             prefix: 'env',
-            available_values: ['prod', 'staging'],
+            availableValues: ['prod', 'staging'],
             default: 'prod'
           }
         ],
-        notify_list: ['user@example.com']
+        notifyList: ['user@example.com'],
+        tags: ['team:devops']
       }
 
       const mockApi = {
@@ -247,7 +248,10 @@ describe('Dashboards Async Functions', () => {
 
       expect(result.dashboard.id).toBe('full-123')
       expect(result.dashboard.title).toBe('Full Dashboard')
-      expect(result.dashboard.widgets).toBe(1) // Count of widgets, not the array
+      expect(result.dashboard.widgets).toHaveLength(1) // Full widget array returned
+      expect(result.dashboard.templateVariables).toHaveLength(1) // Template variables included
+      expect(result.dashboard.notifyList).toEqual(['user@example.com']) // Notify list included
+      expect(result.dashboard.tags).toEqual(['team:devops']) // Tags included
     })
 
     it('should handle dashboard with minimal fields', async () => {

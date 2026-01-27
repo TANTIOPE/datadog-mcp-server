@@ -82,7 +82,7 @@ describe('Dashboards Tool', () => {
 
       expect(result.dashboard.id).toBe('abc-123')
       expect(result.dashboard.title).toBe('Production Overview')
-      expect(result.dashboard.widgets).toBe(2)
+      expect(result.dashboard.widgets).toHaveLength(2) // Now returns full widget array
     })
 
     it('should handle 404 not found error', async () => {

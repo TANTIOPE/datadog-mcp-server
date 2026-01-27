@@ -4,7 +4,11 @@
  */
 import { describe, it, expect, vi } from 'vitest'
 import { v1 } from '@datadog/datadog-api-client'
-import { normalizeDashboardConfig, listDashboards } from '../../src/tools/dashboards.js'
+import {
+  normalizeDashboardConfig,
+  listDashboards,
+  validateDashboardConfig
+} from '../../src/tools/dashboards.js'
 import type { LimitsConfig } from '../../src/config/schema.js'
 
 const defaultLimits: LimitsConfig = {
@@ -214,6 +218,113 @@ describe('Dashboards Helper Functions', () => {
 
       expect(result.dashboards).toHaveLength(1)
       expect(result.dashboards[0]?.title).toBe('API Performance Dashboard')
+    })
+  })
+
+  describe('tag validation', () => {
+    it('should accept tags with any key:value format', () => {
+      const config = {
+        title: 'Test Dashboard',
+        layoutType: 'ordered',
+        tags: ['team:ops', 'env:prod', 'service:api']
+      }
+
+      const result = normalizeDashboardConfig(config)
+
+      expect(result.tags).toEqual(['team:ops', 'env:prod', 'service:api'])
+    })
+
+    it('should reject tags without colon separator', () => {
+      const config = {
+        title: 'Test Dashboard',
+        layoutType: 'ordered',
+        tags: ['team:ops', 'invalid-tag', 'env:prod']
+      }
+
+      expect(() => normalizeDashboardConfig(config)).toThrow(
+        'Dashboard tags must use key:value format'
+      )
+    })
+
+    it('should accept empty tags array', () => {
+      const config = {
+        title: 'Test Dashboard',
+        layoutType: 'ordered',
+        tags: []
+      }
+
+      const result = normalizeDashboardConfig(config)
+
+      expect(result.tags).toEqual([])
+    })
+
+    it('should allow config without tags', () => {
+      const config = {
+        title: 'Test Dashboard',
+        layoutType: 'ordered'
+      }
+
+      const result = normalizeDashboardConfig(config)
+
+      expect(result.tags).toBeUndefined()
+    })
+  })
+
+  describe('validateDashboardConfig', () => {
+    it('should return valid for correct config', () => {
+      const config = {
+        title: 'Test Dashboard',
+        layoutType: 'ordered',
+        widgets: [{ id: 1, definition: { type: 'timeseries' } }],
+        templateVariables: [{ name: 'env', prefix: 'env' }],
+        tags: ['team:devops']
+      }
+
+      const result = validateDashboardConfig(config)
+
+      expect(result.valid).toBe(true)
+      expect(result.normalized.title).toBe('Test Dashboard')
+      expect(result.normalized.layoutType).toBe('ordered')
+      expect(result.normalized.widgetCount).toBe(1)
+      expect(result.normalized.templateVariableCount).toBe(1)
+      expect(result.message).toBe('Dashboard configuration is valid')
+    })
+
+    it('should return invalid for missing layoutType', () => {
+      const config = {
+        title: 'Test Dashboard'
+      }
+
+      const result = validateDashboardConfig(config)
+
+      expect(result.valid).toBe(false)
+      expect(result.error).toContain('layoutType')
+      expect(result.hint).toBeDefined()
+    })
+
+    it('should return invalid for bad tags', () => {
+      const config = {
+        title: 'Test Dashboard',
+        layoutType: 'ordered',
+        tags: ['invalid']
+      }
+
+      const result = validateDashboardConfig(config)
+
+      expect(result.valid).toBe(false)
+      expect(result.error).toContain('key:value format')
+    })
+
+    it('should handle config with layout_type (snake_case)', () => {
+      const config = {
+        title: 'Test Dashboard',
+        layout_type: 'ordered'
+      }
+
+      const result = validateDashboardConfig(config)
+
+      expect(result.valid).toBe(true)
+      expect(result.normalized.layoutType).toBe('ordered')
     })
   })
 })

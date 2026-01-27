@@ -5,7 +5,7 @@ import { handleDatadogError, requireParam, checkReadOnly } from '../errors/datad
 import { toolResult } from '../utils/format.js'
 import type { LimitsConfig } from '../config/schema.js'
 
-const ActionSchema = z.enum(['list', 'get', 'create', 'update', 'delete'])
+const ActionSchema = z.enum(['list', 'get', 'create', 'update', 'delete', 'validate'])
 
 const InputSchema = {
   action: ActionSchema.describe('Action to perform'),
@@ -79,11 +79,18 @@ export async function getDashboard(api: v1.DashboardsApi, id: string) {
       title: dashboard.title ?? '',
       description: dashboard.description ?? '',
       layoutType: String(dashboard.layoutType ?? 'unknown'),
-      widgets: dashboard.widgets?.length ?? 0,
       url: dashboard.url ?? '',
       created: dashboard.createdAt ? new Date(dashboard.createdAt).toISOString() : '',
       modified: dashboard.modifiedAt ? new Date(dashboard.modifiedAt).toISOString() : '',
-      authorHandle: dashboard.authorHandle ?? ''
+      authorHandle: dashboard.authorHandle ?? '',
+      // Full widget definitions for learning patterns and cloning
+      widgets: dashboard.widgets ?? [],
+      // Template variables for parameterized dashboards
+      templateVariables: dashboard.templateVariables ?? [],
+      // Additional metadata
+      tags: dashboard.tags ?? [],
+      notifyList: dashboard.notifyList ?? [],
+      reflowType: dashboard.reflowType
     }
   }
 }
@@ -102,15 +109,16 @@ export function normalizeDashboardConfig(config: Record<string, unknown>): Recor
     throw new Error("Dashboard config requires 'layoutType' (e.g., 'ordered', 'free')")
   }
 
-  // Validate tags if present - Datadog only allows 'team' as the tag key
+  // Validate tags format if present (must be strings in key:value format)
   if (normalized.tags && Array.isArray(normalized.tags)) {
     const invalidTags = normalized.tags.filter((tag: unknown) => {
       if (typeof tag !== 'string') return true
-      return !tag.startsWith('team:')
+      // Tags should follow key:value format (e.g., team:ops, env:prod, service:api)
+      return !tag.includes(':')
     })
     if (invalidTags.length > 0) {
       throw new Error(
-        `Dashboard tags must use 'team:' prefix. Invalid tags: ${invalidTags.join(', ')}. Example: ["team:operations", "team:frontend"]`
+        `Dashboard tags must use key:value format. Invalid tags: ${invalidTags.join(', ')}. Examples: ["team:operations", "env:production", "service:api"]`
       )
     }
   }
@@ -153,6 +161,34 @@ export async function deleteDashboard(api: v1.DashboardsApi, id: string) {
   return { success: true, message: `Dashboard ${id} deleted` }
 }
 
+export function validateDashboardConfig(config: Record<string, unknown>) {
+  try {
+    const normalized = normalizeDashboardConfig(config)
+    const widgetCount = Array.isArray(normalized.widgets) ? normalized.widgets.length : 0
+    const templateVarCount = Array.isArray(normalized.templateVariables)
+      ? normalized.templateVariables.length
+      : 0
+
+    return {
+      valid: true,
+      normalized: {
+        title: normalized.title,
+        layoutType: normalized.layoutType,
+        widgetCount,
+        templateVariableCount: templateVarCount,
+        tags: normalized.tags ?? []
+      },
+      message: 'Dashboard configuration is valid'
+    }
+  } catch (error) {
+    return {
+      valid: false,
+      error: error instanceof Error ? error.message : String(error),
+      hint: 'Check that layoutType is set and all widgets have valid definitions'
+    }
+  }
+}
+
 export function registerDashboardsTool(
   server: McpServer,
   api: v1.DashboardsApi,
@@ -162,7 +198,21 @@ export function registerDashboardsTool(
 ): void {
   server.tool(
     'dashboards',
-    'Access Datadog dashboards and visualizations. Actions: list (filter by name/tags), get, create, update, delete. Use for: finding existing views, team dashboards, understanding what is monitored. NOTE: Dashboard tags must use "team:" prefix (e.g., ["team:operations"]).',
+    `Access Datadog dashboards and visualizations.
+
+Actions:
+- list: Filter dashboards by name/tags
+- get: Retrieve full dashboard config including widgets (useful for learning patterns)
+- create: Create new dashboard
+- update: Modify existing dashboard
+- delete: Remove dashboard
+- validate: Test dashboard config without creating (helps debug widget definitions)
+
+Widget formats supported:
+- Simple: { "type": "timeseries", "requests": [{ "q": "avg:metric{*}" }] }
+- Advanced: { "type": "timeseries", "requests": [{ "queries": [...], "formulas": [...] }] }
+
+Tags must use key:value format (e.g., ["team:ops", "env:prod"]).`,
     InputSchema,
     async ({ action, id, name, tags, limit, config }) => {
       try {
@@ -190,6 +240,11 @@ export function registerDashboardsTool(
           case 'delete': {
             const dashboardId = requireParam(id, 'id', 'delete')
             return toolResult(await deleteDashboard(api, dashboardId))
+          }
+
+          case 'validate': {
+            const dashboardConfig = requireParam(config, 'config', 'validate')
+            return toolResult(validateDashboardConfig(dashboardConfig))
           }
 
           default:
