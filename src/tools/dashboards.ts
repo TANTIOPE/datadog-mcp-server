@@ -108,10 +108,12 @@ const SNAKE_TO_CAMEL_FIELDS: Record<string, string> = {
 export function normalizeDashboardConfig(config: Record<string, unknown>): Record<string, unknown> {
   const normalized = { ...config }
 
-  // Convert snake_case fields to camelCase
+  // Convert snake_case fields to camelCase (always remove snake_case version)
   for (const [snakeCase, camelCase] of Object.entries(SNAKE_TO_CAMEL_FIELDS)) {
-    if (snakeCase in normalized && !(camelCase in normalized)) {
-      normalized[camelCase] = normalized[snakeCase]
+    if (snakeCase in normalized) {
+      if (!(camelCase in normalized)) {
+        normalized[camelCase] = normalized[snakeCase]
+      }
       delete normalized[snakeCase]
     }
   }

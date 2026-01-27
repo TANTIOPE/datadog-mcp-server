@@ -33,17 +33,17 @@ describe('Dashboards Helper Functions', () => {
       expect(result).not.toHaveProperty('layout_type')
     })
 
-    it('should preserve layoutType if already present', () => {
+    it('should use layoutType and remove layout_type if both are present', () => {
       const config = {
         title: 'Test Dashboard',
         layoutType: 'free',
-        layout_type: 'ordered' // Should be kept
+        layout_type: 'ordered' // Should be removed
       }
 
       const result = normalizeDashboardConfig(config)
 
       expect(result.layoutType).toBe('free')
-      expect(result.layout_type).toBe('ordered')
+      expect(result).not.toHaveProperty('layout_type')
     })
 
     it('should throw error if layoutType is missing', () => {
@@ -145,7 +145,7 @@ describe('Dashboards Helper Functions', () => {
       expect(result).not.toHaveProperty('reflow_type')
     })
 
-    it('should preserve camelCase if both snake_case and camelCase are present', () => {
+    it('should use camelCase and remove snake_case if both are present', () => {
       const config = {
         title: 'Test Dashboard',
         layoutType: 'ordered',
@@ -155,9 +155,9 @@ describe('Dashboards Helper Functions', () => {
 
       const result = normalizeDashboardConfig(config)
 
-      // camelCase takes precedence, snake_case is preserved
+      // camelCase takes precedence, snake_case is always removed
       expect(result.templateVariables).toEqual([{ name: 'new' }])
-      expect(result.template_variables).toEqual([{ name: 'old' }])
+      expect(result).not.toHaveProperty('template_variables')
     })
   })
 
