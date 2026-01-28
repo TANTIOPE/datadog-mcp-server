@@ -1,10 +1,15 @@
 /**
  * Comprehensive async tests for dashboards.ts
- * Focuses on updateDashboard (completely untested) and additional edge cases
+ * Focuses on updateDashboardRaw and additional edge cases
  */
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { v1 } from '@datadog/datadog-api-client'
-import { updateDashboard, listDashboards, getDashboard } from '../../src/tools/dashboards.js'
+import {
+  updateDashboardRaw,
+  listDashboards,
+  getDashboard,
+  DatadogApiCredentials
+} from '../../src/tools/dashboards.js'
 import type { LimitsConfig } from '../../src/config/schema.js'
 
 const defaultLimits: LimitsConfig = {
@@ -15,21 +20,35 @@ const defaultLimits: LimitsConfig = {
   defaultLimit: 25
 }
 
-describe('Dashboards Async Functions', () => {
-  describe('updateDashboard', () => {
-    it('should update a dashboard successfully', async () => {
-      const mockDashboard = {
-        id: 'abc-123',
-        title: 'Updated Dashboard',
-        description: 'Updated description',
-        url: '/dashboard/abc-123',
-        layout_type: 'ordered' as const,
-        widgets: []
-      }
+const mockCredentials: DatadogApiCredentials = {
+  apiKey: 'test-api-key',
+  appKey: 'test-app-key',
+  site: 'datadoghq.com'
+}
 
-      const mockApi = {
-        updateDashboard: vi.fn().mockResolvedValue(mockDashboard)
-      } as unknown as v1.DashboardsApi
+describe('Dashboards Async Functions', () => {
+  let mockFetch: ReturnType<typeof vi.fn>
+
+  beforeEach(() => {
+    mockFetch = vi.fn()
+    vi.stubGlobal('fetch', mockFetch)
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  describe('updateDashboardRaw', () => {
+    it('should update a dashboard successfully via raw HTTP', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            id: 'abc-123',
+            title: 'Updated Dashboard',
+            url: '/dashboard/abc-123'
+          })
+      })
 
       const config = {
         title: 'Updated Dashboard',
@@ -38,15 +57,18 @@ describe('Dashboards Async Functions', () => {
         widgets: []
       }
 
-      const result = await updateDashboard(mockApi, 'abc-123', config)
+      const result = await updateDashboardRaw(mockCredentials, 'abc-123', config)
 
-      expect(mockApi.updateDashboard).toHaveBeenCalledWith({
-        dashboardId: 'abc-123',
-        body: expect.objectContaining({
-          title: 'Updated Dashboard',
-          layoutType: 'ordered'
+      expect(mockFetch).toHaveBeenCalledWith(
+        'https://api.datadoghq.com/api/v1/dashboard/abc-123',
+        expect.objectContaining({
+          method: 'PUT',
+          headers: expect.objectContaining({
+            'DD-API-KEY': 'test-api-key',
+            'DD-APPLICATION-KEY': 'test-app-key'
+          })
         })
-      })
+      )
       expect(result.success).toBe(true)
       expect(result.dashboard.id).toBe('abc-123')
       expect(result.dashboard.title).toBe('Updated Dashboard')
@@ -54,43 +76,39 @@ describe('Dashboards Async Functions', () => {
     })
 
     it('should handle partial dashboard updates', async () => {
-      const mockDashboard = {
-        id: 'xyz-789',
-        title: 'Partial Update',
-        url: '/dashboard/xyz-789',
-        layout_type: 'free' as const,
-        widgets: []
-      }
-
-      const mockApi = {
-        updateDashboard: vi.fn().mockResolvedValue(mockDashboard)
-      } as unknown as v1.DashboardsApi
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            id: 'xyz-789',
+            title: 'Partial Update',
+            url: '/dashboard/xyz-789'
+          })
+      })
 
       const config = {
         title: 'Partial Update',
         layoutType: 'free' // Required field
       }
 
-      const result = await updateDashboard(mockApi, 'xyz-789', config)
+      const result = await updateDashboardRaw(mockCredentials, 'xyz-789', config)
 
       expect(result.success).toBe(true)
       expect(result.dashboard.title).toBe('Partial Update')
     })
 
     it('should handle dashboard with empty optional fields', async () => {
-      const mockDashboard = {
-        id: 'empty-123',
-        title: '',
-        url: '',
-        layout_type: 'ordered' as const,
-        widgets: []
-      }
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            id: 'empty-123',
+            title: '',
+            url: ''
+          })
+      })
 
-      const mockApi = {
-        updateDashboard: vi.fn().mockResolvedValue(mockDashboard)
-      } as unknown as v1.DashboardsApi
-
-      const result = await updateDashboard(mockApi, 'empty-123', {
+      const result = await updateDashboardRaw(mockCredentials, 'empty-123', {
         layoutType: 'ordered',
         widgets: []
       })
@@ -102,48 +120,63 @@ describe('Dashboards Async Functions', () => {
     })
 
     it('should handle 404 not found error', async () => {
-      const mockApi = {
-        updateDashboard: vi.fn().mockRejectedValue({
-          code: 404,
-          body: { errors: ['Dashboard not found'] }
-        })
-      } as unknown as v1.DashboardsApi
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 404,
+        text: () => Promise.resolve(JSON.stringify({ errors: ['Dashboard not found'] }))
+      })
 
       await expect(
-        updateDashboard(mockApi, 'nonexistent', { title: 'Test', layoutType: 'ordered' })
+        updateDashboardRaw(mockCredentials, 'nonexistent', { title: 'Test', layoutType: 'ordered' })
       ).rejects.toMatchObject({
         code: 404
       })
     })
 
     it('should handle 400 bad request error', async () => {
-      const mockApi = {
-        updateDashboard: vi.fn().mockRejectedValue({
-          code: 400,
-          body: { errors: ['Invalid dashboard config'] }
-        })
-      } as unknown as v1.DashboardsApi
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 400,
+        text: () => Promise.resolve(JSON.stringify({ errors: ['Invalid dashboard config'] }))
+      })
 
       await expect(
-        updateDashboard(mockApi, 'abc-123', { layoutType: 'ordered', invalid: 'config' })
+        updateDashboardRaw(mockCredentials, 'abc-123', { layoutType: 'ordered', invalid: 'config' })
       ).rejects.toMatchObject({
         code: 400
       })
     })
 
     it('should handle 403 forbidden error', async () => {
-      const mockApi = {
-        updateDashboard: vi.fn().mockRejectedValue({
-          code: 403,
-          body: { errors: ['Insufficient permissions'] }
-        })
-      } as unknown as v1.DashboardsApi
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 403,
+        text: () => Promise.resolve(JSON.stringify({ errors: ['Insufficient permissions'] }))
+      })
 
       await expect(
-        updateDashboard(mockApi, 'abc-123', { title: 'Test', layoutType: 'ordered' })
+        updateDashboardRaw(mockCredentials, 'abc-123', { title: 'Test', layoutType: 'ordered' })
       ).rejects.toMatchObject({
         code: 403
       })
+    })
+
+    it('should URL-encode the dashboard ID to prevent path injection', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({ id: 'test', title: 'Test', url: '/dashboard/test' })
+      })
+
+      await updateDashboardRaw(mockCredentials, '../../../admin', {
+        title: 'Test',
+        layoutType: 'ordered'
+      })
+
+      // Verify the ID is URL-encoded
+      expect(mockFetch).toHaveBeenCalledWith(
+        'https://api.datadoghq.com/api/v1/dashboard/..%2F..%2F..%2Fadmin',
+        expect.any(Object)
+      )
     })
   })
 

@@ -219,19 +219,6 @@ export function normalizeDashboardConfig(config: Record<string, unknown>): Recor
   return normalized
 }
 
-export async function createDashboard(api: v1.DashboardsApi, config: Record<string, unknown>) {
-  const body = normalizeDashboardConfig(config) as unknown as v1.Dashboard
-  const dashboard = await api.createDashboard({ body })
-  return {
-    success: true,
-    dashboard: {
-      id: dashboard.id ?? '',
-      title: dashboard.title ?? '',
-      url: dashboard.url ?? ''
-    }
-  }
-}
-
 // Shared helper for raw HTTP dashboard requests.
 // Bypasses Datadog TS client validation which has bugs with multiple formulas
 // containing conditionalFormats in the same request (ObjectSerializer OneOf matching fails).
@@ -295,29 +282,18 @@ export async function createDashboardRaw(
   }
 }
 
-export async function updateDashboard(
-  api: v1.DashboardsApi,
-  id: string,
-  config: Record<string, unknown>
-) {
-  const body = normalizeDashboardConfig(config) as unknown as v1.Dashboard
-  const dashboard = await api.updateDashboard({ dashboardId: id, body })
-  return {
-    success: true,
-    dashboard: {
-      id: dashboard.id ?? '',
-      title: dashboard.title ?? '',
-      url: dashboard.url ?? ''
-    }
-  }
-}
-
 export async function updateDashboardRaw(
   credentials: DatadogApiCredentials,
   id: string,
   config: Record<string, unknown>
 ) {
-  const dashboard = await rawDashboardRequest(credentials, 'PUT', `/api/v1/dashboard/${id}`, config)
+  // URL-encode id to prevent path injection (e.g., ../../admin or special chars)
+  const dashboard = await rawDashboardRequest(
+    credentials,
+    'PUT',
+    `/api/v1/dashboard/${encodeURIComponent(id)}`,
+    config
+  )
   return {
     success: true,
     dashboard: {

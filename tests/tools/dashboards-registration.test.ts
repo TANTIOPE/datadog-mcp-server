@@ -159,4 +159,67 @@ describe('registerDashboardsTool', () => {
 
     await expect(registeredHandler({ action: 'create', config: {} })).rejects.toThrow()
   })
+
+  describe('raw HTTP error handling', () => {
+    it('should throw handleDatadogError-compatible error on API failure with JSON response', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 429,
+        text: () => Promise.resolve(JSON.stringify({ errors: ['Rate limit exceeded'] }))
+      })
+
+      registerDashboardsTool(mockServer, mockApi, limits, false, credentials)
+
+      // The error should be caught by handleDatadogError and converted to McpError
+      // with DatadogErrorCode.RateLimited (-32053)
+      await expect(
+        registeredHandler({
+          action: 'create',
+          config: { title: 'Test', layoutType: 'ordered' }
+        })
+      ).rejects.toMatchObject({
+        code: -32053 // DatadogErrorCode.RateLimited
+      })
+    })
+
+    it('should throw handleDatadogError-compatible error on 403 Forbidden', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 403,
+        text: () => Promise.resolve(JSON.stringify({ errors: ['Forbidden'] }))
+      })
+
+      registerDashboardsTool(mockServer, mockApi, limits, false, credentials)
+
+      await expect(
+        registeredHandler({
+          action: 'update',
+          id: 'dash-123',
+          config: { title: 'Test', layoutType: 'ordered' }
+        })
+      ).rejects.toMatchObject({
+        code: -32051 // DatadogErrorCode.Forbidden
+      })
+    })
+
+    it('should handle non-JSON error responses', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 500,
+        text: () => Promise.resolve('Internal Server Error')
+      })
+
+      registerDashboardsTool(mockServer, mockApi, limits, false, credentials)
+
+      // 500 maps to ServiceUnavailable
+      await expect(
+        registeredHandler({
+          action: 'create',
+          config: { title: 'Test', layoutType: 'ordered' }
+        })
+      ).rejects.toMatchObject({
+        code: -32054 // DatadogErrorCode.ServiceUnavailable
+      })
+    })
+  })
 })
