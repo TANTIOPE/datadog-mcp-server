@@ -588,6 +588,107 @@ describe('Dashboards Helper Functions', () => {
       // Widget nested conversion
       expect(queries[0].dataSource).toBe('metrics')
     })
+
+    it('should handle null and undefined values at various depths', () => {
+      const config = {
+        title: 'Test Dashboard',
+        layoutType: 'ordered',
+        description: null,
+        widgets: [
+          {
+            definition: {
+              type: 'timeseries',
+              custom_field: undefined,
+              requests: [{ queries: null }]
+            }
+          },
+          null
+        ]
+      }
+
+      const result = normalizeDashboardConfig(config)
+      const widgets = result.widgets as Array<unknown>
+      const firstWidget = widgets[0] as Record<string, unknown>
+      const definition = firstWidget.definition as Record<string, unknown>
+      const requests = definition.requests as Array<Record<string, unknown>>
+
+      expect(result.description).toBeNull()
+      expect(definition.customField).toBeUndefined()
+      expect(requests[0].queries).toBeNull()
+      expect(widgets[1]).toBeNull()
+    })
+
+    it('should handle empty objects and arrays', () => {
+      const config = {
+        title: 'Test Dashboard',
+        layoutType: 'ordered',
+        widgets: [],
+        template_variables: [],
+        metadata: {}
+      }
+
+      const result = normalizeDashboardConfig(config)
+
+      expect(result.widgets).toEqual([])
+      expect(result.templateVariables).toEqual([])
+      expect(result.metadata).toEqual({})
+    })
+
+    it('should handle nested arrays of arrays', () => {
+      const config = {
+        title: 'Test Dashboard',
+        layoutType: 'ordered',
+        widgets: [
+          {
+            definition: {
+              type: 'group',
+              widgets: [
+                [
+                  { definition: { type: 'note', content: 'test', background_color: 'yellow' } },
+                  { definition: { type: 'note', content: 'test2', font_size: '14' } }
+                ]
+              ]
+            }
+          }
+        ]
+      }
+
+      const result = normalizeDashboardConfig(config)
+      const widgets = result.widgets as Array<Record<string, unknown>>
+      const groupDef = widgets[0].definition as Record<string, unknown>
+      const nestedWidgets = groupDef.widgets as Array<Array<Record<string, unknown>>>
+
+      expect(nestedWidgets[0][0].definition).toHaveProperty('backgroundColor', 'yellow')
+      expect(nestedWidgets[0][1].definition).toHaveProperty('fontSize', '14')
+    })
+
+    it('should convert keys with numbers like query_1', () => {
+      const config = {
+        title: 'Test Dashboard',
+        layoutType: 'ordered',
+        widgets: [
+          {
+            definition: {
+              type: 'timeseries',
+              requests: [
+                {
+                  query_1_name: 'first',
+                  response_format_2: 'scalar'
+                }
+              ]
+            }
+          }
+        ]
+      }
+
+      const result = normalizeDashboardConfig(config)
+      const widgets = result.widgets as Array<Record<string, unknown>>
+      const definition = widgets[0].definition as Record<string, unknown>
+      const requests = definition.requests as Array<Record<string, unknown>>
+
+      expect(requests[0].query1Name).toBe('first')
+      expect(requests[0].responseFormat2).toBe('scalar')
+    })
   })
 
   describe('tag validation', () => {

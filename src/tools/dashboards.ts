@@ -96,19 +96,26 @@ export async function getDashboard(api: v1.DashboardsApi, id: string) {
 }
 
 // Convert snake_case to camelCase, preserving underscore-prefixed fields like _default
+// Handles alphanumeric characters after underscores (e.g., query_1 → query1)
 function snakeToCamel(str: string): string {
   if (str.startsWith('_')) return str
-  return str.replace(/_([a-z])/g, (_, c) => c.toUpperCase())
+  return str.replace(/_([a-zA-Z0-9])/g, (_, c) => c.toUpperCase())
 }
+
+// Maximum nesting depth to prevent stack overflow from circular refs or malformed input
+const MAX_NESTING_DEPTH = 20
 
 // Deep recursive snake_case to camelCase conversion for entire config tree
 // This handles all nested widget definitions, queries, formulas, etc.
 // When both camelCase and snake_case versions exist, camelCase takes precedence
-function deepConvertSnakeToCamel(obj: unknown): unknown {
+function deepConvertSnakeToCamel(obj: unknown, depth: number = 0): unknown {
+  // Prevent stack overflow from circular references or extremely deep nesting
+  if (depth > MAX_NESTING_DEPTH) return obj
+
   if (Array.isArray(obj)) {
-    return obj.map(deepConvertSnakeToCamel)
+    return obj.map((item) => deepConvertSnakeToCamel(item, depth + 1))
   }
-  if (obj && typeof obj === 'object' && obj !== null) {
+  if (obj !== null && typeof obj === 'object') {
     const input = obj as Record<string, unknown>
     const result: Record<string, unknown> = {}
 
@@ -126,16 +133,17 @@ function deepConvertSnakeToCamel(obj: unknown): unknown {
 
     // Second pass: process all keys
     for (const [key, value] of Object.entries(input)) {
-      // 'default' is JS reserved keyword, always convert to _default
+      // 'default' is JS reserved keyword - Datadog TS client uses '_default' for this field
+      // This applies universally because the TS client always expects '_default'
       const newKey = key === 'default' ? '_default' : snakeToCamel(key)
 
       // Skip snake_case key if camelCase version exists in original input
-      // e.g., skip layout_type if layoutType already exists
+      // e.g., skip layout_type if layoutType already exists (camelCase wins silently)
       if (key !== newKey && key !== 'default' && originalCamelKeys.has(newKey)) {
         continue
       }
 
-      result[newKey] = deepConvertSnakeToCamel(value)
+      result[newKey] = deepConvertSnakeToCamel(value, depth + 1)
     }
 
     return result
