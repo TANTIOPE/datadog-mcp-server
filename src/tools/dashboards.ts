@@ -5,6 +5,13 @@ import { handleDatadogError, requireParam, checkReadOnly } from '../errors/datad
 import { toolResult } from '../utils/format.js'
 import type { LimitsConfig } from '../config/schema.js'
 
+// Datadog API credentials for raw HTTP calls (bypasses buggy TypeScript client validation)
+export interface DatadogApiCredentials {
+  apiKey: string
+  appKey: string
+  site: string
+}
+
 const ActionSchema = z.enum(['list', 'get', 'create', 'update', 'delete', 'validate'])
 
 const InputSchema = {
@@ -102,8 +109,43 @@ function snakeToCamel(str: string): string {
   return str.replace(/_([a-zA-Z0-9])/g, (_, c) => c.toUpperCase())
 }
 
+// Convert camelCase to snake_case for Datadog API (expects snake_case)
+// Note: This is NOT a perfect inverse of snakeToCamel - it's intentionally asymmetric.
+// snakeToCamel: query_1 → query1, camelToSnake: query1 → query1 (NOT query_1)
+// This is fine because Datadog API accepts both forms for these fields.
+// The important property is that the output is valid snake_case for the API.
+export function camelToSnake(str: string): string {
+  // _default is TS client internal representation for the 'default' field.
+  // 'default' is a JS reserved keyword, so the TS client prefixes it with underscore.
+  // The Datadog REST API expects 'default' (without prefix).
+  if (str === '_default') return 'default'
+  return str.replace(/([A-Z])/g, '_$1').toLowerCase()
+}
+
 // Maximum nesting depth to prevent stack overflow from circular refs or malformed input
 const MAX_NESTING_DEPTH = 20
+
+// Deep recursive camelCase to snake_case conversion for Datadog API
+// The Datadog REST API expects snake_case field names
+export function deepConvertCamelToSnake(obj: unknown, depth: number = 0): unknown {
+  if (depth > MAX_NESTING_DEPTH) return obj
+
+  if (Array.isArray(obj)) {
+    return obj.map((item) => deepConvertCamelToSnake(item, depth + 1))
+  }
+  if (obj !== null && typeof obj === 'object') {
+    const input = obj as Record<string, unknown>
+    const result: Record<string, unknown> = {}
+
+    for (const [key, value] of Object.entries(input)) {
+      const newKey = camelToSnake(key)
+      result[newKey] = deepConvertCamelToSnake(value, depth + 1)
+    }
+
+    return result
+  }
+  return obj
+}
 
 // Deep recursive snake_case to camelCase conversion for entire config tree
 // This handles all nested widget definitions, queries, formulas, etc.
@@ -177,9 +219,59 @@ export function normalizeDashboardConfig(config: Record<string, unknown>): Recor
   return normalized
 }
 
-export async function createDashboard(api: v1.DashboardsApi, config: Record<string, unknown>) {
-  const body = normalizeDashboardConfig(config) as unknown as v1.Dashboard
-  const dashboard = await api.createDashboard({ body })
+// Shared helper for raw HTTP dashboard requests.
+// Bypasses Datadog TS client validation which has bugs with multiple formulas
+// containing conditionalFormats in the same request (ObjectSerializer OneOf matching fails).
+// Throws errors in handleDatadogError-compatible format to preserve structured error codes.
+async function rawDashboardRequest(
+  credentials: DatadogApiCredentials,
+  method: 'POST' | 'PUT',
+  path: string,
+  config: Record<string, unknown>
+): Promise<{ id?: string; title?: string; url?: string }> {
+  // Normalize to camelCase for our validation, then convert to snake_case for API
+  const normalized = normalizeDashboardConfig(config)
+  const snakeCaseBody = deepConvertCamelToSnake(normalized)
+
+  const baseUrl =
+    credentials.site === 'datadoghq.com'
+      ? 'https://api.datadoghq.com'
+      : `https://api.${credentials.site}`
+
+  const response = await fetch(`${baseUrl}${path}`, {
+    method,
+    headers: {
+      'Content-Type': 'application/json',
+      'DD-API-KEY': credentials.apiKey,
+      'DD-APPLICATION-KEY': credentials.appKey
+    },
+    body: JSON.stringify(snakeCaseBody)
+  })
+
+  if (!response.ok) {
+    // Throw error in handleDatadogError-compatible format to preserve structured error codes
+    // (401 → Unauthorized, 429 → RateLimited, etc.) for LLM retry logic
+    const errorText = await response.text()
+    let parsedBody: { errors?: string[] } | undefined
+    try {
+      parsedBody = JSON.parse(errorText) as { errors?: string[] }
+    } catch {
+      // Response wasn't JSON, use raw text as error message
+    }
+    throw {
+      code: response.status,
+      body: parsedBody ?? { errors: [errorText] }
+    }
+  }
+
+  return response.json() as Promise<{ id?: string; title?: string; url?: string }>
+}
+
+export async function createDashboardRaw(
+  credentials: DatadogApiCredentials,
+  config: Record<string, unknown>
+) {
+  const dashboard = await rawDashboardRequest(credentials, 'POST', '/api/v1/dashboard', config)
   return {
     success: true,
     dashboard: {
@@ -190,13 +282,18 @@ export async function createDashboard(api: v1.DashboardsApi, config: Record<stri
   }
 }
 
-export async function updateDashboard(
-  api: v1.DashboardsApi,
+export async function updateDashboardRaw(
+  credentials: DatadogApiCredentials,
   id: string,
   config: Record<string, unknown>
 ) {
-  const body = normalizeDashboardConfig(config) as unknown as v1.Dashboard
-  const dashboard = await api.updateDashboard({ dashboardId: id, body })
+  // URL-encode id to prevent path injection (e.g., ../../admin or special chars)
+  const dashboard = await rawDashboardRequest(
+    credentials,
+    'PUT',
+    `/api/v1/dashboard/${encodeURIComponent(id)}`,
+    config
+  )
   return {
     success: true,
     dashboard: {
@@ -240,12 +337,14 @@ export function validateDashboardConfig(config: Record<string, unknown>) {
   }
 }
 
+// Note: credentials are always provided in production (required by config schema).
+// They're used for raw HTTP calls that bypass buggy TS client validation.
 export function registerDashboardsTool(
   server: McpServer,
   api: v1.DashboardsApi,
   limits: LimitsConfig,
   readOnly: boolean = false,
-  _site: string = 'datadoghq.com'
+  credentials: DatadogApiCredentials
 ): void {
   server.tool(
     'dashboards',
@@ -279,13 +378,15 @@ Tags must use key:value format (e.g., ["team:ops", "env:prod"]).`,
 
           case 'create': {
             const dashboardConfig = requireParam(config, 'config', 'create')
-            return toolResult(await createDashboard(api, dashboardConfig))
+            // Use raw HTTP to bypass Datadog TS client validation bugs
+            return toolResult(await createDashboardRaw(credentials, dashboardConfig))
           }
 
           case 'update': {
             const dashboardId = requireParam(id, 'id', 'update')
             const updateConfig = requireParam(config, 'config', 'update')
-            return toolResult(await updateDashboard(api, dashboardId, updateConfig))
+            // Use raw HTTP to bypass Datadog TS client validation bugs
+            return toolResult(await updateDashboardRaw(credentials, dashboardId, updateConfig))
           }
 
           case 'delete': {

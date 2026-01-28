@@ -7,7 +7,9 @@ import { v1 } from '@datadog/datadog-api-client'
 import {
   normalizeDashboardConfig,
   listDashboards,
-  validateDashboardConfig
+  validateDashboardConfig,
+  camelToSnake,
+  deepConvertCamelToSnake
 } from '../../src/tools/dashboards.js'
 import type { LimitsConfig } from '../../src/config/schema.js'
 
@@ -795,6 +797,191 @@ describe('Dashboards Helper Functions', () => {
 
       expect(result.valid).toBe(true)
       expect(result.normalized.layoutType).toBe('ordered')
+    })
+  })
+
+  describe('camelToSnake', () => {
+    it('should convert camelCase to snake_case', () => {
+      expect(camelToSnake('layoutType')).toBe('layout_type')
+      expect(camelToSnake('templateVariables')).toBe('template_variables')
+      expect(camelToSnake('conditionalFormats')).toBe('conditional_formats')
+    })
+
+    it('should convert _default to default (Datadog API expects default without prefix)', () => {
+      expect(camelToSnake('_default')).toBe('default')
+    })
+
+    it('should handle already lowercase strings', () => {
+      expect(camelToSnake('name')).toBe('name')
+      expect(camelToSnake('query')).toBe('query')
+      expect(camelToSnake('type')).toBe('type')
+    })
+
+    it('should handle strings with numbers', () => {
+      // Note: This is intentionally asymmetric with snakeToCamel
+      // snakeToCamel: query_1 → query1
+      // camelToSnake: query1 → query1 (NOT query_1)
+      // This is fine because Datadog API accepts both forms
+      expect(camelToSnake('query1')).toBe('query1')
+      expect(camelToSnake('query1Name')).toBe('query1_name')
+    })
+
+    it('should handle consecutive uppercase letters', () => {
+      // Edge case: consecutive uppercase becomes multiple underscores
+      // This doesn't occur in Datadog's actual API field names
+      expect(camelToSnake('HTTPRequest')).toBe('_h_t_t_p_request')
+    })
+
+    it('should handle single character strings', () => {
+      expect(camelToSnake('a')).toBe('a')
+      expect(camelToSnake('A')).toBe('_a')
+    })
+
+    it('should handle empty string', () => {
+      expect(camelToSnake('')).toBe('')
+    })
+  })
+
+  describe('deepConvertCamelToSnake', () => {
+    it('should convert all keys in nested objects', () => {
+      const input = {
+        layoutType: 'ordered',
+        templateVariables: [{ name: 'env', _default: 'prod' }],
+        notifyList: ['user@example.com']
+      }
+
+      const result = deepConvertCamelToSnake(input) as Record<string, unknown>
+
+      expect(result.layout_type).toBe('ordered')
+      expect(result.template_variables).toBeDefined()
+      expect(result.notify_list).toEqual(['user@example.com'])
+      expect(result).not.toHaveProperty('layoutType')
+      expect(result).not.toHaveProperty('templateVariables')
+      expect(result).not.toHaveProperty('notifyList')
+    })
+
+    it('should convert _default to default in nested objects', () => {
+      const input = {
+        templateVariables: [{ name: 'env', _default: 'prod', availableValues: ['prod', 'dev'] }]
+      }
+
+      const result = deepConvertCamelToSnake(input) as Record<string, unknown>
+      const vars = result.template_variables as Array<Record<string, unknown>>
+
+      expect(vars[0].default).toBe('prod')
+      expect(vars[0].available_values).toEqual(['prod', 'dev'])
+      expect(vars[0]).not.toHaveProperty('_default')
+      expect(vars[0]).not.toHaveProperty('availableValues')
+    })
+
+    it('should handle arrays of primitives', () => {
+      const input = {
+        tags: ['team:ops', 'env:prod']
+      }
+
+      const result = deepConvertCamelToSnake(input) as Record<string, unknown>
+
+      expect(result.tags).toEqual(['team:ops', 'env:prod'])
+    })
+
+    it('should preserve null and undefined values', () => {
+      const input = {
+        layoutType: 'ordered',
+        description: null,
+        customField: undefined
+      }
+
+      const result = deepConvertCamelToSnake(input) as Record<string, unknown>
+
+      expect(result.layout_type).toBe('ordered')
+      expect(result.description).toBeNull()
+      expect(result.custom_field).toBeUndefined()
+    })
+
+    it('should handle deeply nested widget definitions', () => {
+      const input = {
+        widgets: [
+          {
+            definition: {
+              type: 'timeseries',
+              requests: [
+                {
+                  displayType: 'line',
+                  conditionalFormats: [{ comparator: '>', customBgColor: '#ff0000' }],
+                  queries: [{ dataSource: 'metrics', name: 'query1' }]
+                }
+              ]
+            }
+          }
+        ]
+      }
+
+      const result = deepConvertCamelToSnake(input) as Record<string, unknown>
+      const widgets = result.widgets as Array<Record<string, unknown>>
+      const definition = widgets[0].definition as Record<string, unknown>
+      const requests = definition.requests as Array<Record<string, unknown>>
+      const conditionalFormats = requests[0].conditional_formats as Array<Record<string, unknown>>
+      const queries = requests[0].queries as Array<Record<string, unknown>>
+
+      expect(requests[0].display_type).toBe('line')
+      expect(conditionalFormats[0].custom_bg_color).toBe('#ff0000')
+      expect(queries[0].data_source).toBe('metrics')
+    })
+
+    it('should handle empty objects and arrays', () => {
+      expect(deepConvertCamelToSnake({})).toEqual({})
+      expect(deepConvertCamelToSnake([])).toEqual([])
+    })
+
+    it('should return primitives unchanged', () => {
+      expect(deepConvertCamelToSnake('string')).toBe('string')
+      expect(deepConvertCamelToSnake(123)).toBe(123)
+      expect(deepConvertCamelToSnake(true)).toBe(true)
+      expect(deepConvertCamelToSnake(null)).toBeNull()
+    })
+
+    it('should handle max nesting depth protection', () => {
+      // Create deeply nested object (beyond MAX_NESTING_DEPTH of 20)
+      let obj: Record<string, unknown> = { deepKey: 'value' }
+      for (let i = 0; i < 25; i++) {
+        obj = { nestedLevel: obj }
+      }
+
+      // Should not throw, returns obj at max depth
+      const result = deepConvertCamelToSnake(obj)
+      expect(result).toBeDefined()
+    })
+  })
+
+  describe('round-trip conversion (normalize → camelToSnake)', () => {
+    it('should produce valid snake_case for Datadog API', () => {
+      // Input in snake_case (as user might provide)
+      const input = {
+        title: 'Test Dashboard',
+        layout_type: 'ordered',
+        template_variables: [{ name: 'env', default: 'prod' }],
+        widgets: [
+          {
+            definition: {
+              type: 'timeseries',
+              requests: [{ display_type: 'line', data_source: 'metrics' }]
+            }
+          }
+        ]
+      }
+
+      // Step 1: Normalize (snake → camel)
+      const normalized = normalizeDashboardConfig(input)
+
+      // Step 2: Convert back to snake_case for API
+      const forApi = deepConvertCamelToSnake(normalized) as Record<string, unknown>
+
+      // Verify output is valid snake_case
+      expect(forApi.layout_type).toBe('ordered')
+      expect(forApi.template_variables).toBeDefined()
+      const vars = forApi.template_variables as Array<Record<string, unknown>>
+      expect(vars[0].default).toBe('prod') // _default → default
+      expect(vars[0]).not.toHaveProperty('_default')
     })
   })
 })

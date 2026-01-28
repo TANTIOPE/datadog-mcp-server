@@ -1,9 +1,9 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import type { DatadogClients } from '../config/datadog.js'
-import type { LimitsConfig, FeaturesConfig } from '../config/schema.js'
+import type { LimitsConfig, FeaturesConfig, DatadogConfig } from '../config/schema.js'
 
 import { registerMonitorsTool } from './monitors.js'
-import { registerDashboardsTool } from './dashboards.js'
+import { registerDashboardsTool, DatadogApiCredentials } from './dashboards.js'
 import { registerLogsTool } from './logs.js'
 import { registerMetricsTool } from './metrics.js'
 import { registerTracesTool } from './traces.js'
@@ -27,15 +27,24 @@ export function registerAllTools(
   clients: DatadogClients,
   limits: LimitsConfig,
   features: FeaturesConfig,
-  site: string = 'datadoghq.com'
+  site: string = 'datadoghq.com',
+  datadogConfig: DatadogConfig
 ): void {
   const { readOnly, disabledTools } = features
   const enabled = (tool: string) => !disabledTools.includes(tool)
 
+  // Credentials for raw HTTP calls that bypass buggy TS client validation.
+  // Used by dashboard create/update to work around ObjectSerializer OneOf matching bugs.
+  const credentials: DatadogApiCredentials = {
+    apiKey: datadogConfig.apiKey,
+    appKey: datadogConfig.appKey,
+    site: datadogConfig.site ?? 'datadoghq.com'
+  }
+
   if (enabled('monitors'))
     registerMonitorsTool(server, clients.monitors, clients.eventsV2, limits, readOnly, site)
   if (enabled('dashboards'))
-    registerDashboardsTool(server, clients.dashboards, limits, readOnly, site)
+    registerDashboardsTool(server, clients.dashboards, limits, readOnly, credentials)
   if (enabled('logs')) registerLogsTool(server, clients.logs, limits, site)
   if (enabled('metrics'))
     registerMetricsTool(server, clients.metricsV1, clients.metricsV2, limits, site)

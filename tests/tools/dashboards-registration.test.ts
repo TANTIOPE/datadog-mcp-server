@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { registerDashboardsTool } from '../../src/tools/dashboards.js'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { registerDashboardsTool, DatadogApiCredentials } from '../../src/tools/dashboards.js'
 import type { v1 } from '@datadog/datadog-api-client'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import type { LimitsConfig } from '../../src/config/schema.js'
@@ -8,7 +8,9 @@ describe('registerDashboardsTool', () => {
   let mockServer: McpServer
   let mockApi: v1.DashboardsApi
   let limits: LimitsConfig
+  let credentials: DatadogApiCredentials
   let registeredHandler: (params: Record<string, unknown>) => Promise<unknown>
+  let mockFetch: ReturnType<typeof vi.fn>
 
   beforeEach(() => {
     mockServer = {
@@ -37,10 +39,26 @@ describe('registerDashboardsTool', () => {
     } as unknown as v1.DashboardsApi
 
     limits = { maxResults: 100 }
+    credentials = {
+      apiKey: 'test-api-key',
+      appKey: 'test-app-key',
+      site: 'datadoghq.com'
+    }
+
+    // Mock fetch for raw HTTP calls used by create/update
+    mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ id: 'dash-new', title: 'New Dashboard', url: '/dash/dash-new' })
+    })
+    vi.stubGlobal('fetch', mockFetch)
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
   })
 
   it('should register dashboards tool', () => {
-    registerDashboardsTool(mockServer, mockApi, limits, false)
+    registerDashboardsTool(mockServer, mockApi, limits, false, credentials)
 
     expect(mockServer.tool).toHaveBeenCalledWith(
       'dashboards',
@@ -51,7 +69,7 @@ describe('registerDashboardsTool', () => {
   })
 
   it('should handle list action', async () => {
-    registerDashboardsTool(mockServer, mockApi, limits, false)
+    registerDashboardsTool(mockServer, mockApi, limits, false, credentials)
 
     const result = await registeredHandler({ action: 'list' })
 
@@ -60,7 +78,7 @@ describe('registerDashboardsTool', () => {
   })
 
   it('should handle get action', async () => {
-    registerDashboardsTool(mockServer, mockApi, limits, false)
+    registerDashboardsTool(mockServer, mockApi, limits, false, credentials)
 
     const result = await registeredHandler({ action: 'get', id: 'dash-123' })
 
@@ -68,8 +86,8 @@ describe('registerDashboardsTool', () => {
     expect(mockApi.getDashboard).toHaveBeenCalledWith({ dashboardId: 'dash-123' })
   })
 
-  it('should handle create action', async () => {
-    registerDashboardsTool(mockServer, mockApi, limits, false)
+  it('should handle create action via raw HTTP', async () => {
+    registerDashboardsTool(mockServer, mockApi, limits, false, credentials)
 
     const result = await registeredHandler({
       action: 'create',
@@ -77,11 +95,21 @@ describe('registerDashboardsTool', () => {
     })
 
     expect(result).toBeDefined()
-    expect(mockApi.createDashboard).toHaveBeenCalled()
+    // create uses raw HTTP, not the typed client
+    expect(mockFetch).toHaveBeenCalledWith(
+      'https://api.datadoghq.com/api/v1/dashboard',
+      expect.objectContaining({
+        method: 'POST',
+        headers: expect.objectContaining({
+          'DD-API-KEY': 'test-api-key',
+          'DD-APPLICATION-KEY': 'test-app-key'
+        })
+      })
+    )
   })
 
-  it('should handle update action', async () => {
-    registerDashboardsTool(mockServer, mockApi, limits, false)
+  it('should handle update action via raw HTTP', async () => {
+    registerDashboardsTool(mockServer, mockApi, limits, false, credentials)
 
     const result = await registeredHandler({
       action: 'update',
@@ -90,11 +118,21 @@ describe('registerDashboardsTool', () => {
     })
 
     expect(result).toBeDefined()
-    expect(mockApi.updateDashboard).toHaveBeenCalled()
+    // update uses raw HTTP, not the typed client
+    expect(mockFetch).toHaveBeenCalledWith(
+      'https://api.datadoghq.com/api/v1/dashboard/dash-123',
+      expect.objectContaining({
+        method: 'PUT',
+        headers: expect.objectContaining({
+          'DD-API-KEY': 'test-api-key',
+          'DD-APPLICATION-KEY': 'test-app-key'
+        })
+      })
+    )
   })
 
   it('should handle delete action', async () => {
-    registerDashboardsTool(mockServer, mockApi, limits, false)
+    registerDashboardsTool(mockServer, mockApi, limits, false, credentials)
 
     const result = await registeredHandler({ action: 'delete', id: 'dash-123' })
 
@@ -103,7 +141,7 @@ describe('registerDashboardsTool', () => {
   })
 
   it('should throw error for unknown action', async () => {
-    registerDashboardsTool(mockServer, mockApi, limits, false)
+    registerDashboardsTool(mockServer, mockApi, limits, false, credentials)
 
     await expect(registeredHandler({ action: 'unknown' })).rejects.toThrow(
       'Unknown action: unknown'
@@ -111,14 +149,77 @@ describe('registerDashboardsTool', () => {
   })
 
   it('should throw error for get without id', async () => {
-    registerDashboardsTool(mockServer, mockApi, limits, false)
+    registerDashboardsTool(mockServer, mockApi, limits, false, credentials)
 
     await expect(registeredHandler({ action: 'get' })).rejects.toThrow()
   })
 
   it('should block write operations in read-only mode', async () => {
-    registerDashboardsTool(mockServer, mockApi, limits, true)
+    registerDashboardsTool(mockServer, mockApi, limits, true, credentials)
 
     await expect(registeredHandler({ action: 'create', config: {} })).rejects.toThrow()
+  })
+
+  describe('raw HTTP error handling', () => {
+    it('should throw handleDatadogError-compatible error on API failure with JSON response', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 429,
+        text: () => Promise.resolve(JSON.stringify({ errors: ['Rate limit exceeded'] }))
+      })
+
+      registerDashboardsTool(mockServer, mockApi, limits, false, credentials)
+
+      // The error should be caught by handleDatadogError and converted to McpError
+      // with DatadogErrorCode.RateLimited (-32053)
+      await expect(
+        registeredHandler({
+          action: 'create',
+          config: { title: 'Test', layoutType: 'ordered' }
+        })
+      ).rejects.toMatchObject({
+        code: -32053 // DatadogErrorCode.RateLimited
+      })
+    })
+
+    it('should throw handleDatadogError-compatible error on 403 Forbidden', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 403,
+        text: () => Promise.resolve(JSON.stringify({ errors: ['Forbidden'] }))
+      })
+
+      registerDashboardsTool(mockServer, mockApi, limits, false, credentials)
+
+      await expect(
+        registeredHandler({
+          action: 'update',
+          id: 'dash-123',
+          config: { title: 'Test', layoutType: 'ordered' }
+        })
+      ).rejects.toMatchObject({
+        code: -32051 // DatadogErrorCode.Forbidden
+      })
+    })
+
+    it('should handle non-JSON error responses', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 500,
+        text: () => Promise.resolve('Internal Server Error')
+      })
+
+      registerDashboardsTool(mockServer, mockApi, limits, false, credentials)
+
+      // 500 maps to ServiceUnavailable
+      await expect(
+        registeredHandler({
+          action: 'create',
+          config: { title: 'Test', layoutType: 'ordered' }
+        })
+      ).rejects.toMatchObject({
+        code: -32054 // DatadogErrorCode.ServiceUnavailable
+      })
+    })
   })
 })

@@ -45,11 +45,14 @@ import { registerTagsTool } from '../../src/tools/tags.js'
 import { registerUsageTool } from '../../src/tools/usage.js'
 import { registerAuthTool } from '../../src/tools/auth.js'
 
+import type { DatadogConfig } from '../../src/config/schema.js'
+
 describe('Tool Registration', () => {
   let mockServer: McpServer
   let mockClients: DatadogClients
   let mockLimits: LimitsConfig
   let mockFeatures: FeaturesConfig
+  let mockDatadogConfig: DatadogConfig
 
   beforeEach(() => {
     // Clear all mocks before each test
@@ -91,10 +94,22 @@ describe('Tool Registration', () => {
       readOnly: false,
       disabledTools: []
     }
+    mockDatadogConfig = {
+      apiKey: 'test-api-key',
+      appKey: 'test-app-key',
+      site: 'datadoghq.com'
+    }
   })
 
   it('should register all tools when none are disabled', () => {
-    registerAllTools(mockServer, mockClients, mockLimits, mockFeatures, 'datadoghq.com')
+    registerAllTools(
+      mockServer,
+      mockClients,
+      mockLimits,
+      mockFeatures,
+      'datadoghq.com',
+      mockDatadogConfig
+    )
 
     expect(registerMonitorsTool).toHaveBeenCalledWith(
       mockServer,
@@ -109,7 +124,7 @@ describe('Tool Registration', () => {
       mockClients.dashboards,
       mockLimits,
       false,
-      'datadoghq.com'
+      { apiKey: 'test-api-key', appKey: 'test-app-key', site: 'datadoghq.com' }
     )
     expect(registerLogsTool).toHaveBeenCalledWith(
       mockServer,
@@ -192,7 +207,14 @@ describe('Tool Registration', () => {
   it('should not register disabled tools', () => {
     mockFeatures.disabledTools = ['monitors', 'logs', 'incidents']
 
-    registerAllTools(mockServer, mockClients, mockLimits, mockFeatures, 'datadoghq.com')
+    registerAllTools(
+      mockServer,
+      mockClients,
+      mockLimits,
+      mockFeatures,
+      'datadoghq.com',
+      mockDatadogConfig
+    )
 
     expect(registerMonitorsTool).not.toHaveBeenCalled()
     expect(registerLogsTool).not.toHaveBeenCalled()
@@ -207,7 +229,14 @@ describe('Tool Registration', () => {
   it('should pass readOnly flag correctly', () => {
     mockFeatures.readOnly = true
 
-    registerAllTools(mockServer, mockClients, mockLimits, mockFeatures, 'datadoghq.com')
+    registerAllTools(
+      mockServer,
+      mockClients,
+      mockLimits,
+      mockFeatures,
+      'datadoghq.com',
+      mockDatadogConfig
+    )
 
     expect(registerMonitorsTool).toHaveBeenCalledWith(
       mockServer,
@@ -234,7 +263,8 @@ describe('Tool Registration', () => {
   })
 
   it('should pass site parameter to all tools that need it', () => {
-    registerAllTools(mockServer, mockClients, mockLimits, mockFeatures, 'datadoghq.eu')
+    const euConfig = { ...mockDatadogConfig, site: 'datadoghq.eu' }
+    registerAllTools(mockServer, mockClients, mockLimits, mockFeatures, 'datadoghq.eu', euConfig)
 
     expect(registerMonitorsTool).toHaveBeenCalledWith(
       expect.anything(),
@@ -262,7 +292,14 @@ describe('Tool Registration', () => {
   })
 
   it('should use default site when not provided', () => {
-    registerAllTools(mockServer, mockClients, mockLimits, mockFeatures)
+    registerAllTools(
+      mockServer,
+      mockClients,
+      mockLimits,
+      mockFeatures,
+      undefined,
+      mockDatadogConfig
+    )
 
     expect(registerMonitorsTool).toHaveBeenCalledWith(
       expect.anything(),
@@ -277,7 +314,14 @@ describe('Tool Registration', () => {
   it('should handle empty disabledTools array', () => {
     mockFeatures.disabledTools = []
 
-    registerAllTools(mockServer, mockClients, mockLimits, mockFeatures, 'datadoghq.com')
+    registerAllTools(
+      mockServer,
+      mockClients,
+      mockLimits,
+      mockFeatures,
+      'datadoghq.com',
+      mockDatadogConfig
+    )
 
     // All tools should be registered
     expect(registerMonitorsTool).toHaveBeenCalled()
@@ -309,7 +353,14 @@ describe('Tool Registration', () => {
       'auth'
     ]
 
-    registerAllTools(mockServer, mockClients, mockLimits, mockFeatures, 'datadoghq.com')
+    registerAllTools(
+      mockServer,
+      mockClients,
+      mockLimits,
+      mockFeatures,
+      'datadoghq.com',
+      mockDatadogConfig
+    )
 
     // None should be registered
     expect(registerMonitorsTool).not.toHaveBeenCalled()

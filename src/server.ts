@@ -11,7 +11,14 @@ export function createServer(config: Config): McpServer {
 
   const clients = createDatadogClients(config.datadog)
 
-  registerAllTools(server, clients, config.limits, config.features, config.datadog.site)
+  registerAllTools(
+    server,
+    clients,
+    config.limits,
+    config.features,
+    config.datadog.site,
+    config.datadog
+  )
 
   return server
 }

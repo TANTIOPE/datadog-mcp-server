@@ -1,7 +1,7 @@
 /**
  * Unit tests for the dashboards tool
  */
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest'
 import { v1 } from '@datadog/datadog-api-client'
 import { http } from 'msw'
 import { server, endpoints, jsonResponse, errorResponse } from '../helpers/msw.js'
@@ -10,8 +10,9 @@ import { dashboards as fixtures } from '../helpers/fixtures.js'
 import {
   listDashboards,
   getDashboard,
-  createDashboard,
-  deleteDashboard
+  createDashboardRaw,
+  deleteDashboard,
+  DatadogApiCredentials
 } from '../../src/tools/dashboards.js'
 import type { LimitsConfig } from '../../src/config/schema.js'
 
@@ -22,12 +23,27 @@ const defaultLimits: LimitsConfig = {
   defaultTimeRangeHours: 24
 }
 
+const mockCredentials: DatadogApiCredentials = {
+  apiKey: 'test-api-key',
+  appKey: 'test-app-key',
+  site: 'datadoghq.com'
+}
+
 describe('Dashboards Tool', () => {
   let api: v1.DashboardsApi
+  let mockFetch: ReturnType<typeof vi.fn>
 
   beforeEach(() => {
     const config = createMockConfig()
     api = new v1.DashboardsApi(config)
+
+    // Mock fetch for raw HTTP calls
+    mockFetch = vi.fn()
+    vi.stubGlobal('fetch', mockFetch)
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
   })
 
   describe('listDashboards', () => {
@@ -98,37 +114,45 @@ describe('Dashboards Tool', () => {
     })
   })
 
-  describe('createDashboard', () => {
-    it('should create a new dashboard', async () => {
+  describe('createDashboardRaw', () => {
+    it('should create a new dashboard via raw HTTP', async () => {
       const newDashboard = {
         title: 'New Dashboard',
         layoutType: 'ordered',
         widgets: []
       }
 
-      server.use(
-        http.post(endpoints.listDashboards, async () => {
-          return jsonResponse({
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: () =>
+          Promise.resolve({
             id: 'new-123',
             title: 'New Dashboard',
-            layout_type: 'ordered',
-            widgets: [],
-            url: '/dashboard/new-123',
-            created_at: new Date().toISOString(),
-            modified_at: new Date().toISOString()
+            url: '/dashboard/new-123'
           })
-        })
-      )
+      })
 
-      const result = await createDashboard(api, newDashboard)
+      const result = await createDashboardRaw(mockCredentials, newDashboard)
 
       expect(result.success).toBe(true)
       expect(result.dashboard.id).toBe('new-123')
       expect(result.dashboard.title).toBe('New Dashboard')
+      expect(mockFetch).toHaveBeenCalledWith(
+        'https://api.datadoghq.com/api/v1/dashboard',
+        expect.objectContaining({
+          method: 'POST',
+          headers: expect.objectContaining({
+            'DD-API-KEY': 'test-api-key',
+            'DD-APPLICATION-KEY': 'test-app-key'
+          })
+        })
+      )
     })
 
     it('should validate required fields', async () => {
-      await expect(createDashboard(api, { title: 'Test' })).rejects.toThrow(/layoutType/)
+      await expect(createDashboardRaw(mockCredentials, { title: 'Test' })).rejects.toThrow(
+        /layoutType/
+      )
     })
   })
 
