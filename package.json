@@ -84,7 +84,7 @@
     "msw": "2.12.7",
     "prettier": "3.7.4",
     "semantic-release": "24.2.9",
-    "supertest": "7.1.4",
+    "supertest": "7.2.2",
     "tsup": "8.5.1",
     "tsx": "4.21.0",
     "typescript": "5.9.3",
