@@ -5,6 +5,13 @@ import { handleDatadogError, requireParam, checkReadOnly } from '../errors/datad
 import { toolResult } from '../utils/format.js'
 import type { LimitsConfig } from '../config/schema.js'
 
+// Datadog API credentials for raw HTTP calls (bypasses buggy TypeScript client validation)
+export interface DatadogApiCredentials {
+  apiKey: string
+  appKey: string
+  site: string
+}
+
 const ActionSchema = z.enum(['list', 'get', 'create', 'update', 'delete', 'validate'])
 
 const InputSchema = {
@@ -102,8 +109,38 @@ function snakeToCamel(str: string): string {
   return str.replace(/_([a-zA-Z0-9])/g, (_, c) => c.toUpperCase())
 }
 
+// Convert camelCase to snake_case for Datadog API (expects snake_case)
+// Handles _default → default conversion
+function camelToSnake(str: string): string {
+  // _default is TS client internal representation, API expects 'default'
+  if (str === '_default') return 'default'
+  return str.replace(/([A-Z])/g, '_$1').toLowerCase()
+}
+
 // Maximum nesting depth to prevent stack overflow from circular refs or malformed input
 const MAX_NESTING_DEPTH = 20
+
+// Deep recursive camelCase to snake_case conversion for Datadog API
+// The Datadog REST API expects snake_case field names
+function deepConvertCamelToSnake(obj: unknown, depth: number = 0): unknown {
+  if (depth > MAX_NESTING_DEPTH) return obj
+
+  if (Array.isArray(obj)) {
+    return obj.map((item) => deepConvertCamelToSnake(item, depth + 1))
+  }
+  if (obj !== null && typeof obj === 'object') {
+    const input = obj as Record<string, unknown>
+    const result: Record<string, unknown> = {}
+
+    for (const [key, value] of Object.entries(input)) {
+      const newKey = camelToSnake(key)
+      result[newKey] = deepConvertCamelToSnake(value, depth + 1)
+    }
+
+    return result
+  }
+  return obj
+}
 
 // Deep recursive snake_case to camelCase conversion for entire config tree
 // This handles all nested widget definitions, queries, formulas, etc.
@@ -190,6 +227,47 @@ export async function createDashboard(api: v1.DashboardsApi, config: Record<stri
   }
 }
 
+// Raw HTTP create bypasses Datadog TS client validation which has bugs with
+// multiple formulas containing conditionalFormats in the same request
+export async function createDashboardRaw(
+  credentials: DatadogApiCredentials,
+  config: Record<string, unknown>
+) {
+  // Normalize to camelCase for our validation, then convert to snake_case for API
+  const normalized = normalizeDashboardConfig(config)
+  const snakeCaseBody = deepConvertCamelToSnake(normalized)
+
+  const baseUrl =
+    credentials.site === 'datadoghq.com'
+      ? 'https://api.datadoghq.com'
+      : `https://api.${credentials.site}`
+
+  const response = await fetch(`${baseUrl}/api/v1/dashboard`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'DD-API-KEY': credentials.apiKey,
+      'DD-APPLICATION-KEY': credentials.appKey
+    },
+    body: JSON.stringify(snakeCaseBody)
+  })
+
+  if (!response.ok) {
+    const errorBody = await response.text()
+    throw new Error(`Datadog API error (${response.status}): ${errorBody}`)
+  }
+
+  const dashboard = (await response.json()) as { id?: string; title?: string; url?: string }
+  return {
+    success: true,
+    dashboard: {
+      id: dashboard.id ?? '',
+      title: dashboard.title ?? '',
+      url: dashboard.url ?? ''
+    }
+  }
+}
+
 export async function updateDashboard(
   api: v1.DashboardsApi,
   id: string,
@@ -197,6 +275,48 @@ export async function updateDashboard(
 ) {
   const body = normalizeDashboardConfig(config) as unknown as v1.Dashboard
   const dashboard = await api.updateDashboard({ dashboardId: id, body })
+  return {
+    success: true,
+    dashboard: {
+      id: dashboard.id ?? '',
+      title: dashboard.title ?? '',
+      url: dashboard.url ?? ''
+    }
+  }
+}
+
+// Raw HTTP update bypasses Datadog TS client validation which has bugs with
+// multiple formulas containing conditionalFormats in the same request
+export async function updateDashboardRaw(
+  credentials: DatadogApiCredentials,
+  id: string,
+  config: Record<string, unknown>
+) {
+  // Normalize to camelCase for our validation, then convert to snake_case for API
+  const normalized = normalizeDashboardConfig(config)
+  const snakeCaseBody = deepConvertCamelToSnake(normalized)
+
+  const baseUrl =
+    credentials.site === 'datadoghq.com'
+      ? 'https://api.datadoghq.com'
+      : `https://api.${credentials.site}`
+
+  const response = await fetch(`${baseUrl}/api/v1/dashboard/${id}`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+      'DD-API-KEY': credentials.apiKey,
+      'DD-APPLICATION-KEY': credentials.appKey
+    },
+    body: JSON.stringify(snakeCaseBody)
+  })
+
+  if (!response.ok) {
+    const errorBody = await response.text()
+    throw new Error(`Datadog API error (${response.status}): ${errorBody}`)
+  }
+
+  const dashboard = (await response.json()) as { id?: string; title?: string; url?: string }
   return {
     success: true,
     dashboard: {
@@ -245,7 +365,7 @@ export function registerDashboardsTool(
   api: v1.DashboardsApi,
   limits: LimitsConfig,
   readOnly: boolean = false,
-  _site: string = 'datadoghq.com'
+  credentials?: DatadogApiCredentials
 ): void {
   server.tool(
     'dashboards',
@@ -279,12 +399,20 @@ Tags must use key:value format (e.g., ["team:ops", "env:prod"]).`,
 
           case 'create': {
             const dashboardConfig = requireParam(config, 'config', 'create')
+            // Use raw HTTP to bypass Datadog TS client validation bugs
+            if (credentials) {
+              return toolResult(await createDashboardRaw(credentials, dashboardConfig))
+            }
             return toolResult(await createDashboard(api, dashboardConfig))
           }
 
           case 'update': {
             const dashboardId = requireParam(id, 'id', 'update')
             const updateConfig = requireParam(config, 'config', 'update')
+            // Use raw HTTP to bypass Datadog TS client validation bugs
+            if (credentials) {
+              return toolResult(await updateDashboardRaw(credentials, dashboardId, updateConfig))
+            }
             return toolResult(await updateDashboard(api, dashboardId, updateConfig))
           }
 

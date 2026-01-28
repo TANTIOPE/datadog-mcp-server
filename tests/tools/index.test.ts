@@ -109,7 +109,7 @@ describe('Tool Registration', () => {
       mockClients.dashboards,
       mockLimits,
       false,
-      'datadoghq.com'
+      undefined // credentials not passed when datadogConfig not provided
     )
     expect(registerLogsTool).toHaveBeenCalledWith(
       mockServer,

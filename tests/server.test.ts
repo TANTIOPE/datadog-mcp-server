@@ -104,7 +104,8 @@ describe('Server', () => {
         expect.any(Object), // clients
         config.limits,
         config.features,
-        'datadoghq.com'
+        'datadoghq.com',
+        config.datadog
       )
     })
 
@@ -119,7 +120,8 @@ describe('Server', () => {
         expect.any(Object),
         config.limits,
         { readOnly: true },
-        'datadoghq.com'
+        'datadoghq.com',
+        config.datadog
       )
     })
 
@@ -141,7 +143,8 @@ describe('Server', () => {
           defaultTimeRangeHours: 24
         },
         expect.any(Object),
-        'datadoghq.com'
+        'datadoghq.com',
+        config.datadog
       )
     })
 
@@ -157,7 +160,8 @@ describe('Server', () => {
         expect.any(Object),
         expect.any(Object),
         expect.any(Object),
-        'datadoghq.eu'
+        'datadoghq.eu',
+        config.datadog
       )
     })
   })
