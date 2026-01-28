@@ -183,12 +183,13 @@ describe('Config Schema', () => {
         'teams',
         'tags',
         'usage',
-        'auth'
+        'auth',
+        'schema'
       ])
     })
 
-    it('should have 19 tools', () => {
-      expect(ALL_TOOLS).toHaveLength(19)
+    it('should have 20 tools', () => {
+      expect(ALL_TOOLS).toHaveLength(20)
     })
   })
 })

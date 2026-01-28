@@ -39,5 +39,3 @@ export const monitors = {
 
   docsUrl: 'https://docs.datadoghq.com/api/latest/monitors/'
 } as const
-
-export type MonitorsSchema = typeof monitors

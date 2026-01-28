@@ -154,5 +154,3 @@ export const dashboards = {
 
   docsUrl: 'https://docs.datadoghq.com/api/latest/dashboards/'
 } as const
-
-export type DashboardsSchema = typeof dashboards

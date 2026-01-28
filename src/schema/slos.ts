@@ -24,5 +24,3 @@ export const slos = {
 
   docsUrl: 'https://docs.datadoghq.com/api/latest/service-level-objectives/'
 } as const
-
-export type SLOsSchema = typeof slos

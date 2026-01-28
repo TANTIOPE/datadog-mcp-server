@@ -15,5 +15,3 @@ export const metrics = {
 
   docsUrl: 'https://docs.datadoghq.com/api/latest/metrics/'
 } as const
-
-export type MetricsSchema = typeof metrics
