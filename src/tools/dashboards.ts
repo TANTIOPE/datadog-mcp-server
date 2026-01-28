@@ -110,9 +110,14 @@ function snakeToCamel(str: string): string {
 }
 
 // Convert camelCase to snake_case for Datadog API (expects snake_case)
-// Handles _default → default conversion
-function camelToSnake(str: string): string {
-  // _default is TS client internal representation, API expects 'default'
+// Note: This is NOT a perfect inverse of snakeToCamel - it's intentionally asymmetric.
+// snakeToCamel: query_1 → query1, camelToSnake: query1 → query1 (NOT query_1)
+// This is fine because Datadog API accepts both forms for these fields.
+// The important property is that the output is valid snake_case for the API.
+export function camelToSnake(str: string): string {
+  // _default is TS client internal representation for the 'default' field.
+  // 'default' is a JS reserved keyword, so the TS client prefixes it with underscore.
+  // The Datadog REST API expects 'default' (without prefix).
   if (str === '_default') return 'default'
   return str.replace(/([A-Z])/g, '_$1').toLowerCase()
 }
@@ -122,7 +127,7 @@ const MAX_NESTING_DEPTH = 20
 
 // Deep recursive camelCase to snake_case conversion for Datadog API
 // The Datadog REST API expects snake_case field names
-function deepConvertCamelToSnake(obj: unknown, depth: number = 0): unknown {
+export function deepConvertCamelToSnake(obj: unknown, depth: number = 0): unknown {
   if (depth > MAX_NESTING_DEPTH) return obj
 
   if (Array.isArray(obj)) {
@@ -227,12 +232,16 @@ export async function createDashboard(api: v1.DashboardsApi, config: Record<stri
   }
 }
 
-// Raw HTTP create bypasses Datadog TS client validation which has bugs with
-// multiple formulas containing conditionalFormats in the same request
-export async function createDashboardRaw(
+// Shared helper for raw HTTP dashboard requests.
+// Bypasses Datadog TS client validation which has bugs with multiple formulas
+// containing conditionalFormats in the same request (ObjectSerializer OneOf matching fails).
+// Throws errors in handleDatadogError-compatible format to preserve structured error codes.
+async function rawDashboardRequest(
   credentials: DatadogApiCredentials,
+  method: 'POST' | 'PUT',
+  path: string,
   config: Record<string, unknown>
-) {
+): Promise<{ id?: string; title?: string; url?: string }> {
   // Normalize to camelCase for our validation, then convert to snake_case for API
   const normalized = normalizeDashboardConfig(config)
   const snakeCaseBody = deepConvertCamelToSnake(normalized)
@@ -242,8 +251,8 @@ export async function createDashboardRaw(
       ? 'https://api.datadoghq.com'
       : `https://api.${credentials.site}`
 
-  const response = await fetch(`${baseUrl}/api/v1/dashboard`, {
-    method: 'POST',
+  const response = await fetch(`${baseUrl}${path}`, {
+    method,
     headers: {
       'Content-Type': 'application/json',
       'DD-API-KEY': credentials.apiKey,
@@ -253,11 +262,29 @@ export async function createDashboardRaw(
   })
 
   if (!response.ok) {
-    const errorBody = await response.text()
-    throw new Error(`Datadog API error (${response.status}): ${errorBody}`)
+    // Throw error in handleDatadogError-compatible format to preserve structured error codes
+    // (401 → Unauthorized, 429 → RateLimited, etc.) for LLM retry logic
+    const errorText = await response.text()
+    let parsedBody: { errors?: string[] } | undefined
+    try {
+      parsedBody = JSON.parse(errorText) as { errors?: string[] }
+    } catch {
+      // Response wasn't JSON, use raw text as error message
+    }
+    throw {
+      code: response.status,
+      body: parsedBody ?? { errors: [errorText] }
+    }
   }
 
-  const dashboard = (await response.json()) as { id?: string; title?: string; url?: string }
+  return response.json() as Promise<{ id?: string; title?: string; url?: string }>
+}
+
+export async function createDashboardRaw(
+  credentials: DatadogApiCredentials,
+  config: Record<string, unknown>
+) {
+  const dashboard = await rawDashboardRequest(credentials, 'POST', '/api/v1/dashboard', config)
   return {
     success: true,
     dashboard: {
@@ -285,38 +312,12 @@ export async function updateDashboard(
   }
 }
 
-// Raw HTTP update bypasses Datadog TS client validation which has bugs with
-// multiple formulas containing conditionalFormats in the same request
 export async function updateDashboardRaw(
   credentials: DatadogApiCredentials,
   id: string,
   config: Record<string, unknown>
 ) {
-  // Normalize to camelCase for our validation, then convert to snake_case for API
-  const normalized = normalizeDashboardConfig(config)
-  const snakeCaseBody = deepConvertCamelToSnake(normalized)
-
-  const baseUrl =
-    credentials.site === 'datadoghq.com'
-      ? 'https://api.datadoghq.com'
-      : `https://api.${credentials.site}`
-
-  const response = await fetch(`${baseUrl}/api/v1/dashboard/${id}`, {
-    method: 'PUT',
-    headers: {
-      'Content-Type': 'application/json',
-      'DD-API-KEY': credentials.apiKey,
-      'DD-APPLICATION-KEY': credentials.appKey
-    },
-    body: JSON.stringify(snakeCaseBody)
-  })
-
-  if (!response.ok) {
-    const errorBody = await response.text()
-    throw new Error(`Datadog API error (${response.status}): ${errorBody}`)
-  }
-
-  const dashboard = (await response.json()) as { id?: string; title?: string; url?: string }
+  const dashboard = await rawDashboardRequest(credentials, 'PUT', `/api/v1/dashboard/${id}`, config)
   return {
     success: true,
     dashboard: {
@@ -360,12 +361,14 @@ export function validateDashboardConfig(config: Record<string, unknown>) {
   }
 }
 
+// Note: credentials are always provided in production (required by config schema).
+// They're used for raw HTTP calls that bypass buggy TS client validation.
 export function registerDashboardsTool(
   server: McpServer,
   api: v1.DashboardsApi,
   limits: LimitsConfig,
   readOnly: boolean = false,
-  credentials?: DatadogApiCredentials
+  credentials: DatadogApiCredentials
 ): void {
   server.tool(
     'dashboards',
@@ -400,20 +403,14 @@ Tags must use key:value format (e.g., ["team:ops", "env:prod"]).`,
           case 'create': {
             const dashboardConfig = requireParam(config, 'config', 'create')
             // Use raw HTTP to bypass Datadog TS client validation bugs
-            if (credentials) {
-              return toolResult(await createDashboardRaw(credentials, dashboardConfig))
-            }
-            return toolResult(await createDashboard(api, dashboardConfig))
+            return toolResult(await createDashboardRaw(credentials, dashboardConfig))
           }
 
           case 'update': {
             const dashboardId = requireParam(id, 'id', 'update')
             const updateConfig = requireParam(config, 'config', 'update')
             // Use raw HTTP to bypass Datadog TS client validation bugs
-            if (credentials) {
-              return toolResult(await updateDashboardRaw(credentials, dashboardId, updateConfig))
-            }
-            return toolResult(await updateDashboard(api, dashboardId, updateConfig))
+            return toolResult(await updateDashboardRaw(credentials, dashboardId, updateConfig))
           }
 
           case 'delete': {

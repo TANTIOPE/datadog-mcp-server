@@ -28,19 +28,18 @@ export function registerAllTools(
   limits: LimitsConfig,
   features: FeaturesConfig,
   site: string = 'datadoghq.com',
-  datadogConfig?: DatadogConfig
+  datadogConfig: DatadogConfig
 ): void {
   const { readOnly, disabledTools } = features
   const enabled = (tool: string) => !disabledTools.includes(tool)
 
-  // Build credentials for raw HTTP calls (bypasses buggy TS client validation)
-  const credentials: DatadogApiCredentials | undefined = datadogConfig
-    ? {
-        apiKey: datadogConfig.apiKey,
-        appKey: datadogConfig.appKey,
-        site: datadogConfig.site ?? 'datadoghq.com'
-      }
-    : undefined
+  // Credentials for raw HTTP calls that bypass buggy TS client validation.
+  // Used by dashboard create/update to work around ObjectSerializer OneOf matching bugs.
+  const credentials: DatadogApiCredentials = {
+    apiKey: datadogConfig.apiKey,
+    appKey: datadogConfig.appKey,
+    site: datadogConfig.site ?? 'datadoghq.com'
+  }
 
   if (enabled('monitors'))
     registerMonitorsTool(server, clients.monitors, clients.eventsV2, limits, readOnly, site)
