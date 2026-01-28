@@ -394,6 +394,202 @@ describe('Dashboards Helper Functions', () => {
     })
   })
 
+  describe('deep nested snake_case conversion', () => {
+    it('should convert widget definition fields deeply', () => {
+      const config = {
+        title: 'Test Dashboard',
+        layout_type: 'ordered',
+        widgets: [
+          {
+            definition: {
+              type: 'query_table',
+              requests: [
+                {
+                  response_format: 'scalar',
+                  queries: [
+                    {
+                      data_source: 'metrics',
+                      name: 'query1',
+                      query: 'avg:system.cpu.user{*}'
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        ]
+      }
+
+      const result = normalizeDashboardConfig(config)
+      const widgets = result.widgets as Array<Record<string, unknown>>
+      const definition = widgets[0].definition as Record<string, unknown>
+      const requests = definition.requests as Array<Record<string, unknown>>
+      const queries = requests[0].queries as Array<Record<string, unknown>>
+
+      expect(result.layoutType).toBe('ordered')
+      expect(definition.type).toBe('query_table') // value unchanged
+      expect(requests[0].responseFormat).toBe('scalar')
+      expect(queries[0].dataSource).toBe('metrics')
+      expect(queries[0].name).toBe('query1')
+    })
+
+    it('should convert formulas and display_type in widget requests', () => {
+      const config = {
+        title: 'Test Dashboard',
+        layoutType: 'ordered',
+        widgets: [
+          {
+            definition: {
+              type: 'timeseries',
+              requests: [
+                {
+                  display_type: 'line',
+                  on_right_yaxis: false,
+                  formulas: [{ formula: 'query1', alias: 'CPU Usage' }],
+                  queries: [
+                    {
+                      data_source: 'metrics',
+                      name: 'query1',
+                      query: 'avg:system.load.1{*}'
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        ]
+      }
+
+      const result = normalizeDashboardConfig(config)
+      const widgets = result.widgets as Array<Record<string, unknown>>
+      const definition = widgets[0].definition as Record<string, unknown>
+      const requests = definition.requests as Array<Record<string, unknown>>
+
+      expect(requests[0].displayType).toBe('line')
+      expect(requests[0].onRightYaxis).toBe(false)
+      expect(requests[0]).not.toHaveProperty('display_type')
+      expect(requests[0]).not.toHaveProperty('on_right_yaxis')
+    })
+
+    it('should handle deeply nested conditional_formats', () => {
+      const config = {
+        title: 'Test Dashboard',
+        layoutType: 'ordered',
+        widgets: [
+          {
+            definition: {
+              type: 'query_value',
+              requests: [
+                {
+                  conditional_formats: [
+                    {
+                      comparator: '>',
+                      value: 90,
+                      palette: 'white_on_red',
+                      custom_bg_color: '#ff0000'
+                    }
+                  ],
+                  queries: [{ data_source: 'metrics', query: 'avg:cpu{*}', name: 'q1' }]
+                }
+              ]
+            }
+          }
+        ]
+      }
+
+      const result = normalizeDashboardConfig(config)
+      const widgets = result.widgets as Array<Record<string, unknown>>
+      const definition = widgets[0].definition as Record<string, unknown>
+      const requests = definition.requests as Array<Record<string, unknown>>
+      const conditionalFormats = requests[0].conditionalFormats as Array<Record<string, unknown>>
+
+      expect(conditionalFormats[0].customBgColor).toBe('#ff0000')
+      expect(conditionalFormats[0]).not.toHaveProperty('custom_bg_color')
+    })
+
+    it('should preserve string values containing underscores', () => {
+      const config = {
+        title: 'Test Dashboard',
+        layoutType: 'ordered',
+        widgets: [
+          {
+            definition: {
+              type: 'timeseries',
+              requests: [
+                {
+                  queries: [
+                    {
+                      data_source: 'metrics',
+                      query: 'avg:system.cpu.user{env:prod_east}', // underscore in value
+                      name: 'my_query_name' // underscore in value
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        ]
+      }
+
+      const result = normalizeDashboardConfig(config)
+      const widgets = result.widgets as Array<Record<string, unknown>>
+      const definition = widgets[0].definition as Record<string, unknown>
+      const requests = definition.requests as Array<Record<string, unknown>>
+      const queries = requests[0].queries as Array<Record<string, unknown>>
+
+      // Values should be unchanged
+      expect(queries[0].query).toBe('avg:system.cpu.user{env:prod_east}')
+      expect(queries[0].name).toBe('my_query_name')
+      // Keys should be converted
+      expect(queries[0].dataSource).toBe('metrics')
+    })
+
+    it('should handle mixed nesting with template_variables and widgets', () => {
+      const config = {
+        title: 'Test Dashboard',
+        layout_type: 'ordered',
+        template_variables: [
+          {
+            name: 'env',
+            prefix: 'environment',
+            default: 'production',
+            available_values: ['production', 'staging']
+          }
+        ],
+        widgets: [
+          {
+            definition: {
+              type: 'timeseries',
+              requests: [
+                { queries: [{ data_source: 'metrics', query: 'avg:cpu{$env}', name: 'q1' }] }
+              ]
+            }
+          }
+        ]
+      }
+
+      const result = normalizeDashboardConfig(config)
+      const templateVars = result.templateVariables as Array<Record<string, unknown>>
+      const widgets = result.widgets as Array<Record<string, unknown>>
+      const definition = widgets[0].definition as Record<string, unknown>
+      const requests = definition.requests as Array<Record<string, unknown>>
+      const queries = requests[0].queries as Array<Record<string, unknown>>
+
+      // Top-level conversion
+      expect(result.layoutType).toBe('ordered')
+      expect(result.templateVariables).toBeDefined()
+      expect(result).not.toHaveProperty('layout_type')
+      expect(result).not.toHaveProperty('template_variables')
+
+      // Template variable nested conversion
+      expect(templateVars[0]._default).toBe('production')
+      expect(templateVars[0].availableValues).toEqual(['production', 'staging'])
+
+      // Widget nested conversion
+      expect(queries[0].dataSource).toBe('metrics')
+    })
+  })
+
   describe('tag validation', () => {
     it('should accept tags with any key:value format', () => {
       const config = {
