@@ -95,60 +95,65 @@ export async function getDashboard(api: v1.DashboardsApi, id: string) {
   }
 }
 
-// Common snake_case to camelCase field mappings for Datadog Dashboard API
-const SNAKE_TO_CAMEL_FIELDS: Record<string, string> = {
-  layout_type: 'layoutType',
-  template_variables: 'templateVariables',
-  notify_list: 'notifyList',
-  reflow_type: 'reflowType',
-  is_read_only: 'isReadOnly',
-  restricted_roles: 'restrictedRoles'
+// Convert snake_case to camelCase, preserving underscore-prefixed fields like _default
+// Handles alphanumeric characters after underscores (e.g., query_1 → query1)
+function snakeToCamel(str: string): string {
+  if (str.startsWith('_')) return str
+  return str.replace(/_([a-zA-Z0-9])/g, (_, c) => c.toUpperCase())
 }
 
-// Template variable field mappings (handles reserved keywords and snake_case)
-const TEMPLATE_VAR_FIELD_MAPPINGS: Record<string, string> = {
-  default: '_default', // 'default' is a JS reserved keyword
-  available_values: 'availableValues'
-}
+// Maximum nesting depth to prevent stack overflow from circular refs or malformed input
+const MAX_NESTING_DEPTH = 20
 
-// Normalize a single template variable object
-function normalizeTemplateVariable(tv: Record<string, unknown>): Record<string, unknown> {
-  const normalized = { ...tv }
+// Deep recursive snake_case to camelCase conversion for entire config tree
+// This handles all nested widget definitions, queries, formulas, etc.
+// When both camelCase and snake_case versions exist, camelCase takes precedence
+function deepConvertSnakeToCamel(obj: unknown, depth: number = 0): unknown {
+  // Prevent stack overflow from circular references or extremely deep nesting
+  if (depth > MAX_NESTING_DEPTH) return obj
 
-  for (const [oldKey, newKey] of Object.entries(TEMPLATE_VAR_FIELD_MAPPINGS)) {
-    if (oldKey in normalized) {
-      if (!(newKey in normalized)) {
-        normalized[newKey] = normalized[oldKey]
-      }
-      delete normalized[oldKey]
-    }
+  if (Array.isArray(obj)) {
+    return obj.map((item) => deepConvertSnakeToCamel(item, depth + 1))
   }
+  if (obj !== null && typeof obj === 'object') {
+    const input = obj as Record<string, unknown>
+    const result: Record<string, unknown> = {}
 
-  return normalized
+    // First pass: identify keys that are already in camelCase (no conversion needed)
+    // These take precedence over snake_case versions
+    const originalCamelKeys = new Set<string>()
+    for (const key of Object.keys(input)) {
+      const converted = snakeToCamel(key)
+      // If key equals its conversion, it's already camelCase (not snake_case)
+      // Note: 'default' is NOT considered camelCase - it always converts to _default
+      if (key === converted && key !== 'default') {
+        originalCamelKeys.add(key)
+      }
+    }
+
+    // Second pass: process all keys
+    for (const [key, value] of Object.entries(input)) {
+      // 'default' is JS reserved keyword - Datadog TS client uses '_default' for this field
+      // This applies universally because the TS client always expects '_default'
+      const newKey = key === 'default' ? '_default' : snakeToCamel(key)
+
+      // Skip snake_case key if camelCase version exists in original input
+      // e.g., skip layout_type if layoutType already exists (camelCase wins silently)
+      if (key !== newKey && key !== 'default' && originalCamelKeys.has(newKey)) {
+        continue
+      }
+
+      result[newKey] = deepConvertSnakeToCamel(value, depth + 1)
+    }
+
+    return result
+  }
+  return obj
 }
 
 export function normalizeDashboardConfig(config: Record<string, unknown>): Record<string, unknown> {
-  const normalized = { ...config }
-
-  // Convert snake_case fields to camelCase (always remove snake_case version)
-  for (const [snakeCase, camelCase] of Object.entries(SNAKE_TO_CAMEL_FIELDS)) {
-    if (snakeCase in normalized) {
-      if (!(camelCase in normalized)) {
-        normalized[camelCase] = normalized[snakeCase]
-      }
-      delete normalized[snakeCase]
-    }
-  }
-
-  // Normalize template variables (handle nested field conversions)
-  if (Array.isArray(normalized.templateVariables)) {
-    normalized.templateVariables = normalized.templateVariables.map((tv: unknown) => {
-      if (tv && typeof tv === 'object' && !Array.isArray(tv)) {
-        return normalizeTemplateVariable(tv as Record<string, unknown>)
-      }
-      return tv
-    })
-  }
+  // Deep convert all snake_case keys to camelCase throughout the entire config tree
+  const normalized = deepConvertSnakeToCamel(config) as Record<string, unknown>
 
   // Validate required field
   if (!normalized.layoutType) {
