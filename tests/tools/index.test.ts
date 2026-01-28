@@ -24,6 +24,7 @@ vi.mock('../../src/tools/teams.js', () => ({ registerTeamsTool: vi.fn() }))
 vi.mock('../../src/tools/tags.js', () => ({ registerTagsTool: vi.fn() }))
 vi.mock('../../src/tools/usage.js', () => ({ registerUsageTool: vi.fn() }))
 vi.mock('../../src/tools/auth.js', () => ({ registerAuthTool: vi.fn() }))
+vi.mock('../../src/tools/schema.js', () => ({ registerSchemaTool: vi.fn() }))
 
 import { registerMonitorsTool } from '../../src/tools/monitors.js'
 import { registerDashboardsTool } from '../../src/tools/dashboards.js'
@@ -44,6 +45,7 @@ import { registerTeamsTool } from '../../src/tools/teams.js'
 import { registerTagsTool } from '../../src/tools/tags.js'
 import { registerUsageTool } from '../../src/tools/usage.js'
 import { registerAuthTool } from '../../src/tools/auth.js'
+import { registerSchemaTool } from '../../src/tools/schema.js'
 
 import type { DatadogConfig } from '../../src/config/schema.js'
 
@@ -202,6 +204,7 @@ describe('Tool Registration', () => {
     expect(registerTagsTool).toHaveBeenCalledWith(mockServer, mockClients.tags, mockLimits, false)
     expect(registerUsageTool).toHaveBeenCalledWith(mockServer, mockClients.usage, mockLimits)
     expect(registerAuthTool).toHaveBeenCalledWith(mockServer, mockClients)
+    expect(registerSchemaTool).toHaveBeenCalledWith(mockServer)
   })
 
   it('should not register disabled tools', () => {
@@ -328,6 +331,7 @@ describe('Tool Registration', () => {
     expect(registerDashboardsTool).toHaveBeenCalled()
     expect(registerLogsTool).toHaveBeenCalled()
     expect(registerAuthTool).toHaveBeenCalled()
+    expect(registerSchemaTool).toHaveBeenCalled()
   })
 
   it('should handle disabling all tools', () => {
@@ -350,7 +354,8 @@ describe('Tool Registration', () => {
       'teams',
       'tags',
       'usage',
-      'auth'
+      'auth',
+      'schema'
     ]
 
     registerAllTools(
@@ -382,5 +387,6 @@ describe('Tool Registration', () => {
     expect(registerTagsTool).not.toHaveBeenCalled()
     expect(registerUsageTool).not.toHaveBeenCalled()
     expect(registerAuthTool).not.toHaveBeenCalled()
+    expect(registerSchemaTool).not.toHaveBeenCalled()
   })
 })

@@ -20,7 +20,8 @@ export const ALL_TOOLS = [
   'teams',
   'tags',
   'usage',
-  'auth'
+  'auth',
+  'schema'
 ] as const
 
 export type ToolName = (typeof ALL_TOOLS)[number]

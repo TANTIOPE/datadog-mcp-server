@@ -21,6 +21,7 @@ import { registerTeamsTool } from './teams.js'
 import { registerTagsTool } from './tags.js'
 import { registerUsageTool } from './usage.js'
 import { registerAuthTool } from './auth.js'
+import { registerSchemaTool } from './schema.js'
 
 export function registerAllTools(
   server: McpServer,
@@ -73,4 +74,5 @@ export function registerAllTools(
   if (enabled('tags')) registerTagsTool(server, clients.tags, limits, readOnly)
   if (enabled('usage')) registerUsageTool(server, clients.usage, limits)
   if (enabled('auth')) registerAuthTool(server, clients)
+  if (enabled('schema')) registerSchemaTool(server)
 }
