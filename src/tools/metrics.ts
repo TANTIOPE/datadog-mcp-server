@@ -173,10 +173,21 @@ export function registerMetricsTool(
 - metadata: Get metric details (unit, type, description)
 
 APM METRICS (auto-generated from traces):
-- trace.{service}.hits - Request count
-- trace.{service}.errors - Error count
-- trace.{service}.duration - Latency (use avg:, p95:, max:)
-Example: max:trace.{service}.request.duration{*}`,
+Keyed by OPERATION name (e.g. express.request, pg.query), NOT service name.
+Filter by service using tags: {service:my-service}
+
+PERCENTILES (p50/p75/p90/p95/p99) — use the ROOT metric (distribution type):
+  p95:trace.express.request{service:my-service}
+
+AVG/SUM/MIN/MAX — use the .duration SUFFIX (pre-aggregated gauge):
+  avg:trace.express.request.duration{service:my-service}
+
+Other trace metrics (gauges):
+- trace.<operation>.hits - Request count
+- trace.<operation>.errors - Error count
+- trace.<operation>.apdex - Apdex score
+
+To discover operation names for a service, use: traces tool with action "services"`,
     InputSchema,
     async ({ action, query, from, to, metric, limit, pointLimit }) => {
       try {

@@ -461,7 +461,8 @@ Note: Enrichment adds latency (fetches monitor list). Use for detailed investiga
 1. **Find errors in logs**: `logs({ action: "search", status: "error", sample: "diverse" })`
 2. **Extract trace_id** from log attributes (`dd.trace_id`)
 3. **Get full trace**: `traces({ action: "search", query: "trace_id:<id>" })`
-4. **Query APM metrics**: `metrics({ action: "query", query: "avg:trace.<service>.request.duration{*}" })`
+4. **Query APM metrics** (avg): `metrics({ action: "query", query: "avg:trace.express.request.duration{service:my-service}" })`
+5. **Query APM latency percentiles** (p95): `metrics({ action: "query", query: "p95:trace.express.request{service:my-service}" })` — note: use root metric without `.duration` suffix for percentiles
 
 ## Deep Links
 

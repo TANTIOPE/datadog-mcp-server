@@ -545,7 +545,7 @@ export function registerTracesTool(
   server.tool(
     'traces',
     `Analyze APM traces for request flow and latency debugging. Actions: search (find spans), aggregate (group stats), services (list APM services). Key filters: minDuration/maxDuration ("500ms", "2s"), httpStatus ("5xx", ">=400"), status (ok/error), errorMessage (grep).
-APM METRICS: Traces auto-generate metrics in trace.{service}.* namespace. Use metrics tool to query: avg:trace.{service}.request.duration{*}`,
+APM METRICS: Traces auto-generate metrics in trace.<operation>.* namespace (e.g. trace.express.request). Use metrics tool to query: avg:trace.express.request.duration{service:my-service}. For percentiles (p95), use the root metric WITHOUT .duration suffix: p95:trace.express.request{service:my-service}`,
     InputSchema,
     async ({
       action,
