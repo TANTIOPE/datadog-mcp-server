@@ -33,10 +33,10 @@ describe('SLOs Tool', () => {
   })
 
   describe('listSlos', () => {
-    it('should list SLOs successfully', async () => {
+    it('should list SLOs with status data via search API', async () => {
       server.use(
-        http.get(endpoints.listSlos, () => {
-          return jsonResponse(fixtures.list)
+        http.get(endpoints.searchSlos, () => {
+          return jsonResponse(fixtures.search)
         })
       )
 
@@ -45,20 +45,44 @@ describe('SLOs Tool', () => {
       expect(result.slos).toHaveLength(2)
       expect(result.slos[0].id).toBe('slo-001')
       expect(result.slos[0].name).toBe('API Availability')
+      expect(result.slos[0].status.sli).toBe(99.95)
+      expect(result.slos[0].status.errorBudgetRemaining).toBe(75.5)
+      expect(result.slos[0].status.state).toBe('ok')
     })
 
-    it('should filter SLOs by tags', async () => {
+    it('should return overall status per timeframe', async () => {
       server.use(
-        http.get(endpoints.listSlos, ({ request }) => {
-          const url = new URL(request.url)
-          const tagsQuery = url.searchParams.get('tags_query')
+        http.get(endpoints.searchSlos, () => {
+          return jsonResponse(fixtures.search)
+        })
+      )
 
-          if (tagsQuery?.includes('service:api')) {
+      const result = await listSlos(api, {}, defaultLimits)
+
+      expect(result.slos[1].overallStatus).toHaveLength(1)
+      expect(result.slos[1].overallStatus[0].sli).toBe(98.2)
+      expect(result.slos[1].overallStatus[0].errorBudgetRemaining).toBe(-26.0)
+      expect(result.slos[1].overallStatus[0].state).toBe('breached')
+      expect(result.slos[1].overallStatus[0].target).toBe(99.5)
+      expect(result.slos[1].overallStatus[0].timeframe).toBe('7d')
+    })
+
+    it('should filter SLOs by tags via search query', async () => {
+      server.use(
+        http.get(endpoints.searchSlos, ({ request }) => {
+          const url = new URL(request.url)
+          const query = url.searchParams.get('query')
+
+          if (query?.includes('service:api')) {
             return jsonResponse({
-              data: [fixtures.list.data[0]]
+              data: {
+                attributes: {
+                  slos: [fixtures.search.data.attributes.slos[0]]
+                }
+              }
             })
           }
-          return jsonResponse(fixtures.list)
+          return jsonResponse(fixtures.search)
         })
       )
 
@@ -67,18 +91,22 @@ describe('SLOs Tool', () => {
       expect(result.slos).toHaveLength(1)
     })
 
-    it('should filter SLOs by query', async () => {
+    it('should filter SLOs by query via search API', async () => {
       server.use(
-        http.get(endpoints.listSlos, ({ request }) => {
+        http.get(endpoints.searchSlos, ({ request }) => {
           const url = new URL(request.url)
           const query = url.searchParams.get('query')
 
           if (query === 'Availability') {
             return jsonResponse({
-              data: [fixtures.list.data[0]]
+              data: {
+                attributes: {
+                  slos: [fixtures.search.data.attributes.slos[0]]
+                }
+              }
             })
           }
-          return jsonResponse(fixtures.list)
+          return jsonResponse(fixtures.search)
         })
       )
 
@@ -87,9 +115,24 @@ describe('SLOs Tool', () => {
       expect(result.slos).toHaveLength(1)
     })
 
-    it('should handle 401 unauthorized error', async () => {
+    it('should fall back to listSLOs when filtering by IDs', async () => {
       server.use(
         http.get(endpoints.listSlos, () => {
+          return jsonResponse(fixtures.list)
+        })
+      )
+
+      const result = await listSlos(api, { ids: ['slo-001'] }, defaultLimits)
+
+      expect(result.slos).toHaveLength(2)
+      expect(result.slos[0].id).toBe('slo-001')
+      // Status is null when using listSLOs fallback (no status in that API response)
+      expect(result.slos[0].status.sli).toBeNull()
+    })
+
+    it('should handle 401 unauthorized error', async () => {
+      server.use(
+        http.get(endpoints.searchSlos, () => {
           return errorResponse(401, 'Invalid API key')
         })
       )
@@ -101,7 +144,7 @@ describe('SLOs Tool', () => {
 
     it('should handle 403 forbidden error', async () => {
       server.use(
-        http.get(endpoints.listSlos, () => {
+        http.get(endpoints.searchSlos, () => {
           return errorResponse(403, 'Insufficient permissions')
         })
       )
@@ -113,7 +156,7 @@ describe('SLOs Tool', () => {
 
     it('should handle 429 rate limit error', async () => {
       server.use(
-        http.get(endpoints.listSlos, () => {
+        http.get(endpoints.searchSlos, () => {
           return errorResponse(429, 'Rate limit exceeded')
         })
       )

@@ -76,6 +76,7 @@ export const endpoints = {
 
   // P2 Tools - SLOs
   listSlos: `${DD_API_V1}/slo`,
+  searchSlos: `${DD_API_V1}/slo/search`,
   getSlo: (id: string) => `${DD_API_V1}/slo/${id}`,
   createSlo: `${DD_API_V1}/slo`,
   updateSlo: (id: string) => `${DD_API_V1}/slo/${id}`,

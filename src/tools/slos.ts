@@ -1,6 +1,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
 import { v1 } from '@datadog/datadog-api-client'
+import type { SearchServiceLevelObjective } from '@datadog/datadog-api-client/dist/packages/datadog-api-client-v1/models/SearchServiceLevelObjective.js'
 import { handleDatadogError, requireParam, checkReadOnly } from '../errors/datadog.js'
 import { toolResult } from '../utils/format.js'
 import { parseTime, ensureValidTimeRange } from '../utils/time.js'
@@ -26,6 +27,14 @@ const InputSchema = {
   to: z.string().optional().describe('End time for history (ISO 8601 or relative, default: now)')
 }
 
+interface SloStatusByTimeframe {
+  sli: number | null
+  errorBudgetRemaining: number | null
+  state: string
+  target: number | null
+  timeframe: string
+}
+
 interface SloSummary {
   id: string
   name: string
@@ -40,6 +49,7 @@ interface SloSummary {
     errorBudgetRemaining: number | null
     state: string
   }
+  overallStatus: SloStatusByTimeframe[]
   createdAt: string
   modifiedAt: string
 }
@@ -56,14 +66,53 @@ export function formatSlo(s: v1.ServiceLevelObjective | v1.SLOResponseData): Slo
     timeframe: String(primaryThreshold?.timeframe ?? ''),
     tags: s.tags ?? [],
     status: {
-      // Note: SLI status requires a separate API call to getSLOHistory
       sli: null,
       errorBudgetRemaining: null,
       state: 'unknown'
     },
+    overallStatus: [],
     createdAt: s.createdAt ? new Date(s.createdAt * 1000).toISOString() : '',
     modifiedAt: s.modifiedAt ? new Date(s.modifiedAt * 1000).toISOString() : ''
   }
+}
+
+export function formatSearchSlo(slo: SearchServiceLevelObjective): SloSummary {
+  const attrs = slo.data?.attributes
+  const primaryThreshold = attrs?.thresholds?.[0]
+  return {
+    id: slo.data?.id ?? '',
+    name: attrs?.name ?? '',
+    description: attrs?.description ?? null,
+    type: String(attrs?.sloType ?? 'unknown'),
+    targetThreshold: primaryThreshold?.target ?? 0,
+    warningThreshold: primaryThreshold?.warning ?? null,
+    timeframe: String(primaryThreshold?.timeframe ?? ''),
+    tags: attrs?.allTags ?? [],
+    status: {
+      sli: attrs?.status?.sli ?? null,
+      errorBudgetRemaining: attrs?.status?.errorBudgetRemaining ?? null,
+      state: String(attrs?.status?.state ?? 'unknown')
+    },
+    overallStatus: (attrs?.overallStatus ?? []).map((os) => ({
+      sli: os.status ?? null,
+      errorBudgetRemaining: os.errorBudgetRemaining ?? null,
+      state: String(os.state ?? 'unknown'),
+      target: os.target ?? null,
+      timeframe: String(os.timeframe ?? '')
+    })),
+    createdAt: attrs?.createdAt ? new Date(attrs.createdAt * 1000).toISOString() : '',
+    modifiedAt: attrs?.modifiedAt ? new Date(attrs.modifiedAt * 1000).toISOString() : ''
+  }
+}
+
+/**
+ * Build a search query string from query and tags parameters.
+ */
+function buildSearchQuery(query?: string, tags?: string[]): string {
+  const parts: string[] = []
+  if (query) parts.push(query)
+  if (tags?.length) parts.push(...tags)
+  return parts.join(' ')
 }
 
 export async function listSlos(
@@ -73,18 +122,30 @@ export async function listSlos(
 ) {
   const effectiveLimit = params.limit ?? limits.defaultLimit
 
-  const response = await api.listSLOs({
-    ids: params.ids?.join(','),
-    query: params.query,
-    tagsQuery: params.tags?.join(','),
-    limit: effectiveLimit
+  // When filtering by specific IDs, use listSLOs (searchSLO doesn't support ID filtering)
+  if (params.ids?.length) {
+    const response = await api.listSLOs({
+      ids: params.ids.join(','),
+      limit: effectiveLimit
+    })
+
+    const slos = (response.data ?? []).map(formatSlo)
+    return { slos, total: slos.length }
+  }
+
+  // Use searchSLO for the default list — returns populated status data
+  const searchQuery = buildSearchQuery(params.query, params.tags)
+  const response = await api.searchSLO({
+    query: searchQuery || undefined,
+    pageSize: effectiveLimit
   })
 
-  const slos = (response.data ?? []).map(formatSlo)
+  const searchSlos = response.data?.attributes?.slos ?? []
+  const slos = searchSlos.map(formatSearchSlo)
 
   return {
     slos,
-    total: response.data?.length ?? 0
+    total: slos.length
   }
 }
 
@@ -215,7 +276,7 @@ export function registerSlosTool(
 ): void {
   server.tool(
     'slos',
-    'Manage Datadog Service Level Objectives. Actions: list, get, create, update, delete, history. SLO types: metric-based, monitor-based. Use for: reliability tracking, error budgets, SLA compliance, performance targets.',
+    'Manage Datadog Service Level Objectives. Actions: list (with SLI status & error budget), get, create, update, delete, history. SLO types: metric-based, monitor-based. Use for: reliability tracking, error budgets, SLA compliance, performance targets.',
     InputSchema,
     async ({ action, id, ids, query, tags, limit, config, from, to }) => {
       try {
