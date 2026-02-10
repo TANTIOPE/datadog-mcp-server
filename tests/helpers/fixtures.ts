@@ -581,6 +581,72 @@ export const slos = {
       }
     ]
   },
+  search: {
+    data: {
+      attributes: {
+        slos: [
+          {
+            data: {
+              id: 'slo-001',
+              type: 'slo',
+              attributes: {
+                name: 'API Availability',
+                description: '99.9% availability for production API',
+                slo_type: 'metric',
+                all_tags: ['service:api', 'env:production'],
+                thresholds: [{ target: 99.9, warning: 99.95, timeframe: '30d' }],
+                status: {
+                  sli: 99.95,
+                  error_budget_remaining: 75.5,
+                  state: 'ok'
+                },
+                overall_status: [
+                  {
+                    status: 99.95,
+                    error_budget_remaining: 75.5,
+                    state: 'ok',
+                    target: 99.9,
+                    timeframe: '30d'
+                  }
+                ],
+                created_at: 1704067200,
+                modified_at: 1705276800
+              }
+            }
+          },
+          {
+            data: {
+              id: 'slo-002',
+              type: 'slo',
+              attributes: {
+                name: 'Payment Processing Latency',
+                description: 'P99 latency under 500ms',
+                slo_type: 'monitor',
+                all_tags: ['service:payments', 'env:production'],
+                thresholds: [{ target: 99.5, timeframe: '7d' }],
+                status: {
+                  sli: 98.2,
+                  error_budget_remaining: -26.0,
+                  state: 'breached'
+                },
+                overall_status: [
+                  {
+                    status: 98.2,
+                    error_budget_remaining: -26.0,
+                    state: 'breached',
+                    target: 99.5,
+                    timeframe: '7d'
+                  }
+                ],
+                created_at: 1704153600,
+                modified_at: 1705363200
+              }
+            }
+          }
+        ]
+      }
+    }
+  },
   single: {
     data: {
       id: 'slo-001',

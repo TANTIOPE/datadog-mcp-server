@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest'
-import { normalizeSloConfig, snakeToCamel, normalizeConfigKeys } from '../../src/tools/slos.js'
+import {
+  normalizeSloConfig,
+  snakeToCamel,
+  normalizeConfigKeys,
+  formatSearchSlo,
+  formatSlo
+} from '../../src/tools/slos.js'
 
 describe('snakeToCamel', () => {
   it('should convert snake_case to camelCase', () => {
@@ -208,5 +214,104 @@ describe('normalizeSloConfig', () => {
 
     expect(result).toHaveProperty('tags')
     expect(result.tags).toEqual(['env:prod', 'team:platform'])
+  })
+})
+
+describe('formatSearchSlo', () => {
+  it('should extract status data from search response', () => {
+    const searchSlo = {
+      data: {
+        id: 'slo-001',
+        attributes: {
+          name: 'API Availability',
+          description: '99.9% availability',
+          sloType: 'metric',
+          allTags: ['service:api'],
+          thresholds: [{ target: 99.9, warning: 99.95, timeframe: '30d' }],
+          status: {
+            sli: 99.95,
+            errorBudgetRemaining: 75.5,
+            state: 'ok'
+          },
+          overallStatus: [
+            {
+              status: 99.95,
+              errorBudgetRemaining: 75.5,
+              state: 'ok',
+              target: 99.9,
+              timeframe: '30d'
+            }
+          ],
+          createdAt: 1704067200,
+          modifiedAt: 1705276800
+        }
+      }
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const result = formatSearchSlo(searchSlo as any)
+
+    expect(result.id).toBe('slo-001')
+    expect(result.name).toBe('API Availability')
+    expect(result.status.sli).toBe(99.95)
+    expect(result.status.errorBudgetRemaining).toBe(75.5)
+    expect(result.status.state).toBe('ok')
+    expect(result.overallStatus).toHaveLength(1)
+    expect(result.overallStatus[0].sli).toBe(99.95)
+    expect(result.overallStatus[0].target).toBe(99.9)
+    expect(result.overallStatus[0].timeframe).toBe('30d')
+  })
+
+  it('should handle missing status gracefully', () => {
+    const searchSlo = {
+      data: {
+        id: 'slo-002',
+        attributes: {
+          name: 'No Status SLO',
+          sloType: 'metric',
+          thresholds: [{ target: 99.9, timeframe: '7d' }],
+          createdAt: 1704067200,
+          modifiedAt: 1705276800
+        }
+      }
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const result = formatSearchSlo(searchSlo as any)
+
+    expect(result.status.sli).toBeNull()
+    expect(result.status.errorBudgetRemaining).toBeNull()
+    expect(result.status.state).toBe('unknown')
+    expect(result.overallStatus).toEqual([])
+  })
+
+  it('should handle empty data gracefully', () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const result = formatSearchSlo({} as any)
+
+    expect(result.id).toBe('')
+    expect(result.name).toBe('')
+    expect(result.status.sli).toBeNull()
+    expect(result.overallStatus).toEqual([])
+  })
+})
+
+describe('formatSlo', () => {
+  it('should include empty overallStatus array', () => {
+    const slo = {
+      id: 'slo-001',
+      name: 'Test SLO',
+      type: 'metric',
+      thresholds: [{ target: 99.9, timeframe: '30d' }],
+      tags: ['env:prod'],
+      createdAt: 1704067200,
+      modifiedAt: 1705276800
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const result = formatSlo(slo as any)
+
+    expect(result.overallStatus).toEqual([])
+    expect(result.status.sli).toBeNull()
   })
 })
