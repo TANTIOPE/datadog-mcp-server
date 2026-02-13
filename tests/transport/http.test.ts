@@ -159,6 +159,29 @@ describe('HTTP Transport', () => {
       expect(mockServer.connect).toHaveBeenCalled()
     })
 
+    it('should return 500 and clean up transport if server creation fails', async () => {
+      const failingFactory = vi.fn().mockImplementation(() => {
+        throw new Error('Factory failure')
+      }) as unknown as ServerFactory
+
+      const app = createExpressApp(failingFactory, config)
+
+      const response = await request(app)
+        .post('/mcp')
+        .send({
+          jsonrpc: '2.0',
+          method: 'initialize',
+          params: {
+            protocolVersion: '2024-11-05',
+            clientInfo: { name: 'test-client', version: '1.0.0' }
+          },
+          id: 1
+        })
+
+      expect(response.status).toBe(500)
+      expect(failingFactory).toHaveBeenCalledTimes(1)
+    })
+
     it('should create separate server instances for concurrent sessions', async () => {
       const servers = [
         { connect: vi.fn().mockResolvedValue(undefined) },

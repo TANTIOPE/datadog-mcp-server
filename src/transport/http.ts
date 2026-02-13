@@ -57,8 +57,15 @@ export function createExpressApp(
         }
       }
 
-      const server = createServer()
-      await server.connect(transport)
+      try {
+        const server = createServer()
+        await server.connect(transport)
+      } catch (error) {
+        if (transport.sessionId) {
+          delete transports[transport.sessionId]
+        }
+        throw error
+      }
     } else {
       res.status(400).json({
         jsonrpc: '2.0',
