@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { createServer } from '../src/server.js'
+import { createServer, createServerFactory } from '../src/server.js'
 import type { Config } from '../src/config/index.js'
 
 // Mock the dependencies
@@ -163,6 +163,65 @@ describe('Server', () => {
         'datadoghq.eu',
         config.datadog
       )
+    })
+  })
+
+  describe('createServerFactory', () => {
+    it('should return a function', () => {
+      const factory = createServerFactory(config)
+
+      expect(typeof factory).toBe('function')
+    })
+
+    it('should create Datadog clients once on factory creation', async () => {
+      const { createDatadogClients } = await import('../src/config/datadog.js')
+      vi.mocked(createDatadogClients).mockClear()
+
+      const factory = createServerFactory(config)
+
+      expect(createDatadogClients).toHaveBeenCalledTimes(1)
+      expect(createDatadogClients).toHaveBeenCalledWith(config.datadog)
+
+      // Additional calls to the factory should NOT create new clients
+      factory()
+      factory()
+
+      expect(createDatadogClients).toHaveBeenCalledTimes(1)
+    })
+
+    it('should produce distinct server instances per call', () => {
+      const factory = createServerFactory(config)
+
+      const server1 = factory()
+      const server2 = factory()
+
+      expect(server1).not.toBe(server2)
+    })
+
+    it('should register tools on each produced server', async () => {
+      const { registerAllTools } = await import('../src/tools/index.js')
+      vi.mocked(registerAllTools).mockClear()
+
+      const factory = createServerFactory(config)
+      factory()
+      factory()
+
+      expect(registerAllTools).toHaveBeenCalledTimes(2)
+    })
+
+    it('should share the same clients across server instances', async () => {
+      const { registerAllTools } = await import('../src/tools/index.js')
+      vi.mocked(registerAllTools).mockClear()
+
+      const factory = createServerFactory(config)
+      factory()
+      factory()
+
+      // Both calls should receive the same clients reference
+      const firstClients = vi.mocked(registerAllTools).mock.calls[0][1]
+      const secondClients = vi.mocked(registerAllTools).mock.calls[1][1]
+
+      expect(firstClients).toBe(secondClients)
     })
   })
 })

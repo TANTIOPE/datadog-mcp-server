@@ -1,14 +1,15 @@
 import { loadConfig } from './config/index.js'
-import { createServer } from './server.js'
+import { createServer, createServerFactory } from './server.js'
 import { connectStdio, connectHttp } from './transport/index.js'
 
 try {
   const config = loadConfig()
-  const server = createServer(config)
 
   if (config.server.transport === 'http') {
-    await connectHttp(server, config.server)
+    const factory = createServerFactory(config)
+    await connectHttp(factory, config.server)
   } else {
+    const server = createServer(config)
     await connectStdio(server)
   }
 } catch (error) {

@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import request from 'supertest'
 import { createExpressApp } from '../../src/transport/http.js'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
+import type { ServerFactory } from '../../src/server.js'
 import type { ServerConfig } from '../../src/config/schema.js'
 
 // Type for mock transport instance
@@ -51,12 +52,15 @@ vi.mock('@modelcontextprotocol/sdk/server/streamableHttp.js', () => ({
 
 describe('HTTP Transport', () => {
   let mockServer: McpServer
+  let createMockServer: ServerFactory
   let config: ServerConfig
 
   beforeEach(() => {
     mockServer = {
       connect: vi.fn().mockResolvedValue(undefined)
     } as unknown as McpServer
+
+    createMockServer = vi.fn().mockReturnValue(mockServer)
 
     config = {
       name: 'test-server',
@@ -74,7 +78,7 @@ describe('HTTP Transport', () => {
 
   describe('Health Check', () => {
     it('should respond to health check endpoint', async () => {
-      const app = createExpressApp(mockServer, config)
+      const app = createExpressApp(createMockServer, config)
 
       const response = await request(app).get('/health')
 
@@ -87,7 +91,7 @@ describe('HTTP Transport', () => {
     })
 
     it('should not include x-powered-by header', async () => {
-      const app = createExpressApp(mockServer, config)
+      const app = createExpressApp(createMockServer, config)
 
       const response = await request(app).get('/health')
 
@@ -97,7 +101,7 @@ describe('HTTP Transport', () => {
 
   describe('Session Management', () => {
     it('should reject POST without session ID and non-initialize request', async () => {
-      const app = createExpressApp(mockServer, config)
+      const app = createExpressApp(createMockServer, config)
 
       const response = await request(app)
         .post('/mcp')
@@ -112,7 +116,7 @@ describe('HTTP Transport', () => {
     })
 
     it('should handle GET with invalid session', async () => {
-      const app = createExpressApp(mockServer, config)
+      const app = createExpressApp(createMockServer, config)
 
       const response = await request(app).get('/mcp').set('mcp-session-id', 'nonexistent-session')
 
@@ -121,7 +125,7 @@ describe('HTTP Transport', () => {
     })
 
     it('should handle DELETE with invalid session', async () => {
-      const app = createExpressApp(mockServer, config)
+      const app = createExpressApp(createMockServer, config)
 
       const response = await request(app)
         .delete('/mcp')
@@ -133,10 +137,10 @@ describe('HTTP Transport', () => {
   })
 
   describe('Initialization', () => {
-    it('should accept initialize request without session ID', async () => {
-      const app = createExpressApp(mockServer, config)
+    it('should create a new server instance per session', async () => {
+      const app = createExpressApp(createMockServer, config)
 
-      const response = await request(app)
+      await request(app)
         .post('/mcp')
         .send({
           jsonrpc: '2.0',
@@ -151,14 +155,79 @@ describe('HTTP Transport', () => {
       // Wait for session initialization
       await new Promise((resolve) => setTimeout(resolve, 10))
 
-      expect(response.status).toBe(200)
+      expect(createMockServer).toHaveBeenCalledTimes(1)
       expect(mockServer.connect).toHaveBeenCalled()
+    })
+
+    it('should return 500 and clean up transport if server creation fails', async () => {
+      const failingFactory = vi.fn().mockImplementation(() => {
+        throw new Error('Factory failure')
+      }) as unknown as ServerFactory
+
+      const app = createExpressApp(failingFactory, config)
+
+      const response = await request(app)
+        .post('/mcp')
+        .send({
+          jsonrpc: '2.0',
+          method: 'initialize',
+          params: {
+            protocolVersion: '2024-11-05',
+            clientInfo: { name: 'test-client', version: '1.0.0' }
+          },
+          id: 1
+        })
+
+      expect(response.status).toBe(500)
+      expect(failingFactory).toHaveBeenCalledTimes(1)
+    })
+
+    it('should create separate server instances for concurrent sessions', async () => {
+      const servers = [
+        { connect: vi.fn().mockResolvedValue(undefined) },
+        { connect: vi.fn().mockResolvedValue(undefined) }
+      ] as unknown as McpServer[]
+
+      let callCount = 0
+      const factory = vi.fn(() => servers[callCount++]) as unknown as ServerFactory
+
+      const app = createExpressApp(factory, config)
+
+      // Two concurrent initialize requests
+      await Promise.all([
+        request(app)
+          .post('/mcp')
+          .send({
+            jsonrpc: '2.0',
+            method: 'initialize',
+            params: {
+              protocolVersion: '2024-11-05',
+              clientInfo: { name: 'client-1', version: '1.0.0' }
+            },
+            id: 1
+          }),
+        request(app)
+          .post('/mcp')
+          .send({
+            jsonrpc: '2.0',
+            method: 'initialize',
+            params: {
+              protocolVersion: '2024-11-05',
+              clientInfo: { name: 'client-2', version: '1.0.0' }
+            },
+            id: 2
+          })
+      ])
+
+      expect(factory).toHaveBeenCalledTimes(2)
+      expect(servers[0].connect).toHaveBeenCalledTimes(1)
+      expect(servers[1].connect).toHaveBeenCalledTimes(1)
     })
   })
 
   describe('Express Middleware', () => {
     it('should parse JSON body', async () => {
-      const app = createExpressApp(mockServer, config)
+      const app = createExpressApp(createMockServer, config)
 
       // Test that JSON parsing works by sending an initialize request
       const response = await request(app)
@@ -175,7 +244,7 @@ describe('HTTP Transport', () => {
     })
 
     it('should handle malformed JSON', async () => {
-      const app = createExpressApp(mockServer, config)
+      const app = createExpressApp(createMockServer, config)
 
       const response = await request(app)
         .post('/mcp')

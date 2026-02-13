@@ -1,25 +1,31 @@
 /**
  * HTTP/StreamableHTTP transport for MCP server
  * Allows running the server over HTTP with configurable port
+ *
+ * Creates a new McpServer per session to avoid the single-transport
+ * limitation of Protocol.connect() — concurrent sessions each get
+ * their own server instance with isolated transport routing.
  */
 import express, { Request, Response } from 'express'
 import { randomUUID } from 'node:crypto'
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
 import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js'
+import type { ServerFactory } from '../server.js'
 import type { ServerConfig } from '../config/schema.js'
-
-// Store active transports by session ID
-const transports: Record<string, StreamableHTTPServerTransport> = {}
 
 /**
  * Creates and configures an Express app for MCP server
  * Exported for testing purposes
  */
-export function createExpressApp(server: McpServer, config: ServerConfig): express.Application {
+export function createExpressApp(
+  createServer: ServerFactory,
+  config: ServerConfig
+): express.Application {
   const app = express()
   app.disable('x-powered-by')
   app.use(express.json())
+
+  const transports: Record<string, StreamableHTTPServerTransport> = {}
 
   // Health check endpoint
   app.get('/health', (_req: Request, res: Response) => {
@@ -35,7 +41,7 @@ export function createExpressApp(server: McpServer, config: ServerConfig): expre
       // Reuse existing session
       transport = transports[sessionId]
     } else if (!sessionId && isInitializeRequest(req.body)) {
-      // New session initialization
+      // New session — create dedicated server instance
       transport = new StreamableHTTPServerTransport({
         sessionIdGenerator: () => randomUUID(),
         onsessioninitialized: (id) => {
@@ -51,7 +57,15 @@ export function createExpressApp(server: McpServer, config: ServerConfig): expre
         }
       }
 
-      await server.connect(transport)
+      try {
+        const server = createServer()
+        await server.connect(transport)
+      } catch (error) {
+        if (transport.sessionId) {
+          delete transports[transport.sessionId]
+        }
+        throw error
+      }
     } else {
       res.status(400).json({
         jsonrpc: '2.0',
@@ -87,8 +101,11 @@ export function createExpressApp(server: McpServer, config: ServerConfig): expre
   return app
 }
 
-export async function connectHttp(server: McpServer, config: ServerConfig): Promise<void> {
-  const app = createExpressApp(server, config)
+export async function connectHttp(
+  createServer: ServerFactory,
+  config: ServerConfig
+): Promise<void> {
+  const app = createExpressApp(createServer, config)
 
   // Start server
   app.listen(config.port, config.host, () => {
