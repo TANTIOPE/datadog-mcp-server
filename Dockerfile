@@ -1,5 +1,5 @@
 # Build stage
-FROM node:20-slim@sha256:1b38aaddff63cd0d3a9b5b03863a71fd33ee62047dd2e915f494d96b4b9c18cc AS builder
+FROM node:20-slim@sha256:c6585df72c34172bebd8d36abed961e231d7d3b5cee2e01294c4495e8a03f687 AS builder
 
 WORKDIR /app
 
@@ -17,7 +17,7 @@ COPY src ./src
 RUN npm run build
 
 # Production stage
-FROM node:20-slim@sha256:1b38aaddff63cd0d3a9b5b03863a71fd33ee62047dd2e915f494d96b4b9c18cc AS production
+FROM node:20-slim@sha256:c6585df72c34172bebd8d36abed961e231d7d3b5cee2e01294c4495e8a03f687 AS production
 
 WORKDIR /app
 
