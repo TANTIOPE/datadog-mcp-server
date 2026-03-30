@@ -42,6 +42,10 @@ MCP_DEFAULT_TIME_RANGE=24         # Default time range in hours
 --disable-tools=synthetics,rum,security    # Comma-separated list of tools to disable
 ```
 
+## Hosted deployment
+
+A hosted deployment is available on [Fronteir AI](https://fronteir.ai/mcp/tantiope-datadog-mcp-server).
+
 ## Usage
 
 ### Claude Desktop / VS Code / Cursor
