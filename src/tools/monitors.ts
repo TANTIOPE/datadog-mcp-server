@@ -90,6 +90,30 @@ export function formatMonitor(m: v1.Monitor, site: string = 'datadoghq.com'): Mo
   }
 }
 
+export interface MonitorDetail extends MonitorSummary {
+  options?: v1.MonitorOptions
+  multi?: boolean
+  priority?: number | null
+  restrictedRoles?: string[]
+}
+
+export function formatMonitorDetail(m: v1.Monitor, site: string = 'datadoghq.com'): MonitorDetail {
+  const detail: MonitorDetail = { ...formatMonitor(m, site) }
+  if (m.options != null) {
+    detail.options = m.options
+  }
+  if (m.multi != null) {
+    detail.multi = m.multi
+  }
+  if (m.priority != null) {
+    detail.priority = m.priority
+  }
+  if (m.restrictedRoles != null) {
+    detail.restrictedRoles = m.restrictedRoles
+  }
+  return detail
+}
+
 export async function listMonitors(
   api: v1.MonitorsApi,
   params: { name?: string; tags?: string[]; groupStates?: string[]; limit?: number },
@@ -132,7 +156,7 @@ export async function getMonitor(api: v1.MonitorsApi, id: string, site: string) 
 
   const monitor = await api.getMonitor({ monitorId })
   return {
-    monitor: formatMonitor(monitor, site),
+    monitor: formatMonitorDetail(monitor, site),
     datadog_url: buildMonitorUrl(monitorId, site)
   }
 }
@@ -243,7 +267,7 @@ export async function createMonitor(
   const monitor = await api.createMonitor({ body })
   return {
     success: true,
-    monitor: formatMonitor(monitor, site)
+    monitor: formatMonitorDetail(monitor, site)
   }
 }
 
@@ -258,7 +282,7 @@ export async function updateMonitor(
   const monitor = await api.updateMonitor({ monitorId, body })
   return {
     success: true,
-    monitor: formatMonitor(monitor, site)
+    monitor: formatMonitorDetail(monitor, site)
   }
 }
 
@@ -492,6 +516,7 @@ export function registerMonitorsTool(
     'monitors',
     `Manage Datadog monitors. Actions: list, get, search, create, update, delete, mute, unmute, top.
 Filters: name, tags, groupStates (alert/warn/ok/no data).
+get/create/update return the full options object (notify_no_data, renotify_interval, thresholds, etc.) so callers can safely read-then-patch.
 
 top: Ranked monitors by alert frequency with real monitor names and context breakdown.
   - Returns: {rank, monitor_id, name (with {{template.vars}}), message (template), total_count, by_context}

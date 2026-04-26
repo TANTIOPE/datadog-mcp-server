@@ -173,6 +173,38 @@ describe('Monitors Tool', () => {
     it('should handle invalid monitor ID', async () => {
       await expect(getMonitor(api, 'invalid', defaultSite)).rejects.toThrow('Invalid monitor ID')
     })
+
+    it('exposes options, multi, priority, and restrictedRoles on get response', async () => {
+      server.use(
+        http.get(endpoints.getMonitor(12345), () => {
+          return jsonResponse(fixtures.single)
+        })
+      )
+
+      const result = await getMonitor(api, '12345', defaultSite)
+
+      expect(result.monitor.options).toBeDefined()
+      expect(typeof result.monitor.options).toBe('object')
+      expect(result.monitor.multi).toBe(true)
+      expect(result.monitor.priority).toBe(3)
+      expect(Array.isArray(result.monitor.restrictedRoles)).toBe(true)
+      expect(result.monitor.restrictedRoles?.length).toBeGreaterThan(0)
+    })
+
+    it('preserves nested option fields (renotifyInterval, notifyNoData, includeTags, escalationMessage)', async () => {
+      server.use(
+        http.get(endpoints.getMonitor(12345), () => {
+          return jsonResponse(fixtures.single)
+        })
+      )
+
+      const result = await getMonitor(api, '12345', defaultSite)
+
+      expect(result.monitor.options?.renotifyInterval).toBe(30)
+      expect(result.monitor.options?.notifyNoData).toBe(true)
+      expect(result.monitor.options?.includeTags).toBe(true)
+      expect(result.monitor.options?.escalationMessage).toBe('Escalating to oncall')
+    })
   })
 
   describe('searchMonitors', () => {
@@ -271,6 +303,30 @@ describe('Monitors Tool', () => {
       expect(result.success).toBe(true)
       expect(result.monitor.name).toBe('Updated Monitor Name')
       expect(result.monitor.url).toBe('https://app.datadoghq.com/monitors/12345')
+    })
+
+    it('returns the full options object after update', async () => {
+      server.use(
+        http.put(endpoints.getMonitor(12345), async ({ request }) => {
+          const body = (await request.json()) as Record<string, unknown>
+          return jsonResponse({
+            ...fixtures.single,
+            ...body
+          })
+        })
+      )
+
+      const result = await updateMonitor(api, '12345', {
+        name: 'Updated Monitor Name',
+        type: 'metric alert',
+        query: 'test'
+      })
+
+      expect(result.monitor.options).toBeDefined()
+      expect(result.monitor.options?.renotifyInterval).toBe(30)
+      expect(result.monitor.options?.notifyNoData).toBe(true)
+      expect(result.monitor.options?.includeTags).toBe(true)
+      expect(result.monitor.options?.escalationMessage).toBe('Escalating to oncall')
     })
   })
 

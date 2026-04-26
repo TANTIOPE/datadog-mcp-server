@@ -38,9 +38,17 @@ export const monitors = {
     overall_state: 'Alert',
     created: '2024-01-15T10:00:00.000Z',
     modified: '2024-01-20T15:30:00.000Z',
+    multi: true,
+    priority: 3,
+    restricted_roles: ['role-uuid-1'],
     options: {
       thresholds: { critical: 90, warning: 80 },
-      notify_no_data: true
+      notify_no_data: true,
+      no_data_timeframe: 60,
+      renotify_interval: 30,
+      timeout_h: 24,
+      include_tags: true,
+      escalation_message: 'Escalating to oncall'
     }
   },
   searchResults: {
