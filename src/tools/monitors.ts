@@ -93,7 +93,7 @@ export function formatMonitor(m: v1.Monitor, site: string = 'datadoghq.com'): Mo
 export interface MonitorDetail extends MonitorSummary {
   options?: v1.MonitorOptions
   multi?: boolean
-  priority?: number | null
+  priority?: number
   restrictedRoles?: string[]
 }
 
