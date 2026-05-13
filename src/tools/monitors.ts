@@ -477,12 +477,35 @@ export async function updateMonitor(
   site: string = 'datadoghq.com'
 ) {
   const monitorId = Number.parseInt(id, 10)
-  const body = normalizeMonitorConfig(config, true) as unknown as v1.MonitorUpdateRequest
+  const normalized = normalizeMonitorConfig(config, true)
+
+  // Validate the normalized (camelCase) config against the typed schema before
+  // any HTTP call (design.md "Sequence / control flow" steps 4–7). Partial
+  // configs are accepted because every key on `MonitorConfigSchema` is
+  // `.optional()`; only the supplied keys are forwarded to Datadog. Wrong-type
+  // values surface as `EINVALID_MONITOR_CONFIG:` errors; `.passthrough()`
+  // preserves unknown keys so they still reach Datadog.
+  try {
+    MonitorConfigSchema.parse(normalized)
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      throw new Error(`EINVALID_MONITOR_CONFIG: ${summarizeZodIssue(error)}`)
+    }
+    throw error
+  }
+
+  const warnings = collectUnknownKeyWarnings(normalized)
+
+  const body = normalized as unknown as v1.MonitorUpdateRequest
   const monitor = await api.updateMonitor({ monitorId, body })
-  return {
+  const result: { success: true; monitor: MonitorDetail; warnings?: string[] } = {
     success: true,
     monitor: formatMonitorDetail(monitor, site)
   }
+  if (warnings.length > 0) {
+    result.warnings = warnings
+  }
+  return result
 }
 
 export async function deleteMonitor(api: v1.MonitorsApi, id: string) {
