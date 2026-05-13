@@ -172,6 +172,51 @@ export const KNOWN_OPTIONS_KEYS: ReadonlySet<string> = new Set(
   Object.keys(MonitorOptionsSchema.shape)
 )
 
+/**
+ * Collect human-readable warnings for any keys in `config` (or `config.options`)
+ * that the validated schema does not enumerate. Pure function — operates on the
+ * already-normalized (post-`normalizeMonitorConfig`, camelCase) config so that
+ * documented snake_case aliases do NOT appear as unknown.
+ *
+ * Ordering (Requirement 4.4): top-level unknowns first, then options unknowns;
+ * within each group, the caller's insertion order is preserved so that log
+ * diffing is deterministic.
+ *
+ * Robustness: `config.options` being absent, `null`, a non-object, or an array
+ * is tolerated silently — the nested scan is simply skipped. This mirrors the
+ * normalizer's lenient handling and avoids throwing before schema validation
+ * has a chance to surface a better error.
+ *
+ * @param config Normalized monitor config (output of `normalizeMonitorConfig`).
+ * @returns Stable-ordered warnings; empty array when all keys are recognised.
+ */
+export function collectUnknownKeyWarnings(config: Record<string, unknown>): string[] {
+  const warnings: string[] = []
+
+  for (const key of Object.keys(config)) {
+    if (!KNOWN_TOP_LEVEL_KEYS.has(key) && key !== 'options') {
+      warnings.push(`unknown top-level key '${key}' under config forwarded without validation`)
+    }
+  }
+
+  const options = config.options
+  if (isPlainObject(options)) {
+    for (const key of Object.keys(options)) {
+      if (!KNOWN_OPTIONS_KEYS.has(key)) {
+        warnings.push(
+          `unknown option key '${key}' under config.options forwarded without validation`
+        )
+      }
+    }
+  }
+
+  return warnings
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
 interface MonitorSummary {
   id: number
   name: string

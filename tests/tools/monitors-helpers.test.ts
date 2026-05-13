@@ -3,7 +3,7 @@
  * Focus on normalizeMonitorConfig which is completely untested (lines 146-194)
  */
 import { describe, it, expect } from 'vitest'
-import { normalizeMonitorConfig } from '../../src/tools/monitors.js'
+import { normalizeMonitorConfig, collectUnknownKeyWarnings } from '../../src/tools/monitors.js'
 
 describe('Monitors Helper Functions', () => {
   describe('normalizeMonitorConfig', () => {
@@ -307,6 +307,197 @@ describe('Monitors Helper Functions', () => {
 
       // Other fields preserved
       expect(result.options).toHaveProperty('other_field', 'preserved')
+    })
+  })
+
+  describe('collectUnknownKeyWarnings', () => {
+    it('returns empty array for fully validated input (all known keys)', () => {
+      const config = {
+        name: 'Test',
+        type: 'metric alert',
+        query: 'avg:system.load.1{*} > 2',
+        message: 'Alert!',
+        tags: ['env:prod'],
+        priority: 3,
+        restrictedRoles: ['admin'],
+        multi: true,
+        options: {
+          notifyNoData: true,
+          noDataTimeframe: 60,
+          renotifyInterval: 120,
+          thresholds: { critical: 90 }
+        }
+      }
+
+      expect(collectUnknownKeyWarnings(config)).toEqual([])
+    })
+
+    it('returns empty array for empty config', () => {
+      expect(collectUnknownKeyWarnings({})).toEqual([])
+    })
+
+    it('reports unknown top-level keys with config location', () => {
+      const config = {
+        name: 'Test',
+        fooBar: 'value',
+        bazQux: 42
+      }
+
+      const warnings = collectUnknownKeyWarnings(config)
+
+      expect(warnings).toHaveLength(2)
+      expect(warnings[0]).toContain("'fooBar'")
+      expect(warnings[0]).toContain('config')
+      expect(warnings[0]).not.toContain('config.options')
+      expect(warnings[1]).toContain("'bazQux'")
+      expect(warnings[1]).toContain('config')
+      expect(warnings[1]).not.toContain('config.options')
+    })
+
+    it('reports unknown options keys with config.options location', () => {
+      const config = {
+        name: 'Test',
+        options: {
+          notifyNoData: true,
+          someNewOption: 'value',
+          anotherUnknown: 123
+        }
+      }
+
+      const warnings = collectUnknownKeyWarnings(config)
+
+      expect(warnings).toHaveLength(2)
+      expect(warnings[0]).toContain("'someNewOption'")
+      expect(warnings[0]).toContain('config.options')
+      expect(warnings[1]).toContain("'anotherUnknown'")
+      expect(warnings[1]).toContain('config.options')
+    })
+
+    it('reports both top-level and options unknowns with top-level first', () => {
+      const config = {
+        topLevelUnknown: 'value',
+        name: 'Test',
+        options: {
+          notifyNoData: true,
+          optionsUnknown: 'value'
+        }
+      }
+
+      const warnings = collectUnknownKeyWarnings(config)
+
+      expect(warnings).toHaveLength(2)
+      expect(warnings[0]).toContain("'topLevelUnknown'")
+      expect(warnings[0]).toContain('config')
+      expect(warnings[0]).not.toContain('config.options')
+      expect(warnings[1]).toContain("'optionsUnknown'")
+      expect(warnings[1]).toContain('config.options')
+    })
+
+    it('preserves insertion order of unknown keys within each group', () => {
+      const config = {
+        zebra: 1,
+        name: 'Test',
+        alpha: 2,
+        middle: 3,
+        options: {
+          zulu: 1,
+          notifyNoData: true,
+          alphaOpt: 2,
+          mikeOpt: 3
+        }
+      }
+
+      const warnings = collectUnknownKeyWarnings(config)
+
+      // 3 top-level unknowns (zebra, alpha, middle) + 3 options unknowns
+      // (zulu, alphaOpt, mikeOpt); `name`, `options`, `notifyNoData` are known.
+      expect(warnings).toHaveLength(6)
+      // Top-level unknowns, insertion order
+      expect(warnings[0]).toContain("'zebra'")
+      expect(warnings[1]).toContain("'alpha'")
+      expect(warnings[2]).toContain("'middle'")
+      // Then options unknowns, insertion order
+      expect(warnings[3]).toContain("'zulu'")
+      expect(warnings[4]).toContain("'alphaOpt'")
+      expect(warnings[5]).toContain("'mikeOpt'")
+    })
+
+    it('preserves exact key casing including snake_case (post-normalization residual)', () => {
+      // Snake_case keys that the normalizer did NOT map (because they aren't in
+      // the alias table) appear as unknown. The warning must preserve the
+      // caller's exact spelling so they can grep their source.
+      const config = {
+        name: 'Test',
+        SomeWeirdKey: 'x',
+        options: {
+          notify_no_data_typo: true,
+          ANOTHER_UNUSUAL: 5
+        }
+      }
+
+      const warnings = collectUnknownKeyWarnings(config)
+
+      expect(warnings).toHaveLength(3)
+      expect(warnings[0]).toContain("'SomeWeirdKey'")
+      expect(warnings[1]).toContain("'notify_no_data_typo'")
+      expect(warnings[2]).toContain("'ANOTHER_UNUSUAL'")
+    })
+
+    it('handles config.options absent without throwing', () => {
+      const config = {
+        name: 'Test',
+        type: 'metric alert',
+        query: 'avg:system.load.1{*} > 2'
+      }
+
+      expect(() => collectUnknownKeyWarnings(config)).not.toThrow()
+      expect(collectUnknownKeyWarnings(config)).toEqual([])
+    })
+
+    it('handles config.options === null without throwing', () => {
+      const config = {
+        name: 'Test',
+        options: null
+      }
+
+      expect(() => collectUnknownKeyWarnings(config)).not.toThrow()
+      expect(collectUnknownKeyWarnings(config)).toEqual([])
+    })
+
+    it('handles config.options non-object (string) without throwing', () => {
+      const config = {
+        name: 'Test',
+        options: 'not-an-object'
+      }
+
+      expect(() => collectUnknownKeyWarnings(config)).not.toThrow()
+      // options is a known holder key so it is not flagged as top-level unknown;
+      // and it's not an object so no nested keys to scan.
+      expect(collectUnknownKeyWarnings(config)).toEqual([])
+    })
+
+    it('handles config.options as array (non-plain-object) without throwing', () => {
+      const config = {
+        name: 'Test',
+        options: ['unexpected']
+      }
+
+      expect(() => collectUnknownKeyWarnings(config)).not.toThrow()
+      // Arrays are not plain objects in the schema's sense; treat as no nested keys.
+      expect(collectUnknownKeyWarnings(config)).toEqual([])
+    })
+
+    it('does not flag the `options` key itself as unknown when present', () => {
+      const config = {
+        name: 'Test',
+        options: {
+          notifyNoData: true
+        }
+      }
+
+      const warnings = collectUnknownKeyWarnings(config)
+      expect(warnings).toEqual([])
+      expect(warnings.every((w) => !w.includes("'options'"))).toBe(true)
     })
   })
 })
