@@ -130,6 +130,29 @@ export const MonitorOptionsSchema = z
   })
   .passthrough()
 
+// Validated schema for top-level `config` keys (see design.md Data model).
+// Eight documented top-level keys are enumerated; `options` composes
+// `MonitorOptionsSchema`. `priority` is constrained to integers 1–5 per
+// Datadog's documented priority range (Requirement 2.4); `.nullable()`
+// allows callers to clear it on update. `.passthrough()` preserves unknown
+// top-level keys; `collectUnknownKeyWarnings` (Task 5) emits warnings for
+// those keys.
+export const MonitorConfigSchema = z
+  .object({
+    name: z.string().optional(),
+    type: z.string().optional(),
+    query: z.string().optional(),
+    message: z.string().optional(),
+    tags: z.array(z.string()).optional(),
+    priority: z.number().int().min(1).max(5).nullable().optional(),
+    restrictedRoles: z.array(z.string()).nullable().optional(),
+    multi: z.boolean().optional(),
+    options: MonitorOptionsSchema.optional()
+  })
+  .passthrough()
+
+export type MonitorConfigInput = z.infer<typeof MonitorConfigSchema>
+
 interface MonitorSummary {
   id: number
   name: string
