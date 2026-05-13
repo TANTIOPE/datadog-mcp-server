@@ -61,6 +61,38 @@ const InputSchema = {
     .describe('Maximum events to fetch for top action (default: 5000, max: 5000)')
 }
 
+// Nested schemas for MonitorOptionsSchema (see design.md Data model).
+// Each uses .passthrough() so unknown sub-keys are forwarded to Datadog unchanged.
+// Exported so they can be composed by MonitorOptionsSchema (Task 2) and asserted
+// by unit tests (Task 9) without changing module-local visibility later.
+// Thresholds — values are all documented as numbers in Datadog Monitor API
+export const MonitorThresholdsSchema = z
+  .object({
+    critical: z.number().optional(),
+    warning: z.number().optional(),
+    ok: z.number().optional(),
+    criticalRecovery: z.number().optional(),
+    warningRecovery: z.number().optional(),
+    unknown: z.number().optional()
+  })
+  .passthrough()
+
+// Threshold windows for anomaly / forecast monitors
+export const MonitorThresholdWindowsSchema = z
+  .object({
+    triggerWindow: z.string().optional(),
+    recoveryWindow: z.string().optional()
+  })
+  .passthrough()
+
+// Scheduling options (e.g., evaluation_window for SLO-driven monitors)
+export const SchedulingOptionsSchema = z
+  .object({
+    evaluationWindow: z.record(z.unknown()).optional(),
+    customSchedule: z.record(z.unknown()).optional()
+  })
+  .passthrough()
+
 interface MonitorSummary {
   id: number
   name: string
