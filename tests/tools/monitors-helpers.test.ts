@@ -3,7 +3,12 @@
  * Focus on normalizeMonitorConfig which is completely untested (lines 146-194)
  */
 import { describe, it, expect } from 'vitest'
-import { normalizeMonitorConfig, collectUnknownKeyWarnings } from '../../src/tools/monitors.js'
+import {
+  normalizeMonitorConfig,
+  collectUnknownKeyWarnings,
+  MonitorConfigSchema,
+  MonitorOptionsSchema
+} from '../../src/tools/monitors.js'
 
 describe('Monitors Helper Functions', () => {
   describe('normalizeMonitorConfig', () => {
@@ -499,5 +504,259 @@ describe('Monitors Helper Functions', () => {
       expect(warnings).toEqual([])
       expect(warnings.every((w) => !w.includes("'options'"))).toBe(true)
     })
+  })
+})
+
+// Schema validation tests (Task 9) — exercises MonitorOptionsSchema and
+// MonitorConfigSchema (defined in src/tools/monitors.ts). Covers:
+//   - one accept-case per validated `options.*` key (Requirement 1.1)
+//   - wrong-type rejection for `notifyNoData`, `renotifyInterval`, `tags`
+//     (Requirement 1.2 + 2.1)
+//   - `priority` out-of-range rejection (Requirement 2.4)
+//   - top-level config empty / options-only acceptance (Requirement 2.3,
+//     design Testing strategy → Unit tests)
+
+describe('MonitorOptionsSchema — accept-cases per validated key', () => {
+  // Each entry is [keyName, validValue]. Parametrized so adding a new key to
+  // the schema means adding one row here — not a copy-pasted block.
+  const acceptCases: ReadonlyArray<readonly [string, unknown]> = [
+    // Notification
+    ['notifyNoData', true],
+    ['noDataTimeframe', 60],
+    ['notifyAudit', false],
+    ['notificationPresetName', 'show_all'],
+    // Evaluation / delay
+    ['newHostDelay', 300],
+    ['newGroupDelay', 60],
+    ['evaluationDelay', 900],
+    ['requireFullWindow', true],
+    ['onMissingData', 'show_no_data'],
+    // Renotification — `renotifyInterval` is documented nullable; a number is
+    // the common case so we use a number here. Null acceptance is asserted
+    // separately below.
+    ['renotifyInterval', 120],
+    ['renotifyOccurrences', 5],
+    ['renotifyStatuses', ['alert', 'warn']],
+    ['escalationMessage', 'Escalating!'],
+    // Lifecycle
+    ['timeoutH', 24],
+    ['includeTags', true],
+    ['locked', false],
+    ['silenced', { '*': null, 'env:prod': 1700000000 }],
+    ['groupRetentionDuration', '2d'],
+    // Thresholds & scheduling — nested schemas validated by their own helpers
+    ['thresholds', { critical: 90, warning: 75, criticalRecovery: 80 }],
+    ['thresholdWindows', { triggerWindow: 'last_5m', recoveryWindow: 'last_5m' }],
+    ['schedulingOptions', { evaluationWindow: { dayStarts: '04:00' } }]
+  ]
+
+  it.each(acceptCases)('accepts validated options key %s with valid value', (key, value) => {
+    const result = MonitorOptionsSchema.safeParse({ [key]: value })
+    expect(result.success).toBe(true)
+    if (result.success) {
+      expect(result.data).toHaveProperty(key)
+    }
+  })
+
+  it('accepts renotifyInterval set to null (documented nullable)', () => {
+    const result = MonitorOptionsSchema.safeParse({ renotifyInterval: null })
+    expect(result.success).toBe(true)
+  })
+
+  it('accepts timeoutH set to null (documented nullable)', () => {
+    const result = MonitorOptionsSchema.safeParse({ timeoutH: null })
+    expect(result.success).toBe(true)
+  })
+
+  it('accepts an empty options object (all keys optional)', () => {
+    const result = MonitorOptionsSchema.safeParse({})
+    expect(result.success).toBe(true)
+  })
+
+  it('preserves unknown options keys via passthrough (Requirement 3)', () => {
+    const result = MonitorOptionsSchema.safeParse({
+      notifyNoData: true,
+      futureDatadogOption: 'value'
+    })
+    expect(result.success).toBe(true)
+    if (result.success) {
+      expect(result.data).toHaveProperty('futureDatadogOption', 'value')
+    }
+  })
+})
+
+describe('MonitorOptionsSchema — reject-cases for wrong primitive types', () => {
+  it('rejects notifyNoData when given a non-boolean (string)', () => {
+    const result = MonitorOptionsSchema.safeParse({ notifyNoData: 'yes' })
+    expect(result.success).toBe(false)
+    if (!result.success) {
+      const issue = result.error.issues[0]
+      expect(issue?.path).toEqual(['notifyNoData'])
+      expect(issue?.code).toBe('invalid_type')
+    }
+  })
+
+  it('rejects renotifyInterval when given a non-number (string)', () => {
+    const result = MonitorOptionsSchema.safeParse({ renotifyInterval: '120' })
+    expect(result.success).toBe(false)
+    if (!result.success) {
+      const issue = result.error.issues[0]
+      expect(issue?.path).toEqual(['renotifyInterval'])
+      expect(issue?.code).toBe('invalid_type')
+    }
+  })
+
+  it('rejects renotifyStatuses when given a non-array (string)', () => {
+    const result = MonitorOptionsSchema.safeParse({ renotifyStatuses: 'alert' })
+    expect(result.success).toBe(false)
+    if (!result.success) {
+      const issue = result.error.issues[0]
+      expect(issue?.path).toEqual(['renotifyStatuses'])
+      expect(issue?.code).toBe('invalid_type')
+    }
+  })
+
+  it('rejects evaluationDelay when given a boolean', () => {
+    const result = MonitorOptionsSchema.safeParse({ evaluationDelay: true })
+    expect(result.success).toBe(false)
+  })
+
+  it('rejects escalationMessage when given a number', () => {
+    const result = MonitorOptionsSchema.safeParse({ escalationMessage: 42 })
+    expect(result.success).toBe(false)
+  })
+
+  it('rejects thresholds.critical when given a string', () => {
+    const result = MonitorOptionsSchema.safeParse({
+      thresholds: { critical: '90' }
+    })
+    expect(result.success).toBe(false)
+    if (!result.success) {
+      const issue = result.error.issues[0]
+      expect(issue?.path).toEqual(['thresholds', 'critical'])
+    }
+  })
+})
+
+describe('MonitorConfigSchema — top-level acceptance', () => {
+  it('accepts an empty config object (all keys optional, supports partial update)', () => {
+    const result = MonitorConfigSchema.safeParse({})
+    expect(result.success).toBe(true)
+  })
+
+  it('accepts a config object with only `options` set (partial update payload)', () => {
+    const result = MonitorConfigSchema.safeParse({ options: {} })
+    expect(result.success).toBe(true)
+  })
+
+  it('accepts a config object with options containing only renotifyInterval', () => {
+    const result = MonitorConfigSchema.safeParse({
+      options: { renotifyInterval: 120 }
+    })
+    expect(result.success).toBe(true)
+  })
+
+  it('accepts a fully-populated valid config object', () => {
+    const result = MonitorConfigSchema.safeParse({
+      name: 'Test Monitor',
+      type: 'metric alert',
+      query: 'avg:system.load.1{*} > 2',
+      message: 'Alert!',
+      tags: ['env:prod', 'team:platform'],
+      priority: 3,
+      restrictedRoles: ['admin'],
+      multi: true,
+      options: {
+        notifyNoData: true,
+        noDataTimeframe: 60,
+        thresholds: { critical: 90 }
+      }
+    })
+    expect(result.success).toBe(true)
+  })
+
+  it('accepts an unknown top-level key via passthrough (Requirement 3.2)', () => {
+    const result = MonitorConfigSchema.safeParse({
+      name: 'Test',
+      futureDatadogField: 'value'
+    })
+    expect(result.success).toBe(true)
+    if (result.success) {
+      expect(result.data).toHaveProperty('futureDatadogField', 'value')
+    }
+  })
+
+  it('accepts priority set to null (clearing on update)', () => {
+    const result = MonitorConfigSchema.safeParse({ priority: null })
+    expect(result.success).toBe(true)
+  })
+
+  it.each([1, 2, 3, 4, 5])('accepts priority %i (in 1-5 range)', (priority) => {
+    const result = MonitorConfigSchema.safeParse({ priority })
+    expect(result.success).toBe(true)
+  })
+})
+
+describe('MonitorConfigSchema — top-level rejection', () => {
+  it('rejects priority: 7 (out of 1-5 range)', () => {
+    const result = MonitorConfigSchema.safeParse({ priority: 7 })
+    expect(result.success).toBe(false)
+    if (!result.success) {
+      const issue = result.error.issues[0]
+      expect(issue?.path).toEqual(['priority'])
+    }
+  })
+
+  it('rejects priority: 0 (below 1-5 range)', () => {
+    const result = MonitorConfigSchema.safeParse({ priority: 0 })
+    expect(result.success).toBe(false)
+    if (!result.success) {
+      expect(result.error.issues[0]?.path).toEqual(['priority'])
+    }
+  })
+
+  it('rejects priority: 2.5 (non-integer)', () => {
+    const result = MonitorConfigSchema.safeParse({ priority: 2.5 })
+    expect(result.success).toBe(false)
+    if (!result.success) {
+      expect(result.error.issues[0]?.path).toEqual(['priority'])
+    }
+  })
+
+  it('rejects tags when given a non-array (string)', () => {
+    const result = MonitorConfigSchema.safeParse({ tags: 'env:prod' })
+    expect(result.success).toBe(false)
+    if (!result.success) {
+      const issue = result.error.issues[0]
+      expect(issue?.path).toEqual(['tags'])
+      expect(issue?.code).toBe('invalid_type')
+    }
+  })
+
+  it('rejects name when given a non-string (number)', () => {
+    const result = MonitorConfigSchema.safeParse({ name: 42 })
+    expect(result.success).toBe(false)
+    if (!result.success) {
+      expect(result.error.issues[0]?.path).toEqual(['name'])
+    }
+  })
+
+  it('rejects multi when given a non-boolean (string)', () => {
+    const result = MonitorConfigSchema.safeParse({ multi: 'true' })
+    expect(result.success).toBe(false)
+    if (!result.success) {
+      expect(result.error.issues[0]?.path).toEqual(['multi'])
+    }
+  })
+
+  it('propagates nested options validation errors (notifyNoData wrong type)', () => {
+    const result = MonitorConfigSchema.safeParse({
+      name: 'Test',
+      options: { notifyNoData: 'yes' }
+    })
+    expect(result.success).toBe(false)
+    if (!result.success) {
+      expect(result.error.issues[0]?.path).toEqual(['options', 'notifyNoData'])
+    }
   })
 })
