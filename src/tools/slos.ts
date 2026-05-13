@@ -35,6 +35,11 @@ interface SloStatusByTimeframe {
   timeframe: string
 }
 
+export interface SloQueryProjection {
+  numerator: string
+  denominator: string
+}
+
 interface SloSummary {
   id: string
   name: string
@@ -52,11 +57,19 @@ interface SloSummary {
   overallStatus: SloStatusByTimeframe[]
   createdAt: string
   modifiedAt: string
+  // SLO definition fields needed to round-trip update calls (see issue #55).
+  // Datadog PUT /api/v1/slo/{id} requires `query` for metric SLOs and
+  // `monitor_ids` for monitor SLOs; stripping them here forced callers to
+  // re-supply the same query they could not retrieve from get.
+  query?: SloQueryProjection
+  monitorIds?: number[]
+  monitorTags?: string[]
+  groups?: string[]
 }
 
 export function formatSlo(s: v1.ServiceLevelObjective | v1.SLOResponseData): SloSummary {
   const primaryThreshold = s.thresholds?.[0]
-  return {
+  const summary: SloSummary = {
     id: s.id ?? '',
     name: s.name ?? '',
     description: s.description ?? null,
@@ -74,12 +87,27 @@ export function formatSlo(s: v1.ServiceLevelObjective | v1.SLOResponseData): Slo
     createdAt: s.createdAt ? new Date(s.createdAt * 1000).toISOString() : '',
     modifiedAt: s.modifiedAt ? new Date(s.modifiedAt * 1000).toISOString() : ''
   }
+
+  if (s.query?.numerator && s.query.denominator) {
+    summary.query = { numerator: s.query.numerator, denominator: s.query.denominator }
+  }
+  if (Array.isArray(s.monitorIds) && s.monitorIds.length > 0) {
+    summary.monitorIds = s.monitorIds
+  }
+  if (Array.isArray(s.monitorTags) && s.monitorTags.length > 0) {
+    summary.monitorTags = s.monitorTags
+  }
+  if (Array.isArray(s.groups) && s.groups.length > 0) {
+    summary.groups = s.groups
+  }
+
+  return summary
 }
 
 export function formatSearchSlo(slo: SearchServiceLevelObjective): SloSummary {
   const attrs = slo.data?.attributes
   const primaryThreshold = attrs?.thresholds?.[0]
-  return {
+  const summary: SloSummary = {
     id: slo.data?.id ?? '',
     name: attrs?.name ?? '',
     description: attrs?.description ?? null,
@@ -103,6 +131,19 @@ export function formatSearchSlo(slo: SearchServiceLevelObjective): SloSummary {
     createdAt: attrs?.createdAt ? new Date(attrs.createdAt * 1000).toISOString() : '',
     modifiedAt: attrs?.modifiedAt ? new Date(attrs.modifiedAt * 1000).toISOString() : ''
   }
+
+  // Round-trip parity with formatSlo (issue #55) — search response omits monitorTags.
+  if (attrs?.query?.numerator && attrs.query.denominator) {
+    summary.query = { numerator: attrs.query.numerator, denominator: attrs.query.denominator }
+  }
+  if (Array.isArray(attrs?.monitorIds) && attrs.monitorIds.length > 0) {
+    summary.monitorIds = attrs.monitorIds
+  }
+  if (Array.isArray(attrs?.groups) && attrs.groups.length > 0) {
+    summary.groups = attrs.groups
+  }
+
+  return summary
 }
 
 /**
