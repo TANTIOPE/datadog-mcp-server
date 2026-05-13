@@ -738,7 +738,21 @@ export function registerMonitorsTool(
     'monitors',
     `Manage Datadog monitors. Actions: list, get, search, create, update, delete, mute, unmute, top.
 Filters: name, tags, groupStates (alert/warn/ok/no data).
-get/create/update return the full options object (notify_no_data, renotify_interval, thresholds, etc.) so callers can safely read-then-patch.
+get/create/update return the full options object so callers can safely read-then-patch.
+
+create/update accept a config object validated against a typed schema covering the documented Datadog Monitor fields:
+  - Top-level: name, type, query, message, tags, priority (1-5, nullable), restrictedRoles, multi, options.
+  - options.* validated keys grouped by category:
+    - notification:    notifyNoData, noDataTimeframe, notifyAudit, notificationPresetName.
+    - evaluation/delay: newHostDelay, newGroupDelay, evaluationDelay, requireFullWindow, onMissingData.
+    - renotification:  renotifyInterval (nullable), renotifyOccurrences, renotifyStatuses, escalationMessage.
+    - lifecycle:       timeoutH (nullable), includeTags, locked, silenced (record of timestamps/null), groupRetentionDuration.
+    - thresholds:      thresholds (critical/warning/ok/criticalRecovery/warningRecovery/unknown), thresholdWindows.
+    - scheduling:      schedulingOptions.
+Unknown keys (top-level or under options) are forwarded to Datadog as-is and surfaced via an optional warnings array on the response, so the schema does not lag the API.
+snake_case aliases are accepted on input and normalized to camelCase before validation.
+Validation errors short-circuit before any HTTP call and surface as 'EINVALID_MONITOR_CONFIG: <path>: <expected>'.
+Reference: https://docs.datadoghq.com/api/latest/monitors/
 
 top: Ranked monitors by alert frequency with real monitor names and context breakdown.
   - Returns: {rank, monitor_id, name (with {{template.vars}}), message (template), total_count, by_context}
