@@ -93,6 +93,43 @@ export const SchedulingOptionsSchema = z
   })
   .passthrough()
 
+// Validated schema for `config.options.*` keys (see design.md Data model).
+// Each documented Datadog Monitor options key is typed; nullable keys
+// (`renotifyInterval`, `timeoutH`, `silenced` values) follow Datadog docs.
+// `.passthrough()` preserves unknown keys so callers can use newly-shipped
+// Datadog options before this schema enumerates them; `collectUnknownKeyWarnings`
+// (Task 5) emits warnings for those keys.
+export const MonitorOptionsSchema = z
+  .object({
+    // Notification
+    notifyNoData: z.boolean().optional(),
+    noDataTimeframe: z.number().optional(),
+    notifyAudit: z.boolean().optional(),
+    notificationPresetName: z.string().optional(),
+    // Evaluation / delay
+    newHostDelay: z.number().optional(),
+    newGroupDelay: z.number().optional(),
+    evaluationDelay: z.number().optional(),
+    requireFullWindow: z.boolean().optional(),
+    onMissingData: z.string().optional(),
+    // Renotification
+    renotifyInterval: z.number().nullable().optional(),
+    renotifyOccurrences: z.number().optional(),
+    renotifyStatuses: z.array(z.string()).optional(),
+    escalationMessage: z.string().optional(),
+    // Lifecycle
+    timeoutH: z.number().nullable().optional(),
+    includeTags: z.boolean().optional(),
+    locked: z.boolean().optional(),
+    silenced: z.record(z.number().nullable()).optional(),
+    groupRetentionDuration: z.string().optional(),
+    // Thresholds & scheduling
+    thresholds: MonitorThresholdsSchema.optional(),
+    thresholdWindows: MonitorThresholdWindowsSchema.optional(),
+    schedulingOptions: SchedulingOptionsSchema.optional()
+  })
+  .passthrough()
+
 interface MonitorSummary {
   id: number
   name: string
