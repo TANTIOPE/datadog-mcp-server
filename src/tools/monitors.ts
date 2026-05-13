@@ -217,6 +217,28 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
+/**
+ * Summarize the FIRST issue from a `ZodError` into a single-line string for
+ * the `EINVALID_MONITOR_CONFIG:` error message (design.md "Error handling" →
+ * row 1). Includes the dotted key path and the expected type so callers can
+ * locate and fix the wrong-type value without parsing the full ZodError.
+ */
+function summarizeZodIssue(error: z.ZodError): string {
+  const issue = error.issues[0]
+  if (!issue) {
+    return 'validation failed'
+  }
+  const path = issue.path.length > 0 ? issue.path.join('.') : '<root>'
+  // `z.ZodInvalidTypeIssue` carries an `expected` field; other issue codes
+  // (out-of-range, etc.) do not. Fall back to the issue `message` so callers
+  // still see a useful hint (e.g., "Number must be less than or equal to 5").
+  const expected =
+    issue.code === 'invalid_type' && 'expected' in issue
+      ? `expected ${String(issue.expected)}`
+      : issue.message
+  return `${path}: ${expected}`
+}
+
 interface MonitorSummary {
   id: number
   name: string
@@ -419,12 +441,33 @@ export async function createMonitor(
   config: Record<string, unknown>,
   site: string = 'datadoghq.com'
 ) {
-  const body = normalizeMonitorConfig(config) as unknown as v1.Monitor
+  const normalized = normalizeMonitorConfig(config)
+
+  // Validate the normalized (camelCase) config against the typed schema before
+  // any HTTP call (design.md "Sequence / control flow" steps 4–7). Wrong-type
+  // values surface as `EINVALID_MONITOR_CONFIG:` errors; `.passthrough()`
+  // preserves unknown keys so they still reach Datadog.
+  try {
+    MonitorConfigSchema.parse(normalized)
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      throw new Error(`EINVALID_MONITOR_CONFIG: ${summarizeZodIssue(error)}`)
+    }
+    throw error
+  }
+
+  const warnings = collectUnknownKeyWarnings(normalized)
+
+  const body = normalized as unknown as v1.Monitor
   const monitor = await api.createMonitor({ body })
-  return {
+  const result: { success: true; monitor: MonitorDetail; warnings?: string[] } = {
     success: true,
     monitor: formatMonitorDetail(monitor, site)
   }
+  if (warnings.length > 0) {
+    result.warnings = warnings
+  }
+  return result
 }
 
 export async function updateMonitor(
