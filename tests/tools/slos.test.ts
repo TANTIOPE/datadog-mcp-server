@@ -278,6 +278,28 @@ describe('SLOs Tool', () => {
       expect(result.slo.monitorTags).toBeUndefined()
     })
 
+    it('should include a deep-link url field for the Datadog UI', async () => {
+      server.use(
+        http.get(endpoints.getSlo('slo-001'), () => {
+          return jsonResponse(fixtures.single)
+        })
+      )
+
+      const result = await getSlo(api, 'slo-001')
+      expect(result.slo?.url).toBe('https://app.datadoghq.com/slo/slo-001')
+    })
+
+    it('should respect the configured Datadog site when building urls', async () => {
+      server.use(
+        http.get(endpoints.getSlo('slo-001'), () => {
+          return jsonResponse(fixtures.single)
+        })
+      )
+
+      const result = await getSlo(api, 'slo-001', 'datadoghq.eu')
+      expect(result.slo?.url).toBe('https://app.datadoghq.eu/slo/slo-001')
+    })
+
     it('should handle 404 not found error', async () => {
       server.use(
         http.get(endpoints.getSlo('nonexistent'), () => {
