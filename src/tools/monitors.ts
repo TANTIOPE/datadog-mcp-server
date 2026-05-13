@@ -153,6 +153,25 @@ export const MonitorConfigSchema = z
 
 export type MonitorConfigInput = z.infer<typeof MonitorConfigSchema>
 
+// Known-key sets derived from the schema shapes — single source of truth
+// (see design.md "Risks and trade-offs" → "Deriving KNOWN_*_KEYS from
+// Object.keys(schema.shape) rather than hand-maintaining a parallel list").
+// DO NOT refactor these to hand-maintained literals: drift between the
+// schemas and the warning logic (Task 5) would re-introduce the silent
+// pass-through bug this spec is fixing. Used by `collectUnknownKeyWarnings`
+// to diff caller input against the validated key set.
+// `options` is excluded from KNOWN_TOP_LEVEL_KEYS because it is a known
+// nested holder (validated via MonitorOptionsSchema) — flagging it as an
+// unknown top-level key would emit a spurious warning whenever a caller
+// supplies any nested options.
+export const KNOWN_TOP_LEVEL_KEYS: ReadonlySet<string> = new Set(
+  Object.keys(MonitorConfigSchema.shape).filter((key) => key !== 'options')
+)
+
+export const KNOWN_OPTIONS_KEYS: ReadonlySet<string> = new Set(
+  Object.keys(MonitorOptionsSchema.shape)
+)
+
 interface MonitorSummary {
   id: number
   name: string
