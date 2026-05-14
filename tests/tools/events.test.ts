@@ -7,7 +7,14 @@ import { http } from 'msw'
 import { server, endpoints, jsonResponse, errorResponse } from '../helpers/msw.js'
 import { createMockConfig } from '../helpers/mock.js'
 import { events as fixtures } from '../helpers/fixtures.js'
-import { listEventsV1, getEventV1, createEventV1, searchEventsV2 } from '../../src/tools/events.js'
+import {
+  listEventsV1,
+  getEventV1,
+  createEventV1,
+  searchEventsV2,
+  computeDiagnostics,
+  UNINDEXED_ALERT_TAG_PREFIXES
+} from '../../src/tools/events.js'
 import type { LimitsConfig } from '../../src/config/schema.js'
 
 const defaultLimits: LimitsConfig = {
@@ -211,6 +218,182 @@ describe('Events Tool', () => {
         searchEventsV2(apiV2, { query: '*' }, defaultLimits, defaultSite)
       ).rejects.toMatchObject({
         code: 401
+      })
+    })
+
+    describe('diagnostics on zero-result search', () => {
+      const emptyResponse = { data: [], meta: { page: { after: null } } }
+
+      it('should attach diagnostics field when result is empty', async () => {
+        server.use(http.post(endpoints.searchEvents, () => jsonResponse(emptyResponse)))
+
+        const result = await searchEventsV2(
+          apiV2,
+          {
+            query: 'source:alert monitor_priority:P1',
+            from: '2024-01-20T00:00:00Z',
+            to: '2024-01-20T23:59:59Z'
+          },
+          defaultLimits,
+          defaultSite
+        )
+
+        expect(result.events).toHaveLength(0)
+        expect(result.diagnostics).toBeDefined()
+        expect(Array.isArray(result.diagnostics)).toBe(true)
+      })
+
+      it('should NOT attach diagnostics field when result is non-empty', async () => {
+        server.use(http.post(endpoints.searchEvents, () => jsonResponse(fixtures.searchV2)))
+
+        const result = await searchEventsV2(
+          apiV2,
+          {
+            query: 'source:alert',
+            from: '2024-01-20T00:00:00Z',
+            to: '2024-01-20T23:59:59Z'
+          },
+          defaultLimits,
+          defaultSite
+        )
+
+        expect(result.events.length).toBeGreaterThan(0)
+        expect(Object.prototype.hasOwnProperty.call(result, 'diagnostics')).toBe(false)
+      })
+
+      it('should emit UNINDEXED_TAG_PREFIX when query targets an unindexed alert tag', async () => {
+        server.use(http.post(endpoints.searchEvents, () => jsonResponse(emptyResponse)))
+
+        const result = await searchEventsV2(
+          apiV2,
+          {
+            query: 'source:alert monitor_priority:P1',
+            from: '2024-01-20T00:00:00Z',
+            to: '2024-01-20T23:59:59Z'
+          },
+          defaultLimits,
+          defaultSite
+        )
+
+        const codes = result.diagnostics?.map((d) => d.code) ?? []
+        expect(codes).toContain('UNINDEXED_TAG_PREFIX')
+      })
+
+      it('should emit UNINDEXED_TAG_PREFIX when tags param contains an unindexed prefix', async () => {
+        server.use(http.post(endpoints.searchEvents, () => jsonResponse(emptyResponse)))
+
+        const result = await searchEventsV2(
+          apiV2,
+          {
+            query: 'source:alert',
+            tags: ['notification_preset:critical-pager'],
+            from: '2024-01-20T00:00:00Z',
+            to: '2024-01-20T23:59:59Z'
+          },
+          defaultLimits,
+          defaultSite
+        )
+
+        const codes = result.diagnostics?.map((d) => d.code) ?? []
+        expect(codes).toContain('UNINDEXED_TAG_PREFIX')
+      })
+
+      it('should emit NARROW_TIME_RANGE when range is under 5 minutes', async () => {
+        server.use(http.post(endpoints.searchEvents, () => jsonResponse(emptyResponse)))
+
+        const result = await searchEventsV2(
+          apiV2,
+          {
+            query: 'host:prod-1',
+            from: '2024-01-20T10:00:00Z',
+            to: '2024-01-20T10:02:00Z'
+          },
+          defaultLimits,
+          defaultSite
+        )
+
+        const codes = result.diagnostics?.map((d) => d.code) ?? []
+        expect(codes).toContain('NARROW_TIME_RANGE')
+      })
+
+      it('should emit RESTRICTIVE_SOURCE_FILTER when only source:alert is provided', async () => {
+        server.use(http.post(endpoints.searchEvents, () => jsonResponse(emptyResponse)))
+
+        const result = await searchEventsV2(
+          apiV2,
+          {
+            query: 'source:alert',
+            from: '2024-01-20T00:00:00Z',
+            to: '2024-01-20T23:59:59Z'
+          },
+          defaultLimits,
+          defaultSite
+        )
+
+        const codes = result.diagnostics?.map((d) => d.code) ?? []
+        expect(codes).toContain('RESTRICTIVE_SOURCE_FILTER')
+      })
+
+      it('should NOT emit RESTRICTIVE_SOURCE_FILTER when other filters are present', async () => {
+        server.use(http.post(endpoints.searchEvents, () => jsonResponse(emptyResponse)))
+
+        const result = await searchEventsV2(
+          apiV2,
+          {
+            query: 'source:alert env:prod',
+            tags: ['service:api'],
+            from: '2024-01-20T00:00:00Z',
+            to: '2024-01-20T23:59:59Z'
+          },
+          defaultLimits,
+          defaultSite
+        )
+
+        const codes = result.diagnostics?.map((d) => d.code) ?? []
+        expect(codes).not.toContain('RESTRICTIVE_SOURCE_FILTER')
+      })
+
+      it('should set a remediation hint on each diagnostic', async () => {
+        server.use(http.post(endpoints.searchEvents, () => jsonResponse(emptyResponse)))
+
+        const result = await searchEventsV2(
+          apiV2,
+          {
+            query: 'source:alert monitor_priority:P1',
+            from: '2024-01-20T10:00:00Z',
+            to: '2024-01-20T10:02:00Z'
+          },
+          defaultLimits,
+          defaultSite
+        )
+
+        for (const d of result.diagnostics ?? []) {
+          expect(typeof d.message).toBe('string')
+          expect(d.message.length).toBeGreaterThan(0)
+          expect(typeof d.hint).toBe('string')
+        }
+      })
+
+      it('should run computeDiagnostics in under 5ms on typical input', () => {
+        const input = {
+          query: 'source:alert monitor_priority:P1 env:prod',
+          tags: ['service:api', 'notification_preset:critical'],
+          fromMs: Date.parse('2024-01-20T10:00:00Z'),
+          toMs: Date.parse('2024-01-20T10:02:00Z')
+        }
+
+        const start = performance.now()
+        const diagnostics = computeDiagnostics(input)
+        const elapsed = performance.now() - start
+
+        expect(diagnostics.length).toBeGreaterThan(0)
+        expect(elapsed).toBeLessThan(5)
+      })
+
+      it('should expose the seed list of unindexed alert tag prefixes', () => {
+        expect(UNINDEXED_ALERT_TAG_PREFIXES).toEqual(
+          expect.arrayContaining(['monitor_priority', 'notification_preset'])
+        )
       })
     })
   })

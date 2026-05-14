@@ -82,6 +82,14 @@ const InputSchema = {
     .optional()
     .describe(
       'For history action: filter transitions to a specific multi-alert monitor group (e.g., "pod_name:foo,kube_namespace:bar"). Optional; omit for all groups.'
+    ),
+  dry_run: z
+    .boolean()
+    .optional()
+    .describe(
+      'When create + dry_run=true, validate the monitor body via POST /api/v1/monitor/validate ' +
+        'without creating it. Allowed under --read-only because no monitor is created. ' +
+        'Returns { valid, dryRun, monitor }. 400 responses surface verbatim like a failed create.'
     )
 }
 
@@ -850,6 +858,29 @@ export async function createMonitor(
   return result
 }
 
+/**
+ * Validate a monitor body without creating it (dry-run).
+ * Calls POST /api/v1/monitor/validate. The Datadog SDK exposes this as
+ * `v1.MonitorsApi.validateMonitor({ body })`. A 400 response surfaces verbatim
+ * via `handleDatadogError`, matching the error shape a failed create would yield.
+ *
+ * Read-only safety: this endpoint is non-mutating, so the dispatcher allows
+ * `action: 'create'` with `dry_run: true` even when `--read-only` is set.
+ */
+export async function dryRunMonitor(
+  api: v1.MonitorsApi,
+  config: Record<string, unknown>
+): Promise<{ valid: true; dryRun: true; monitor: Record<string, unknown> }> {
+  const normalized = normalizeMonitorConfig(config)
+  const body = normalized as unknown as v1.Monitor
+  await api.validateMonitor({ body })
+  return {
+    valid: true,
+    dryRun: true,
+    monitor: normalized
+  }
+}
+
 export async function updateMonitor(
   api: v1.MonitorsApi,
   id: string,
@@ -1173,10 +1204,19 @@ transitionType filter (or this action=history) for fires-only counts.`,
       contextTags,
       maxEvents,
       transitionType,
-      group
+      group,
+      dry_run: dryRun
     }) => {
       try {
-        checkReadOnly(action, readOnly)
+        // Dry-run create is a non-mutating validation call against POST
+        // /api/v1/monitor/validate. Skip the write-action read-only gate when
+        // (action === 'create' && dryRun === true); for any other branch the
+        // standard gate applies, so plain `create` (or omitted dry_run) is
+        // still blocked under --read-only.
+        const isDryRunCreate = action === 'create' && dryRun === true
+        if (!isDryRunCreate) {
+          checkReadOnly(action, readOnly)
+        }
         switch (action) {
           case 'list':
             return toolResult(
@@ -1195,6 +1235,9 @@ transitionType filter (or this action=history) for fires-only counts.`,
 
           case 'create': {
             const monitorConfig = requireParam(config, 'config', 'create')
+            if (dryRun) {
+              return toolResult(await dryRunMonitor(api, monitorConfig))
+            }
             return toolResult(await createMonitor(api, monitorConfig, site))
           }
 

@@ -66,6 +66,12 @@ export const monitors = {
       pageCount: 1,
       page: 0
     }
+  },
+  // Validate (dry-run) success — Datadog returns 200 with an empty body
+  validateOk: {},
+  // Validate (dry-run) 400 — Datadog returns the same error shape `create` would
+  validate400: {
+    errors: ['The value provided for parameter "query" is invalid']
   }
 }
 
@@ -185,6 +191,52 @@ export const metrics = {
     unit: 'percent',
     per_unit: null,
     statsd_interval: 10
+  },
+  // Datadog returned series at 3600s granularity when the caller asked for 900s.
+  // Used to assert meta.rollupOverridden=true on metrics.query responses.
+  queryRollupOverridden: {
+    series: [
+      {
+        metric: 'system.cpu.user',
+        display_name: 'CPU User',
+        pointlist: [
+          [1705750800000, 45.5],
+          [1705754400000, 48.2], // +3600000 ms (3600s) from previous
+          [1705758000000, 52.1]
+        ],
+        scope: 'host:prod-server-1',
+        unit: [{ name: 'percent' }]
+      }
+    ],
+    from_date: 1705750800000,
+    to_date: 1705758000000
+  },
+  // Two series returned at different intervals (e.g., split-screen aggregations).
+  queryRollupMixedIntervals: {
+    series: [
+      {
+        metric: 'system.cpu.user',
+        display_name: 'CPU User',
+        pointlist: [
+          [1705750800000, 45.5],
+          [1705754400000, 48.2] // 3600s interval
+        ],
+        scope: 'host:prod-server-1',
+        unit: [{ name: 'percent' }]
+      },
+      {
+        metric: 'system.cpu.user',
+        display_name: 'CPU User',
+        pointlist: [
+          [1705750800000, 41.0],
+          [1705751700000, 42.0] // 900s interval
+        ],
+        scope: 'host:prod-server-2',
+        unit: [{ name: 'percent' }]
+      }
+    ],
+    from_date: 1705750800000,
+    to_date: 1705758000000
   }
 }
 

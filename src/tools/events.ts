@@ -531,6 +531,182 @@ export async function createEventV1(
   }
 }
 
+// ============ Zero-result diagnostics for events.search ============
+
+/**
+ * Diagnostic codes attached to zero-result `events.search` responses.
+ * Mirrored in `src/schema/events.ts` so agents can introspect them.
+ */
+export type EventsDiagnosticCode =
+  | 'UNINDEXED_TAG_PREFIX'
+  | 'NARROW_TIME_RANGE'
+  | 'RESTRICTIVE_SOURCE_FILTER'
+
+export interface EventsDiagnostic {
+  code: EventsDiagnosticCode
+  message: string
+  hint?: string
+}
+
+/**
+ * Seed list of tag prefixes commonly used to filter `source:alert` events that
+ * Datadog does NOT index server-side. Filtering on these will silently return
+ * zero results even when a matching event exists.
+ *
+ * Sources:
+ * - Datadog event search syntax docs:
+ *   https://docs.datadoghq.com/service_management/events/explorer/searching/
+ * - Datadog monitor notification variables (these surface as event attributes
+ *   but are not indexed as tags):
+ *   https://docs.datadoghq.com/monitors/notify/variables/
+ * - Project issue #49 — reported empty result sets when filtering alert events
+ *   by `monitor_priority`, `notification_preset`, and similar monitor-sourced
+ *   attributes.
+ *
+ * Keep this list narrow and conservative; false positives degrade the hint
+ * quality. Update when Datadog publishes new indexing guidance.
+ */
+export const UNINDEXED_ALERT_TAG_PREFIXES: ReadonlyArray<string> = [
+  'monitor_priority',
+  'notification_preset',
+  'monitor_tags',
+  'alert_cycle_key',
+  'monitor_group_key',
+  'notification_method'
+]
+
+/**
+ * Threshold below which a queried time range is flagged as narrow.
+ * 5 minutes — matches the typical minimum alert evaluation window.
+ */
+const NARROW_TIME_RANGE_THRESHOLD_MS = 5 * 60 * 1000
+
+/**
+ * Internal: extract tag prefixes referenced in a Datadog query string and in
+ * a `tags` array. Tag prefixes are the substring before the first colon, e.g.
+ * `monitor_priority:P1` → `monitor_priority`.
+ */
+function extractTagPrefixes(query: string | undefined, tags: string[] | undefined): string[] {
+  const prefixes: string[] = []
+
+  if (query) {
+    // Match bare `<word>:<value>` filters in the query. We deliberately avoid
+    // a complex parser — the heuristic stays at single-token granularity.
+    const re = /(?:^|\s)([a-zA-Z_][a-zA-Z0-9_]*):[^\s)]+/g
+    let match: RegExpExecArray | null
+    while ((match = re.exec(query)) !== null) {
+      if (match[1]) {
+        prefixes.push(match[1])
+      }
+    }
+  }
+
+  if (tags) {
+    for (const tag of tags) {
+      const colonIdx = tag.indexOf(':')
+      if (colonIdx > 0) {
+        prefixes.push(tag.slice(0, colonIdx))
+      }
+    }
+  }
+
+  return prefixes
+}
+
+/**
+ * Internal: count the distinct query terms in a Datadog event query string,
+ * excluding `source:*` filters. Used to detect a "source-only" query.
+ */
+function countNonSourceTerms(query: string | undefined): number {
+  if (!query) return 0
+  const tokens = query.split(/\s+/).filter((t) => t.length > 0 && t !== 'OR' && t !== 'AND')
+  let nonSource = 0
+  for (const token of tokens) {
+    // Strip parentheses introduced by buildEventQuery for grouped source filters.
+    const stripped = token.replace(/[()]/g, '')
+    if (stripped.length === 0) continue
+    if (stripped.startsWith('source:')) continue
+    nonSource++
+  }
+  return nonSource
+}
+
+/**
+ * Compute diagnostic hints for a zero-result `events.search` call.
+ *
+ * The heuristic is intentionally local and conservative:
+ * - O(query length) string scans only — no Datadog API calls.
+ * - Designed to run in under 5ms on typical query input.
+ * - Returns an empty array when the query offers no actionable hint.
+ *
+ * Only invoked when the underlying search returned zero events.
+ */
+export function computeDiagnostics(input: {
+  query?: string
+  tags?: string[]
+  sources?: string[]
+  fromMs?: number
+  toMs?: number
+}): EventsDiagnostic[] {
+  const diagnostics: EventsDiagnostic[] = []
+
+  const query = input.query ?? ''
+  const queryHasSourceAlert =
+    /(^|\s|\()source:alert(\s|\)|$)/.test(query) ||
+    (input.sources?.includes('alert') ?? false) ||
+    (input.tags?.includes('source:alert') ?? false)
+
+  // ----- UNINDEXED_TAG_PREFIX -----
+  // Only emit on alert-source queries — that's where the known-unindexed
+  // attributes apply. Other event sources have different indexing rules and
+  // a false positive would be noisier than helpful.
+  if (queryHasSourceAlert) {
+    const prefixes = extractTagPrefixes(input.query, input.tags)
+    const unindexedHits = prefixes.filter((p) => UNINDEXED_ALERT_TAG_PREFIXES.includes(p))
+    const uniqueHits = Array.from(new Set(unindexedHits))
+    if (uniqueHits.length > 0) {
+      diagnostics.push({
+        code: 'UNINDEXED_TAG_PREFIX',
+        message: `Query filters on tag prefix(es) that Datadog does not index for source:alert events: ${uniqueHits.join(', ')}.`,
+        hint: 'Drop these filters and post-filter the results client-side, or aggregate via monitors/get + monitors.list with matching options.'
+      })
+    }
+  }
+
+  // ----- NARROW_TIME_RANGE -----
+  if (
+    typeof input.fromMs === 'number' &&
+    typeof input.toMs === 'number' &&
+    input.toMs > input.fromMs &&
+    input.toMs - input.fromMs < NARROW_TIME_RANGE_THRESHOLD_MS
+  ) {
+    diagnostics.push({
+      code: 'NARROW_TIME_RANGE',
+      message: 'Time range is shorter than 5 minutes; alert events may not have been indexed yet.',
+      hint: 'Widen the range (e.g. last 1h) or retry after the indexing delay (~30s) has elapsed.'
+    })
+  }
+
+  // ----- RESTRICTIVE_SOURCE_FILTER -----
+  // Emit when the caller filtered on source:alert with no other meaningful
+  // query terms (the typical anti-pattern of "give me all alerts in the last
+  // 24h" returning nothing because no alerts fired).
+  if (queryHasSourceAlert) {
+    const otherTerms = countNonSourceTerms(input.query)
+    const otherTags = (input.tags ?? []).filter((t) => !t.startsWith('source:')).length
+    if (otherTerms === 0 && otherTags === 0) {
+      diagnostics.push({
+        code: 'RESTRICTIVE_SOURCE_FILTER',
+        message:
+          'Only source:alert filter was applied; the matching event set may genuinely be empty.',
+        hint: 'Use events.aggregate or monitors.list to confirm no alerts fired in the window, or broaden sources (e.g. source:monitor, source:audit).'
+      })
+    }
+  }
+
+  return diagnostics
+}
+
 // ============ V2 API Functions (new capabilities) ============
 
 /**
@@ -642,7 +818,7 @@ export async function searchEventsV2(
   const events = (response.data ?? []).map(formatEventV2)
   const nextCursor = response.meta?.page?.after
 
-  return {
+  const baseResult = {
     events,
     meta: {
       count: events.length,
@@ -653,6 +829,21 @@ export async function searchEventsV2(
       datadog_url: buildEventsUrl(fullQuery, validFrom, validTo, site)
     }
   }
+
+  // Requirement 5: attach diagnostics only on zero-result responses.
+  // Skip entirely on the happy path to avoid shape inflation and latency.
+  if (events.length === 0) {
+    const diagnostics = computeDiagnostics({
+      query: params.query,
+      tags: params.tags,
+      sources: params.sources,
+      fromMs: validFrom * 1000,
+      toMs: validTo * 1000
+    })
+    return { ...baseResult, diagnostics }
+  }
+
+  return baseResult
 }
 
 /**

@@ -116,6 +116,22 @@ describe('schema tool', () => {
       expect(result.schema.timeframes).toContain('30d')
       expect(result.schema.timeframes).toContain('90d')
     })
+
+    it('should return events schema with diagnosticCodes', () => {
+      const result = getSchema('events')
+
+      expect(result.resource).toBe('events')
+      expect(result.schema).toHaveProperty('diagnosticCodes')
+      expect(result.schema).toHaveProperty('docsUrl')
+    })
+
+    it('should expose the three zero-result diagnostic codes', () => {
+      const result = getSchema('events')
+
+      expect(result.schema.diagnosticCodes).toContain('UNINDEXED_TAG_PREFIX')
+      expect(result.schema.diagnosticCodes).toContain('NARROW_TIME_RANGE')
+      expect(result.schema.diagnosticCodes).toContain('RESTRICTIVE_SOURCE_FILTER')
+    })
   })
 
   describe('registerSchemaTool', () => {
@@ -183,6 +199,18 @@ describe('schema tool', () => {
 
       expect(result.content[0].text).toContain('slos')
       expect(result.content[0].text).toContain('timeframes')
+    })
+
+    it('should return events schema via registered handler', async () => {
+      registerSchemaTool(mockServer)
+
+      const result = (await registeredHandler({ resource: 'events' })) as {
+        content: { text: string }[]
+      }
+
+      expect(result.content[0].text).toContain('events')
+      expect(result.content[0].text).toContain('diagnosticCodes')
+      expect(result.content[0].text).toContain('UNINDEXED_TAG_PREFIX')
     })
   })
 })

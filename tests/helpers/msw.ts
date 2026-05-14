@@ -34,6 +34,7 @@ export const endpoints = {
   listMonitors: `${DD_API_V1}/monitor`,
   getMonitor: (id: number) => `${DD_API_V1}/monitor/${id}`,
   searchMonitors: `${DD_API_V1}/monitor/search`,
+  validateMonitor: `${DD_API_V1}/monitor/validate`,
 
   // Dashboards
   listDashboards: `${DD_API_V1}/dashboard`,

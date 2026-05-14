@@ -1,8 +1,8 @@
 /**
  * Unit tests for the monitors tool
  */
-import { describe, it, expect, beforeEach } from 'vitest'
-import { v1 } from '@datadog/datadog-api-client'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { v1, v2 } from '@datadog/datadog-api-client'
 import { http } from 'msw'
 import { server, endpoints, jsonResponse, errorResponse } from '../helpers/msw.js'
 import { createMockConfig } from '../helpers/mock.js'
@@ -12,8 +12,10 @@ import {
   getMonitor,
   searchMonitors,
   createMonitor,
+  dryRunMonitor,
   updateMonitor,
-  deleteMonitor
+  deleteMonitor,
+  registerMonitorsTool
 } from '../../src/tools/monitors.js'
 import type { LimitsConfig } from '../../src/config/schema.js'
 
@@ -279,6 +281,266 @@ describe('Monitors Tool', () => {
       await expect(createMonitor(api, validConfig)).rejects.toMatchObject({
         code: 400
       })
+    })
+  })
+
+  describe('dryRunMonitor', () => {
+    it('should call POST /api/v1/monitor/validate and return { valid: true, dryRun: true, monitor }', async () => {
+      const newMonitor = {
+        name: 'Validated Monitor',
+        type: 'metric alert',
+        query: 'avg(last_5m):avg:system.cpu.user{*} > 95',
+        message: 'CPU high'
+      }
+
+      let receivedBody: unknown = null
+      let createCallCount = 0
+      server.use(
+        http.post(endpoints.validateMonitor, async ({ request }) => {
+          receivedBody = await request.json()
+          return jsonResponse(fixtures.validateOk)
+        }),
+        http.post(endpoints.listMonitors, () => {
+          createCallCount++
+          return jsonResponse({ id: 99999 })
+        })
+      )
+
+      const result = await dryRunMonitor(api, newMonitor)
+
+      expect(result.valid).toBe(true)
+      expect(result.dryRun).toBe(true)
+      expect(result.monitor).toMatchObject({
+        name: 'Validated Monitor',
+        type: 'metric alert',
+        query: 'avg(last_5m):avg:system.cpu.user{*} > 95'
+      })
+      // The body sent to validate matches the normalized config
+      expect(receivedBody).toMatchObject({
+        name: 'Validated Monitor',
+        type: 'metric alert',
+        query: 'avg(last_5m):avg:system.cpu.user{*} > 95'
+      })
+      // Confirms validate was called, not create
+      expect(createCallCount).toBe(0)
+    })
+
+    it('should pass through 400 errors from validateMonitor via handleDatadogError', async () => {
+      server.use(
+        http.post(endpoints.validateMonitor, () => {
+          return errorResponse(400, 'The value provided for parameter "query" is invalid')
+        })
+      )
+
+      const invalidConfig = {
+        name: 'Bad Monitor',
+        type: 'metric alert',
+        query: 'this is not a valid query'
+      }
+
+      await expect(dryRunMonitor(api, invalidConfig)).rejects.toMatchObject({
+        code: 400
+      })
+    })
+
+    it('should validate required fields before calling validateMonitor', async () => {
+      // Reuses normalizeMonitorConfig validation — empty body must throw before network
+      let validateCalled = 0
+      server.use(
+        http.post(endpoints.validateMonitor, () => {
+          validateCalled++
+          return jsonResponse(fixtures.validateOk)
+        })
+      )
+
+      await expect(dryRunMonitor(api, {})).rejects.toThrow(/requires at least/)
+      expect(validateCalled).toBe(0)
+    })
+  })
+
+  describe('monitors tool dispatcher — dry_run + read-only', () => {
+    // Helper: capture the registered tool handler so we can invoke it directly.
+    type ToolHandler = (input: Record<string, unknown>) => Promise<unknown>
+    function captureHandler(readOnly: boolean): ToolHandler {
+      let capturedHandler: ToolHandler | null = null
+      const mockServer = {
+        tool: vi.fn(
+          (
+            _name: string,
+            _desc: string,
+            _schema: unknown,
+            handler: (input: Record<string, unknown>) => Promise<unknown>
+          ) => {
+            capturedHandler = handler
+          }
+        )
+      } as unknown as Parameters<typeof registerMonitorsTool>[0]
+
+      const eventsApi = {} as v2.EventsApi
+      registerMonitorsTool(mockServer, api, eventsApi, defaultLimits, readOnly, defaultSite)
+
+      if (!capturedHandler) {
+        throw new Error('Tool handler was not captured during registration')
+      }
+      return capturedHandler
+    }
+
+    it('allows action=create with dry_run=true in read-only mode (routes to validateMonitor)', async () => {
+      let validateCalled = 0
+      let createCalled = 0
+      server.use(
+        http.post(endpoints.validateMonitor, () => {
+          validateCalled++
+          return jsonResponse(fixtures.validateOk)
+        }),
+        http.post(endpoints.listMonitors, () => {
+          createCalled++
+          return jsonResponse({ id: 1 })
+        })
+      )
+
+      const handler = captureHandler(true)
+      const result = (await handler({
+        action: 'create',
+        dry_run: true,
+        config: {
+          name: 'Dry Run Monitor',
+          type: 'metric alert',
+          query: 'avg(last_5m):avg:system.cpu.user{*} > 95'
+        }
+      })) as { content: { type: string; text: string }[] }
+
+      expect(validateCalled).toBe(1)
+      expect(createCalled).toBe(0)
+      const payload = JSON.parse(result.content[0].text) as {
+        valid: boolean
+        dryRun: boolean
+        monitor: Record<string, unknown>
+      }
+      expect(payload.valid).toBe(true)
+      expect(payload.dryRun).toBe(true)
+      expect(payload.monitor.name).toBe('Dry Run Monitor')
+    })
+
+    it('blocks action=create with dry_run=false in read-only mode', async () => {
+      let createCalled = 0
+      server.use(
+        http.post(endpoints.listMonitors, () => {
+          createCalled++
+          return jsonResponse({ id: 1 })
+        })
+      )
+
+      const handler = captureHandler(true)
+      // handleDatadogError throws — the tool catches and rethrows McpError. The handler
+      // re-raises via handleDatadogError which throws an McpError; assert it propagates.
+      await expect(
+        handler({
+          action: 'create',
+          dry_run: false,
+          config: {
+            name: 'Blocked Monitor',
+            type: 'metric alert',
+            query: 'avg(last_5m):avg:system.cpu.user{*} > 1'
+          }
+        })
+      ).rejects.toThrow(/read-only mode/)
+      expect(createCalled).toBe(0)
+    })
+
+    it('blocks action=create with dry_run omitted in read-only mode', async () => {
+      let createCalled = 0
+      server.use(
+        http.post(endpoints.listMonitors, () => {
+          createCalled++
+          return jsonResponse({ id: 1 })
+        })
+      )
+
+      const handler = captureHandler(true)
+      await expect(
+        handler({
+          action: 'create',
+          config: {
+            name: 'Blocked Monitor',
+            type: 'metric alert',
+            query: 'avg(last_5m):avg:system.cpu.user{*} > 1'
+          }
+        })
+      ).rejects.toThrow(/read-only mode/)
+      expect(createCalled).toBe(0)
+    })
+
+    it('with dry_run omitted and not read-only, preserves existing create behavior', async () => {
+      let validateCalled = 0
+      let createCalled = 0
+      server.use(
+        http.post(endpoints.validateMonitor, () => {
+          validateCalled++
+          return jsonResponse(fixtures.validateOk)
+        }),
+        http.post(endpoints.listMonitors, async ({ request }) => {
+          createCalled++
+          const body = (await request.json()) as Record<string, unknown>
+          return jsonResponse({
+            id: 12347,
+            ...body,
+            overall_state: 'No Data',
+            created: new Date().toISOString(),
+            modified: new Date().toISOString()
+          })
+        })
+      )
+
+      const handler = captureHandler(false)
+      const result = (await handler({
+        action: 'create',
+        config: {
+          name: 'Real Create',
+          type: 'metric alert',
+          query: 'avg(last_5m):avg:system.cpu.user{*} > 95'
+        }
+      })) as { content: { type: string; text: string }[] }
+
+      expect(validateCalled).toBe(0)
+      expect(createCalled).toBe(1)
+      const payload = JSON.parse(result.content[0].text) as {
+        success: boolean
+        monitor: { id: number }
+      }
+      expect(payload.success).toBe(true)
+      expect(payload.monitor.id).toBe(12347)
+    })
+
+    it('with dry_run=true and not read-only, still routes to validateMonitor (no create)', async () => {
+      let validateCalled = 0
+      let createCalled = 0
+      server.use(
+        http.post(endpoints.validateMonitor, () => {
+          validateCalled++
+          return jsonResponse(fixtures.validateOk)
+        }),
+        http.post(endpoints.listMonitors, () => {
+          createCalled++
+          return jsonResponse({ id: 1 })
+        })
+      )
+
+      const handler = captureHandler(false)
+      const result = (await handler({
+        action: 'create',
+        dry_run: true,
+        config: {
+          name: 'Dry Run',
+          type: 'metric alert',
+          query: 'avg(last_5m):avg:system.cpu.user{*} > 95'
+        }
+      })) as { content: { type: string; text: string }[] }
+
+      expect(validateCalled).toBe(1)
+      expect(createCalled).toBe(0)
+      const payload = JSON.parse(result.content[0].text) as { dryRun: boolean }
+      expect(payload.dryRun).toBe(true)
     })
   })
 
