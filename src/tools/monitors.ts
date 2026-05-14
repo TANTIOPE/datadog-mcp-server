@@ -18,7 +18,8 @@ const ActionSchema = z.enum([
   'delete',
   'mute',
   'unmute',
-  'top'
+  'top',
+  'history'
 ])
 
 const InputSchema = {
@@ -58,7 +59,30 @@ const InputSchema = {
     .min(1)
     .max(5000)
     .optional()
-    .describe('Maximum events to fetch for top action (default: 5000, max: 5000)')
+    .describe('Maximum events to fetch for top action (default: 5000, max: 5000)'),
+  // History action parameters
+  transitionType: z
+    .array(
+      z.enum([
+        'alert',
+        'alert recovery',
+        'warning',
+        'warning recovery',
+        'no data',
+        'no data recovery',
+        'renotify'
+      ])
+    )
+    .optional()
+    .describe(
+      'For history action: filter by monitor state transition types. Default: ["alert","alert recovery"] (real fires + recoveries, excludes renotifies). Pass ["alert"] for fires only, or include "renotify" for full chronological audit.'
+    ),
+  group: z
+    .string()
+    .optional()
+    .describe(
+      'For history action: filter transitions to a specific multi-alert monitor group (e.g., "pod_name:foo,kube_namespace:bar"). Optional; omit for all groups.'
+    )
 }
 
 // Nested schemas for MonitorOptionsSchema (see design.md Data model).
@@ -1078,7 +1102,7 @@ export function registerMonitorsTool(
 ): void {
   server.tool(
     'monitors',
-    `Manage Datadog monitors. Actions: list, get, search, create, update, delete, mute, unmute, top.
+    `Manage Datadog monitors. Actions: list, get, search, create, update, delete, mute, unmute, top, history.
 Filters: name, tags, groupStates (alert/warn/ok/no data).
 get/create/update return the full options object so callers can safely read-then-patch.
 
@@ -1100,8 +1124,25 @@ top: Ranked monitors by alert frequency with real monitor names and context brea
   - Returns: {rank, monitor_id, name (with {{template.vars}}), message (template), total_count, by_context}
   - Perfect for weekly/daily alert reports
   - Gets real monitor names from monitors API (not event titles)
+  - WARNING: total_count is the raw alert-event count and INCLUDES renotifies/re-evaluations.
+    For monitors stuck in Alert state, Datadog emits a renotify event every renotify_interval
+    minutes, which inflates this count well beyond the number of real fires. When the question
+    is "how many times did this monitor actually fire", use action=history instead.
 
-For generic event grouping (deployments, configs), use events tool instead.`,
+history: Count and list real state transitions for one monitor over a time window.
+  - Inputs: id (required, monitor ID), from/to (optional time range), transitionType (optional
+    filter, defaults to ["alert","alert recovery"]), group (optional multi-alert group filter).
+  - Returns: {transitions: [{timestamp, monitorId, monitorName, group, fromState, toState,
+    transitionType, eventId}], count, meta}
+  - count = transitions.length — the number of REAL state changes (fires + recoveries by
+    default), NOT the renotify-inflated count returned by action=top or events action=search.
+  - Backed by Datadog v2 events search with a hardcoded source:alert + @monitor.transition.
+    transition_type filter that excludes renotifies by default. To include renotifies, pass
+    transitionType including "renotify".
+
+For generic event grouping (deployments, configs), use events tool instead. Note that the
+events tool's action=search with source:alert ALSO includes renotifies; use its
+transitionType filter (or this action=history) for fires-only counts.`,
     InputSchema,
     async ({
       action,
@@ -1116,7 +1157,9 @@ For generic event grouping (deployments, configs), use events tool instead.`,
       from,
       to,
       contextTags,
-      maxEvents
+      maxEvents,
+      transitionType,
+      group
     }) => {
       try {
         checkReadOnly(action, readOnly)
@@ -1179,6 +1222,23 @@ For generic event grouping (deployments, configs), use events tool instead.`,
                 site
               )
             )
+
+          case 'history': {
+            const monitorIdString = requireParam(id, 'id', 'history')
+            const monitorId = Number.parseInt(monitorIdString, 10)
+            if (Number.isNaN(monitorId)) {
+              throw new Error(`Invalid monitor ID: ${monitorIdString}`)
+            }
+            return toolResult(
+              await historyMonitor(
+                eventsApi,
+                monitorId,
+                { from, to, transitionType, group },
+                limits,
+                site
+              )
+            )
+          }
 
           default:
             throw new Error(`Unknown action: ${action}`)
