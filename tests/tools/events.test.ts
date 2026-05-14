@@ -1133,7 +1133,7 @@ describe('Events Tool', () => {
       })
     })
 
-    it('silently ignores unknown field names so callers are not broken by typos', () => {
+    it('silently ignores unknown field names for forward compatibility with future EventSummary additions', () => {
       const projection = pickEventFields(fullEvent, ['title', 'doesNotExist', 'source'])
       expect(projection).toEqual({
         title: 'High error rate',

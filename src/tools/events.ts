@@ -2064,7 +2064,7 @@ histogram: Bucket events by local hour_of_day / day_of_week / day_of_month in th
               return toolResult({ ...result, events: projected })
             }
 
-            // Issue #49 item 3: optional field projection to keep response payloads small.
+            // Optional field projection to keep response payloads small.
             const projectedEvents = fields?.length
               ? result.events.map((e) => pickEventFields(e, fields))
               : result.events
