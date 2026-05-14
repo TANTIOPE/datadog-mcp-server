@@ -57,10 +57,7 @@ interface SloSummary {
   overallStatus: SloStatusByTimeframe[]
   createdAt: string
   modifiedAt: string
-  // SLO definition fields needed to round-trip update calls (see issue #55).
-  // Datadog PUT /api/v1/slo/{id} requires `query` for metric SLOs and
-  // `monitor_ids` for monitor SLOs; stripping them here forced callers to
-  // re-supply the same query they could not retrieve from get.
+  // Required by PUT /api/v1/slo/{id}; field presence depends on SLO type.
   query?: SloQueryProjection
   monitorIds?: number[]
   monitorTags?: string[]

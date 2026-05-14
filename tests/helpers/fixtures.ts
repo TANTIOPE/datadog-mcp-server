@@ -572,6 +572,10 @@ export const slos = {
         type: 'metric',
         thresholds: [{ target: 99.9, warning: 99.95, timeframe: '30d' }],
         tags: ['service:api', 'env:production'],
+        query: {
+          numerator: 'sum:requests.success{service:api}.as_count()',
+          denominator: 'sum:requests.total{service:api}.as_count()'
+        },
         overall_status: [{ sli_value: 99.95, error_budget_remaining: 75.5, state: 'OK' }],
         created_at: 1704067200,
         modified_at: 1705276800
@@ -583,6 +587,7 @@ export const slos = {
         type: 'monitor',
         thresholds: [{ target: 99.5, timeframe: '7d' }],
         tags: ['service:payments', 'env:production'],
+        monitor_ids: [12345, 12346],
         overall_status: [{ sli_value: 98.2, error_budget_remaining: -26.0, state: 'breached' }],
         created_at: 1704153600,
         modified_at: 1705363200

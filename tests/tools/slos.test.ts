@@ -153,6 +153,22 @@ describe('SLOs Tool', () => {
       expect(result.slos[0].status.sli).toBeNull()
     })
 
+    it('should project query and monitorIds via the ids/listSLOs path', async () => {
+      server.use(
+        http.get(endpoints.listSlos, () => {
+          return jsonResponse(fixtures.list)
+        })
+      )
+
+      const result = await listSlos(api, { ids: ['slo-001'] }, defaultLimits)
+
+      expect(result.slos[0].query).toEqual({
+        numerator: 'sum:requests.success{service:api}.as_count()',
+        denominator: 'sum:requests.total{service:api}.as_count()'
+      })
+      expect(result.slos[1].monitorIds).toEqual([12345, 12346])
+    })
+
     it('should handle 401 unauthorized error', async () => {
       server.use(
         http.get(endpoints.searchSlos, () => {
