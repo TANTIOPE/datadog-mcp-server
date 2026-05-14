@@ -281,17 +281,41 @@ describe('Logs Archives Tool', () => {
       ).rejects.toThrow('destination.type must be one of: s3, gcs, azure_storage')
     })
 
-    it('should reject destination.type=azure (SDK literal) at the input surface — only azure_storage is accepted', async () => {
-      // The input contract per spec: only 'azure_storage' is accepted as input.
-      // The SDK's own wire literal happens to be 'azure', but the tool surface
-      // does not advertise that — callers must use the discriminator the tool docs.
-      await expect(
-        createArchive(api, {
-          name: 'Azure literal mismatch',
-          query: 'env:production',
-          destination: { type: 'azure', container: 'datadog-archive' }
+    it('should accept destination.type=azure_storage and remap to azure on the wire', async () => {
+      // The input contract per spec: callers submit 'azure_storage' (advertised
+      // in the tool surface). Internally we remap to 'azure' (the SDK / wire
+      // discriminator) before the SDK serializes the body to Datadog.
+      let receivedBody: Record<string, unknown> | undefined
+      server.use(
+        http.post(endpoints.createLogsArchive, async ({ request }) => {
+          receivedBody = (await request.json()) as Record<string, unknown>
+          return jsonResponse(fixtures.created)
         })
-      ).rejects.toThrow('destination.type must be one of: s3, gcs, azure_storage')
+      )
+
+      await createArchive(api, {
+        name: 'Azure archive',
+        query: 'env:production',
+        destination: {
+          type: 'azure_storage',
+          container: 'datadog-archive',
+          storage_account: 'mystorage',
+          path: '/datadog',
+          integration: {
+            tenant_id: 'tenant-uuid',
+            client_id: 'client-uuid'
+          }
+        }
+      })
+
+      expect(receivedBody).toBeDefined()
+      const data = receivedBody?.data as Record<string, unknown>
+      const attributes = data?.attributes as Record<string, unknown>
+      const destination = attributes?.destination as Record<string, unknown>
+      // Wire discriminator must be 'azure' (Datadog API expectation), not the
+      // 'azure_storage' value the caller submitted.
+      expect(destination?.type).toBe('azure')
+      expect(destination?.container).toBe('datadog-archive')
     })
 
     it('should propagate 429 rate limit error on create', async () => {

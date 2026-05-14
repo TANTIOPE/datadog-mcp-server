@@ -111,6 +111,13 @@ export function normalizeArchiveConfig(config: Record<string, unknown>): Record<
     throw new Error('destination.type must be one of: s3, gcs, azure_storage')
   }
 
+  // Datadog's wire format expects 'azure', but the tool surface advertises
+  // 'azure_storage' to callers for clarity. Remap on the destination object
+  // after validation so the SDK serializes the correct discriminator.
+  if (destinationType === 'azure_storage') {
+    ;(destination as Record<string, unknown>).type = 'azure'
+  }
+
   return normalized
 }
 
