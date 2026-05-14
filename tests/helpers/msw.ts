@@ -148,7 +148,33 @@ export const endpoints = {
   getIngestedSpans: `${DD_API_V1}/usage/ingested-spans`,
 
   // Utility Tools - Authentication
-  validateApiKey: `${DD_API_V1}/validate`
+  validateApiKey: `${DD_API_V1}/validate`,
+
+  // Logs Config - Pipelines (v1)
+  listLogsPipelines: `${DD_API_V1}/logs/config/pipelines`,
+  createLogsPipeline: `${DD_API_V1}/logs/config/pipelines`,
+  getLogsPipeline: (id: string) => `${DD_API_V1}/logs/config/pipelines/${id}`,
+  updateLogsPipeline: (id: string) => `${DD_API_V1}/logs/config/pipelines/${id}`,
+  deleteLogsPipeline: (id: string) => `${DD_API_V1}/logs/config/pipelines/${id}`,
+  getLogsPipelineOrder: `${DD_API_V1}/logs/config/pipeline-order`,
+  updateLogsPipelineOrder: `${DD_API_V1}/logs/config/pipeline-order`,
+
+  // Logs Config - Indexes (v1)
+  // Datadog identifies indexes by `name`, not `id`. create/delete are UI-only per Datadog.
+  listLogsIndexes: `${DD_API_V1}/logs/config/indexes`,
+  getLogsIndex: (name: string) => `${DD_API_V1}/logs/config/indexes/${name}`,
+  updateLogsIndex: (name: string) => `${DD_API_V1}/logs/config/indexes/${name}`,
+  getLogsIndexOrder: `${DD_API_V1}/logs/config/index-order`,
+  updateLogsIndexOrder: `${DD_API_V1}/logs/config/index-order`,
+
+  // Logs Config - Archives (v2)
+  listLogsArchives: `${DD_API_V2}/logs/config/archives`,
+  createLogsArchive: `${DD_API_V2}/logs/config/archives`,
+  getLogsArchive: (id: string) => `${DD_API_V2}/logs/config/archives/${id}`,
+  updateLogsArchive: (id: string) => `${DD_API_V2}/logs/config/archives/${id}`,
+  deleteLogsArchive: (id: string) => `${DD_API_V2}/logs/config/archives/${id}`,
+  getLogsArchiveOrder: `${DD_API_V2}/logs/config/archive-order`,
+  updateLogsArchiveOrder: `${DD_API_V2}/logs/config/archive-order`
 }
 
 /**

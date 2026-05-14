@@ -1541,3 +1541,379 @@ export const usage = {
     ]
   }
 }
+
+// Logs Config - Pipelines fixtures (v1)
+// Datadog returns `LogsPipeline[]` directly (no envelope) for the list endpoint.
+export const logsPipelinesFixtures = {
+  list: [
+    {
+      id: 'pipeline-001',
+      name: 'NGINX access logs',
+      type: 'pipeline',
+      is_enabled: true,
+      is_read_only: false,
+      filter: { query: 'source:nginx' },
+      processors: [
+        {
+          type: 'grok-parser',
+          name: 'Parsing NGINX logs',
+          is_enabled: true,
+          source: 'message',
+          samples: [],
+          grok: {
+            support_rules: '',
+            match_rules: 'access_rule %{NUMBER:status}'
+          }
+        },
+        {
+          type: 'date-remapper',
+          name: 'Define date as timestamp',
+          is_enabled: true,
+          sources: ['date']
+        }
+      ]
+    },
+    {
+      id: 'pipeline-002',
+      name: 'Application JSON logs',
+      type: 'pipeline',
+      is_enabled: true,
+      is_read_only: false,
+      filter: { query: 'source:app AND format:json' },
+      processors: [
+        {
+          type: 'attribute-remapper',
+          name: 'Map request_id to trace_id',
+          is_enabled: true,
+          sources: ['request_id'],
+          source_type: 'attribute',
+          target: 'trace_id',
+          target_type: 'attribute',
+          preserve_source: false,
+          override_on_conflict: false
+        }
+      ]
+    },
+    {
+      id: 'pipeline-003',
+      name: 'Datadog integration pipeline',
+      type: 'integration-pipeline',
+      is_enabled: true,
+      is_read_only: true,
+      filter: { query: 'source:datadog-agent' },
+      processors: []
+    }
+  ],
+  single: {
+    id: 'pipeline-001',
+    name: 'NGINX access logs',
+    type: 'pipeline',
+    is_enabled: true,
+    is_read_only: false,
+    filter: { query: 'source:nginx' },
+    processors: [
+      {
+        type: 'grok-parser',
+        name: 'Parsing NGINX logs',
+        is_enabled: true,
+        source: 'message',
+        samples: [],
+        grok: {
+          support_rules: '',
+          match_rules: 'access_rule %{NUMBER:status}'
+        }
+      }
+    ]
+  },
+  created: {
+    id: 'pipeline-new-001',
+    name: 'New Pipeline',
+    type: 'pipeline',
+    is_enabled: true,
+    is_read_only: false,
+    filter: { query: 'service:new-service' },
+    processors: []
+  },
+  updated: {
+    id: 'pipeline-001',
+    name: 'NGINX access logs (updated)',
+    type: 'pipeline',
+    is_enabled: false,
+    is_read_only: false,
+    filter: { query: 'source:nginx AND env:production' },
+    processors: [
+      {
+        type: 'grok-parser',
+        name: 'Parsing NGINX logs',
+        is_enabled: true,
+        source: 'message',
+        samples: [],
+        grok: {
+          support_rules: '',
+          match_rules: 'access_rule %{NUMBER:status}'
+        }
+      }
+    ]
+  },
+  order: {
+    pipeline_ids: ['pipeline-003', 'pipeline-001', 'pipeline-002']
+  }
+}
+
+// Logs Config - Indexes fixtures (v1)
+// Datadog returns `{ indexes: LogsIndex[] }` for the list endpoint.
+export const logsIndexesFixtures = {
+  list: {
+    indexes: [
+      {
+        name: 'main',
+        filter: { query: '*' },
+        num_retention_days: 15,
+        num_flex_logs_retention_days: 360,
+        daily_limit: 1000000000,
+        daily_limit_warning_threshold_percentage: 80,
+        is_rate_limited: false,
+        exclusion_filters: [
+          {
+            name: 'Exclude debug logs',
+            is_enabled: true,
+            filter: {
+              query: 'status:debug',
+              sample_rate: 1.0
+            }
+          },
+          {
+            name: 'Sample health checks',
+            is_enabled: true,
+            filter: {
+              query: 'path:/health',
+              sample_rate: 0.1
+            }
+          }
+        ]
+      },
+      {
+        name: 'security',
+        filter: { query: 'tag:security' },
+        num_retention_days: 30,
+        num_flex_logs_retention_days: 90,
+        daily_limit: 500000000,
+        is_rate_limited: false,
+        exclusion_filters: []
+      },
+      {
+        name: 'low-volume',
+        filter: { query: 'env:staging' },
+        num_retention_days: 7,
+        num_flex_logs_retention_days: 0,
+        daily_limit: 100000000,
+        is_rate_limited: true,
+        exclusion_filters: [
+          {
+            name: 'Drop trace events',
+            is_enabled: false,
+            filter: {
+              query: 'type:trace',
+              sample_rate: 1.0
+            }
+          }
+        ]
+      }
+    ]
+  },
+  single: {
+    name: 'main',
+    filter: { query: '*' },
+    num_retention_days: 15,
+    num_flex_logs_retention_days: 360,
+    daily_limit: 1000000000,
+    daily_limit_warning_threshold_percentage: 80,
+    is_rate_limited: false,
+    exclusion_filters: [
+      {
+        name: 'Exclude debug logs',
+        is_enabled: true,
+        filter: {
+          query: 'status:debug',
+          sample_rate: 1.0
+        }
+      }
+    ]
+  },
+  updated: {
+    name: 'main',
+    filter: { query: '*' },
+    num_retention_days: 30,
+    num_flex_logs_retention_days: 360,
+    daily_limit: 2000000000,
+    is_rate_limited: false,
+    exclusion_filters: [
+      {
+        name: 'Exclude debug logs',
+        is_enabled: true,
+        filter: {
+          query: 'status:debug',
+          sample_rate: 1.0
+        }
+      }
+    ]
+  },
+  order: {
+    index_names: ['main', 'security', 'low-volume']
+  }
+}
+
+// Logs Config - Archives fixtures (v2)
+// v2 envelope: { data: { id, type: 'archives', attributes: {...} } }
+// Note on Azure: Datadog's SDK literal for the destination type is `"azure"` (see
+// `LogsArchiveDestinationAzureType`). The MCP tool layer accepts `"azure_storage"` as the
+// documented public surface and forwards as-is to Datadog; the GET response below uses the
+// SDK literal that the SDK will actually deserialize.
+export const logsArchivesFixtures = {
+  list: {
+    data: [
+      {
+        id: 'archive-s3-001',
+        type: 'archives',
+        attributes: {
+          name: 'Production logs to S3',
+          query: 'env:production',
+          state: 'WORKING',
+          include_tags: true,
+          rehydration_tags: ['source:rehydrated'],
+          rehydration_max_scan_size_in_gb: 100,
+          destination: {
+            type: 's3',
+            bucket: 'company-prod-logs',
+            path: '/datadog',
+            region: 'us-east-1',
+            integration: {
+              account_id: '123456789012',
+              role_name: 'DatadogLogsArchiveRole'
+            }
+          }
+        }
+      },
+      {
+        id: 'archive-gcs-001',
+        type: 'archives',
+        attributes: {
+          name: 'Staging logs to GCS',
+          query: 'env:staging',
+          state: 'WORKING',
+          include_tags: false,
+          rehydration_tags: [],
+          destination: {
+            type: 'gcs',
+            bucket: 'company-staging-logs',
+            path: '/datadog',
+            integration: {
+              client_email: 'datadog-archives@example.iam.gserviceaccount.com',
+              project_id: 'example-project'
+            }
+          }
+        }
+      },
+      {
+        id: 'archive-azure-001',
+        type: 'archives',
+        attributes: {
+          name: 'Audit logs to Azure',
+          query: 'tag:audit',
+          state: 'WORKING',
+          include_tags: true,
+          rehydration_tags: ['source:audit-archive'],
+          destination: {
+            type: 'azure',
+            container: 'datadog-archive',
+            storage_account: 'companyauditlogs',
+            path: '/datadog',
+            region: 'westeurope',
+            integration: {
+              tenant_id: '00000000-0000-0000-0000-000000000000',
+              client_id: '11111111-1111-1111-1111-111111111111'
+            }
+          }
+        }
+      }
+    ]
+  },
+  single: {
+    data: {
+      id: 'archive-s3-001',
+      type: 'archives',
+      attributes: {
+        name: 'Production logs to S3',
+        query: 'env:production',
+        state: 'WORKING',
+        include_tags: true,
+        rehydration_tags: ['source:rehydrated'],
+        rehydration_max_scan_size_in_gb: 100,
+        destination: {
+          type: 's3',
+          bucket: 'company-prod-logs',
+          path: '/datadog',
+          region: 'us-east-1',
+          integration: {
+            account_id: '123456789012',
+            role_name: 'DatadogLogsArchiveRole'
+          }
+        }
+      }
+    }
+  },
+  created: {
+    data: {
+      id: 'archive-new-001',
+      type: 'archives',
+      attributes: {
+        name: 'New Archive',
+        query: 'service:new-service',
+        state: 'WORKING',
+        include_tags: false,
+        rehydration_tags: [],
+        destination: {
+          type: 's3',
+          bucket: 'company-new-archive',
+          path: '/datadog',
+          region: 'eu-west-1',
+          integration: {
+            account_id: '123456789012',
+            role_name: 'DatadogLogsArchiveRole'
+          }
+        }
+      }
+    }
+  },
+  updated: {
+    data: {
+      id: 'archive-s3-001',
+      type: 'archives',
+      attributes: {
+        name: 'Production logs to S3 (updated)',
+        query: 'env:production AND service:api',
+        state: 'WORKING',
+        include_tags: true,
+        rehydration_tags: ['source:rehydrated', 'updated:true'],
+        destination: {
+          type: 's3',
+          bucket: 'company-prod-logs',
+          path: '/datadog/api',
+          region: 'us-east-1',
+          integration: {
+            account_id: '123456789012',
+            role_name: 'DatadogLogsArchiveRole'
+          }
+        }
+      }
+    }
+  },
+  order: {
+    data: {
+      type: 'archive_order',
+      attributes: {
+        archive_ids: ['archive-s3-001', 'archive-gcs-001', 'archive-azure-001']
+      }
+    }
+  }
+}

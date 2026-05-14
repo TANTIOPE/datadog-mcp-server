@@ -25,6 +25,9 @@ vi.mock('../../src/tools/tags.js', () => ({ registerTagsTool: vi.fn() }))
 vi.mock('../../src/tools/usage.js', () => ({ registerUsageTool: vi.fn() }))
 vi.mock('../../src/tools/auth.js', () => ({ registerAuthTool: vi.fn() }))
 vi.mock('../../src/tools/schema.js', () => ({ registerSchemaTool: vi.fn() }))
+vi.mock('../../src/tools/logs_pipelines.js', () => ({ registerLogsPipelinesTool: vi.fn() }))
+vi.mock('../../src/tools/logs_indexes.js', () => ({ registerLogsIndexesTool: vi.fn() }))
+vi.mock('../../src/tools/logs_archives.js', () => ({ registerLogsArchivesTool: vi.fn() }))
 
 import { registerMonitorsTool } from '../../src/tools/monitors.js'
 import { registerDashboardsTool } from '../../src/tools/dashboards.js'
