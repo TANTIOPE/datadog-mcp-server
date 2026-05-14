@@ -127,7 +127,8 @@ When running with `--transport=http`:
 | `monitors` | delete | Alerting | Delete a monitor | `monitors_write` |
 | `monitors` | mute | Alerting | Mute a monitor | `monitors_write` |
 | `monitors` | unmute | Alerting | Unmute a monitor | `monitors_write` |
-| `monitors` | top | Alerting | Top N monitors by alert frequency with real monitor names and context breakdown. Groups without context tags are included as "no_context" | `monitors_read` |
+| `monitors` | top | Alerting | Top N monitors by alert frequency with real monitor names and context breakdown. **WARNING:** `total_count` includes renotifies/re-evaluations (Datadog emits a renotify event every `renotify_interval` minutes while Alert). For real fires use `action=history`. | `monitors_read` |
+| `monitors` | history | Alerting | Count and list real state transitions for one monitor over a time window. Filters by `transitionType` (default `["alert","alert recovery"]` — fires+recoveries, excludes renotifies) and optional `group`. Returns `{transitions: [...], count, meta}` where `count` is the number of real transitions (e.g. for one always-Alert burn-rate monitor over 7d: 98 raw events vs **38 real transitions**). | `monitors_read`, `events_read` |
 | `dashboards` | list | Visualization | List all dashboards | `dashboards_read` |
 | `dashboards` | get | Visualization | Get dashboard by ID | `dashboards_read` |
 | `dashboards` | create | Visualization | Create a new dashboard | `dashboards_write` |
@@ -154,7 +155,7 @@ When running with `--transport=http`:
 | `events` | list | Events | List events | `events_read` |
 | `events` | get | Events | Get event by ID | `events_read` |
 | `events` | create | Events | Create an event | `events_read` |
-| `events` | search | Events | Search events with v2 API and cursor pagination | `events_read` |
+| `events` | search | Events | Search events with v2 API and cursor pagination. Optional `transitionType` filter (e.g. `["alert","alert recovery"]`) restricts to monitor state-transition events — without it, `source:alert` includes renotifies. For monitor-specific fires use `monitors action=history`. | `events_read` |
 | `events` | aggregate | Events | Client-side aggregation by monitor_name, source, etc. | `events_read` |
 | `events` | top | Events | Top N event groups by count with generic groupBy support (deployments, configs, alerts, etc.). Groups without context tags are included as "no_context" | `events_read` |
 | `events` | timeseries | Events | Time-bucketed alert trends (hourly/daily counts) | `events_read` |
