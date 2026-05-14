@@ -7,11 +7,12 @@
  */
 
 import { dashboards } from './dashboards.js'
+import { events } from './events.js'
 import { metrics } from './metrics.js'
 import { monitors } from './monitors.js'
 import { slos } from './slos.js'
 
-export const schemas = { dashboards, metrics, monitors, slos } as const
+export const schemas = { dashboards, events, metrics, monitors, slos } as const
 
 export type SchemaResource = keyof typeof schemas
 export const schemaResources = Object.keys(schemas) as SchemaResource[]

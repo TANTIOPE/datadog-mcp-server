@@ -47,6 +47,125 @@ interface MetricSeriesData {
   tags: string[]
 }
 
+/**
+ * Whitelisted Datadog rollup methods (mirrors src/schema/metrics.ts rollupMethods).
+ */
+const ROLLUP_METHODS = new Set(['avg', 'max', 'min', 'sum', 'count'])
+
+/**
+ * Default rollup method per Datadog docs when only an interval is passed
+ * (e.g. `rollup(60)`). We surface this via `methodInferred: true` so callers
+ * can tell the difference between an echo of their request and our default.
+ * Source: https://docs.datadoghq.com/dashboards/functions/rollup/
+ */
+const DEFAULT_ROLLUP_METHOD = 'avg'
+
+/**
+ * Requested rollup parsed out of the query string.
+ *
+ * `methodInferred` resolves design.md OQ-3: when the query only specifies an
+ * interval (e.g. `rollup(60)`), Datadog defaults to `avg`. We echo that default
+ * and flag it so the caller doesn't mistake it for an explicit request.
+ */
+export interface ParsedRollup {
+  interval: number
+  method: string
+  methodInferred: boolean
+}
+
+/**
+ * Extract a `rollup(method, seconds)` clause from a Datadog metrics query string.
+ *
+ * Tolerant by design — returns `null` rather than throwing on:
+ *   - missing rollup clause
+ *   - unrecognized rollup method
+ *   - non-integer interval
+ *   - empty argument list
+ *
+ * Supported forms:
+ *   - `rollup(method, seconds)` → both fields parsed, `methodInferred: false`
+ *   - `rollup(seconds)`         → method defaults to `avg`, `methodInferred: true`
+ *
+ * Whitespace inside the parentheses is tolerated.
+ */
+export function parseRollupFromQuery(query: string): ParsedRollup | null {
+  if (typeof query !== 'string') return null
+  // Match the LAST rollup(...) call in the query so chained expressions like
+  // `default_zero(...).rollup(sum, 900).as_count()` resolve to the outermost rollup.
+  // We use a non-greedy capture and an explicit closing-paren anchor so nested
+  // parens inside the rollup args don't trip the match (the supported subset is
+  // simple: method + interval). The `g` flag with `matchAll` gives us all candidates.
+  const matches = [...query.matchAll(/\.rollup\(\s*([^)]*?)\s*\)/g)] // NOSONAR S5852: bounded query input, polynomial backtracking
+  const lastMatch = matches[matches.length - 1]
+  if (lastMatch === undefined) return null
+
+  const inner = lastMatch[1]
+  if (inner === undefined || inner.length === 0) return null
+
+  const parts = inner.split(',').map((p) => p.trim())
+
+  if (parts.length === 1) {
+    // rollup(seconds) — only the interval is provided; method defaults to avg.
+    const raw = parts[0] ?? ''
+    const interval = Number.parseInt(raw, 10)
+    if (!Number.isFinite(interval) || interval <= 0 || String(interval) !== raw) {
+      return null
+    }
+    return { interval, method: DEFAULT_ROLLUP_METHOD, methodInferred: true }
+  }
+
+  if (parts.length === 2) {
+    const method = parts[0] ?? ''
+    const secondsRaw = parts[1] ?? ''
+    if (!ROLLUP_METHODS.has(method)) return null
+    const interval = Number.parseInt(secondsRaw, 10)
+    if (!Number.isFinite(interval) || interval <= 0 || String(interval) !== secondsRaw) {
+      return null
+    }
+    return { interval, method, methodInferred: false }
+  }
+
+  return null
+}
+
+/**
+ * Compute the rollup-effective metadata from a Datadog series payload.
+ *
+ * Datadog's response doesn't expose the rollup interval directly — we derive it
+ * from the spacing between the first two points in each series (in ms, converted
+ * to seconds). Single-point series contribute nothing (we can't measure spacing).
+ *
+ * Returns:
+ *   - `null` when no observable interval can be derived (empty series or all
+ *     series have <2 points). In that case `rollupOverridden` cannot be asserted
+ *     and must default to `false`.
+ *   - `{ interval, intervalsObserved? }` otherwise. `intervalsObserved` is the
+ *     deduped, ascending list when more than one distinct interval was observed.
+ */
+function computeEffectiveRollup(
+  series: ReadonlyArray<{ pointlist?: ReadonlyArray<[number, number]> }>
+): { interval: number; intervalsObserved?: number[] } | null {
+  const intervals: number[] = []
+  for (const s of series) {
+    const pts = s.pointlist ?? []
+    if (pts.length < 2) continue
+    const first = pts[0]
+    const second = pts[1]
+    if (first === undefined || second === undefined) continue
+    const deltaMs = (second[0] ?? 0) - (first[0] ?? 0)
+    if (deltaMs <= 0) continue
+    intervals.push(Math.round(deltaMs / 1000))
+  }
+  const primary = intervals[0]
+  if (primary === undefined) return null
+
+  const unique = Array.from(new Set(intervals)).sort((a, b) => a - b)
+  if (unique.length === 1) {
+    return { interval: primary }
+  }
+  return { interval: primary, intervalsObserved: unique }
+}
+
 export async function queryMetrics(
   api: v1.MetricsApi,
   params: {
@@ -73,7 +192,8 @@ export async function queryMetrics(
     query: params.query
   })
 
-  const series: MetricSeriesData[] = (response.series ?? []).map((s) => ({
+  const rawSeries = response.series ?? []
+  const series: MetricSeriesData[] = rawSeries.map((s) => ({
     metric: s.metric ?? '',
     points: (s.pointlist ?? [])
       .slice(0, params.pointLimit ?? limits.defaultMetricDataPoints)
@@ -85,6 +205,21 @@ export async function queryMetrics(
     tags: s.tagSet ?? []
   }))
 
+  // Rollup-override metadata (design.md Requirement 2).
+  // Effective interval is computed from raw `pointlist` so it stays accurate
+  // even when the caller passed a small `pointLimit`.
+  const rollupRequested = parseRollupFromQuery(params.query)
+  const rollupEffective = computeEffectiveRollup(
+    rawSeries.map((s) => ({
+      pointlist: (s.pointlist ?? []) as ReadonlyArray<[number, number]>
+    }))
+  )
+  const rollupOverridden =
+    rollupRequested !== null &&
+    rollupEffective !== null &&
+    (rollupEffective.interval !== rollupRequested.interval ||
+      (rollupEffective.intervalsObserved?.some((i) => i !== rollupRequested.interval) ?? false))
+
   return {
     series,
     meta: {
@@ -92,7 +227,10 @@ export async function queryMetrics(
       from: new Date(fromTs * 1000).toISOString(),
       to: new Date(toTs * 1000).toISOString(),
       seriesCount: series.length,
-      datadog_url: buildMetricsUrl(params.query, fromTs, toTs, site)
+      datadog_url: buildMetricsUrl(params.query, fromTs, toTs, site),
+      rollupRequested,
+      rollupEffective,
+      rollupOverridden
     }
   }
 }

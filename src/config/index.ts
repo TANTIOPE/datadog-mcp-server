@@ -107,7 +107,8 @@ export function loadConfig(): Config {
       defaultLimit: Number.parseInt(process.env.MCP_DEFAULT_LIMIT ?? '50', 10),
       defaultLogLines: Number.parseInt(process.env.MCP_DEFAULT_LOG_LINES ?? '200', 10),
       defaultMetricDataPoints: Number.parseInt(process.env.MCP_DEFAULT_METRIC_POINTS ?? '1000', 10),
-      defaultTimeRangeHours: Number.parseInt(process.env.MCP_DEFAULT_TIME_RANGE ?? '24', 10)
+      defaultTimeRangeHours: Number.parseInt(process.env.MCP_DEFAULT_TIME_RANGE ?? '24', 10),
+      maxEventsForHistogram: Number.parseInt(process.env.MCP_MAX_EVENTS_HISTOGRAM ?? '5000', 10)
     },
     features: {
       readOnly: args.booleans.has('read-only') || process.env.MCP_READ_ONLY === 'true',

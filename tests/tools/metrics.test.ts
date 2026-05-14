@@ -11,7 +11,8 @@ import {
   queryMetrics,
   searchMetrics,
   listMetrics,
-  getMetricMetadata
+  getMetricMetadata,
+  parseRollupFromQuery
 } from '../../src/tools/metrics.js'
 import type { LimitsConfig } from '../../src/config/schema.js'
 
@@ -80,6 +81,222 @@ describe('Metrics Tool', () => {
         queryMetrics(api, { query: 'avg:system.cpu.user{*}' }, defaultLimits, defaultSite)
       ).rejects.toMatchObject({
         code: 401
+      })
+    })
+
+    describe('rollup override metadata', () => {
+      it('reports requested and effective rollup when intervals match', async () => {
+        server.use(
+          http.get(endpoints.queryMetrics, () => {
+            // Existing fixtures.query series uses 60s spacing (1705750800000, 1705750860000, ...)
+            return jsonResponse(fixtures.query)
+          })
+        )
+
+        const result = await queryMetrics(
+          api,
+          {
+            query: 'avg:system.cpu.user{*}.rollup(avg, 60)',
+            from: '1h',
+            to: 'now'
+          },
+          defaultLimits,
+          defaultSite
+        )
+
+        expect(result.meta.rollupRequested).toEqual({
+          interval: 60,
+          method: 'avg',
+          methodInferred: false
+        })
+        expect(result.meta.rollupEffective).toEqual({ interval: 60 })
+        expect(result.meta.rollupOverridden).toBe(false)
+      })
+
+      it('flags rollupOverridden=true when Datadog re-rolls the series', async () => {
+        server.use(
+          http.get(endpoints.queryMetrics, () => {
+            return jsonResponse(fixtures.queryRollupOverridden)
+          })
+        )
+
+        const result = await queryMetrics(
+          api,
+          {
+            query: 'avg:system.cpu.user{*}.rollup(sum, 900)',
+            from: '7d',
+            to: 'now'
+          },
+          defaultLimits,
+          defaultSite
+        )
+
+        expect(result.meta.rollupRequested).toEqual({
+          interval: 900,
+          method: 'sum',
+          methodInferred: false
+        })
+        expect(result.meta.rollupEffective).toEqual({ interval: 3600 })
+        expect(result.meta.rollupOverridden).toBe(true)
+      })
+
+      it('flags methodInferred=true when only the interval is given', async () => {
+        server.use(
+          http.get(endpoints.queryMetrics, () => {
+            return jsonResponse(fixtures.query)
+          })
+        )
+
+        const result = await queryMetrics(
+          api,
+          {
+            query: 'avg:system.cpu.user{*}.rollup(60)',
+            from: '1h',
+            to: 'now'
+          },
+          defaultLimits,
+          defaultSite
+        )
+
+        expect(result.meta.rollupRequested?.methodInferred).toBe(true)
+        expect(result.meta.rollupRequested?.interval).toBe(60)
+      })
+
+      it('returns intervalsObserved for multi-series with mixed intervals', async () => {
+        server.use(
+          http.get(endpoints.queryMetrics, () => {
+            return jsonResponse(fixtures.queryRollupMixedIntervals)
+          })
+        )
+
+        const result = await queryMetrics(
+          api,
+          {
+            query: 'avg:system.cpu.user{*}.rollup(avg, 900)',
+            from: '7d',
+            to: 'now'
+          },
+          defaultLimits,
+          defaultSite
+        )
+
+        expect(result.meta.rollupOverridden).toBe(true)
+        // `interval` echoes the first observed series interval; the full set is
+        // surfaced via `intervalsObserved` (deduped + sorted ascending).
+        expect(result.meta.rollupEffective?.interval).toBe(3600)
+        expect(result.meta.rollupEffective?.intervalsObserved).toEqual([900, 3600])
+      })
+
+      it('returns null rollupRequested for queries without rollup', async () => {
+        server.use(
+          http.get(endpoints.queryMetrics, () => {
+            return jsonResponse(fixtures.query)
+          })
+        )
+
+        const result = await queryMetrics(
+          api,
+          {
+            query: 'avg:system.cpu.user{*}',
+            from: '1h',
+            to: 'now'
+          },
+          defaultLimits,
+          defaultSite
+        )
+
+        expect(result.meta.rollupRequested).toBeNull()
+        expect(result.meta.rollupOverridden).toBe(false)
+      })
+
+      it('treats malformed rollup substring as no rollup', async () => {
+        server.use(
+          http.get(endpoints.queryMetrics, () => {
+            return jsonResponse(fixtures.query)
+          })
+        )
+
+        const result = await queryMetrics(
+          api,
+          {
+            query: 'avg:system.cpu.user{*}.rollup(garbage)',
+            from: '1h',
+            to: 'now'
+          },
+          defaultLimits,
+          defaultSite
+        )
+
+        expect(result.meta.rollupRequested).toBeNull()
+        expect(result.meta.rollupOverridden).toBe(false)
+      })
+
+      it('preserves existing top-level response keys', async () => {
+        server.use(
+          http.get(endpoints.queryMetrics, () => {
+            return jsonResponse(fixtures.query)
+          })
+        )
+
+        const result = await queryMetrics(
+          api,
+          {
+            query: 'avg:system.cpu.user{*}',
+            from: '1h',
+            to: 'now'
+          },
+          defaultLimits,
+          defaultSite
+        )
+
+        expect(result.series).toBeDefined()
+        expect(result.meta.query).toBe('avg:system.cpu.user{*}')
+        expect(result.meta.seriesCount).toBe(1)
+        expect(result.meta.datadog_url).toContain('app.datadoghq.com')
+      })
+    })
+  })
+
+  describe('parseRollupFromQuery', () => {
+    it('extracts method and interval from "rollup(sum, 900)"', () => {
+      expect(parseRollupFromQuery('avg:cpu{*}.rollup(sum, 900)')).toEqual({
+        interval: 900,
+        method: 'sum',
+        methodInferred: false
+      })
+    })
+
+    it('tolerates whitespace inside the rollup call', () => {
+      expect(parseRollupFromQuery('avg:cpu{*}.rollup( avg ,  60 )')).toEqual({
+        interval: 60,
+        method: 'avg',
+        methodInferred: false
+      })
+    })
+
+    it('defaults the method when only an interval is given', () => {
+      expect(parseRollupFromQuery('avg:cpu{*}.rollup(120)')).toEqual({
+        interval: 120,
+        method: 'avg',
+        methodInferred: true
+      })
+    })
+
+    it('returns null when the query has no rollup', () => {
+      expect(parseRollupFromQuery('avg:cpu{*}')).toBeNull()
+    })
+
+    it('returns null on malformed rollup substring', () => {
+      expect(parseRollupFromQuery('avg:cpu{*}.rollup(garbage)')).toBeNull()
+      expect(parseRollupFromQuery('avg:cpu{*}.rollup()')).toBeNull()
+      expect(parseRollupFromQuery('avg:cpu{*}.rollup(sum, nope)')).toBeNull()
+    })
+
+    it('handles nested expressions like default_zero().rollup(sum, 900)', () => {
+      expect(parseRollupFromQuery('default_zero(avg:cpu{*}).rollup(sum, 900).as_count()')).toEqual({
+        interval: 900,
+        method: 'sum',
+        methodInferred: false
       })
     })
   })

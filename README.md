@@ -122,8 +122,10 @@ When running with `--transport=http`:
 | `monitors` | list | Alerting | List monitors with optional filters | `monitors_read` |
 | `monitors` | get | Alerting | Get monitor by ID | `monitors_read` |
 | `monitors` | search | Alerting | Search monitors by query | `monitors_read` |
-| `monitors` | create | Alerting | Create a new monitor; `config` is validated against a typed schema covering documented options (notifyNoData, renotifyInterval, thresholds, …) — unknown keys surface in `warnings` | `monitors_write` |
+| `monitors` | create | Alerting | Create a new monitor; `config` is validated against a typed schema covering documented options (notifyNoData, renotifyInterval, thresholds, …) — unknown keys surface in `warnings`. Pass `dry_run: true` to validate without creating (uses `/api/v1/monitor/validate`, allowed in read-only mode). | `monitors_write` |
 | `monitors` | update | Alerting | Update an existing monitor; same validated schema as `create`; partial configs accepted; validation errors short-circuit before any HTTP call as `EINVALID_MONITOR_CONFIG:` | `monitors_write` |
+| `monitors` | preview | Alerting | Render a monitor template (inline `message` or by `monitor_id`/`id`) with optional `context` of variables and conditionals. Returns `{rendered, variablesUsed, variablesMissing, conditionalsResolved}`. Supports Datadog Mustache subset: variable substitution + six documented conditionals (`is_alert`, `is_warning`, `is_no_data`, `is_recovery`, `is_alert_to_warning`, `is_warning_to_alert`); `{{#each}}`/partials throw `EUNSUPPORTED_TEMPLATE_SYNTAX`. Read-only. | `monitors_read` |
+| `monitors` | test_notification | Alerting | **Known limitation**: returns `ENOT_SUPPORTED` — Datadog has no public REST endpoint for triggering a test notification. Documentation pointer in response. | n/a |
 | `monitors` | delete | Alerting | Delete a monitor | `monitors_write` |
 | `monitors` | mute | Alerting | Mute a monitor | `monitors_write` |
 | `monitors` | unmute | Alerting | Unmute a monitor | `monitors_write` |
@@ -145,7 +147,7 @@ When running with `--transport=http`:
 | `logs_archives` | list, get | Logs Config | Inspect log archives (S3 / GCS / Azure destinations); per-provider credential fields are forwarded unchanged | `logs_read_archives` |
 | `logs_archives` | create, update, delete, reorder | Logs Config | Manage archive destinations; `destination.type` validated against `s3 | gcs | azure_storage` before SDK call | `logs_write_archives` |
 | `logs_archives` | get_order | Logs Config | Read archive evaluation order | `logs_read_archives` |
-| `metrics` | query | Metrics | Query timeseries data | `metrics_read`, `timeseries_query` |
+| `metrics` | query | Metrics | Query timeseries data. Response `meta` now includes `rollupRequested` (parsed from `rollup(method, seconds)` in the query, with `methodInferred` flag), `rollupEffective` (interval derived from returned pointlist intervals + deduped `intervalsObserved` for multi-series), and `rollupOverridden: boolean` so callers can detect when Datadog silently downsampled. | `metrics_read`, `timeseries_query` |
 | `metrics` | search | Metrics | Search for metrics by name | `metrics_read` |
 | `metrics` | list | Metrics | List active metrics | `metrics_read` |
 | `metrics` | metadata | Metrics | Get metric metadata | `metrics_read` |
@@ -155,7 +157,8 @@ When running with `--transport=http`:
 | `events` | list | Events | List events | `events_read` |
 | `events` | get | Events | Get event by ID | `events_read` |
 | `events` | create | Events | Create an event | `events_read` |
-| `events` | search | Events | Search events with v2 API and cursor pagination. Optional `transitionType` filter (e.g. `["alert","alert recovery"]`) restricts to monitor state-transition events — without it, `source:alert` includes renotifies. For monitor-specific fires use `monitors action=history`. | `events_read` |
+| `events` | search | Events | Search events with v2 API and cursor pagination. Optional `transitionType` filter (e.g. `["alert","alert recovery"]`) restricts to monitor state-transition events — without it, `source:alert` includes renotifies. For monitor-specific fires use `monitors action=history`. Optional `timezone` adds `*Local` ISO 8601 siblings to every timestamp. Zero-result responses include a `diagnostics` array hinting at the cause (`UNINDEXED_TAG_PREFIX`, `NARROW_TIME_RANGE`, `RESTRICTIVE_SOURCE_FILTER`). | `events_read` |
+| `events` | histogram | Events | Server-side bucketing of events by `hour_of_day`, `day_of_week`, or `day_of_month` in an IANA `timezone` (DST-safe via `Intl.DateTimeFormat`). Cursor-paginates the underlying search; cap at `limits.maxEventsForHistogram` (default 5000, `MCP_MAX_EVENTS_HISTOGRAM` env var). When the cap is hit, returns `bucketCountIncomplete: true` and `nextCursor` for continuation. | `events_read` |
 | `events` | aggregate | Events | Client-side aggregation by monitor_name, source, etc. | `events_read` |
 | `events` | top | Events | Top N event groups by count with generic groupBy support (deployments, configs, alerts, etc.). Groups without context tags are included as "no_context" | `events_read` |
 | `events` | timeseries | Events | Time-bucketed alert trends (hourly/daily counts) | `events_read` |

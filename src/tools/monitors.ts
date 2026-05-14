@@ -1,4 +1,5 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
+import { McpError, ErrorCode } from '@modelcontextprotocol/sdk/types.js'
 import { z } from 'zod'
 import { v1, v2 } from '@datadog/datadog-api-client'
 import { handleDatadogError, requireParam, checkReadOnly } from '../errors/datadog.js'
@@ -7,6 +8,13 @@ import { buildMonitorUrl, buildMonitorsListUrl } from '../utils/urls.js'
 import { hoursAgo, now, parseTime, ensureValidTimeRange } from '../utils/time.js'
 import { buildEventsUrl } from '../utils/urls.js'
 import { formatEventV2 } from './events.js'
+import {
+  renderMonitorTemplate,
+  SUPPORTED_CONDITIONALS,
+  type PreviewResult,
+  type TemplateContext
+} from '../utils/templatePreview.js'
+import { validateIanaZone, formatLocal } from '../utils/timezone.js'
 import type { LimitsConfig } from '../config/schema.js'
 
 const ActionSchema = z.enum([
@@ -19,8 +27,23 @@ const ActionSchema = z.enum([
   'mute',
   'unmute',
   'top',
-  'history'
+  'history',
+  'preview',
+  'test_notification'
 ])
+
+// Mustache-subset preview context — keep loose at the schema boundary so we
+// surface our own EUNSUPPORTED_TEMPLATE_SYNTAX / variablesMissing semantics
+// from `renderMonitorTemplate` rather than zod-rejecting unknown variable keys.
+const PreviewContextSchema = z
+  .object({
+    variables: z.record(z.unknown()).optional(),
+    conditionals: z
+      .record(z.enum(SUPPORTED_CONDITIONALS as unknown as [string, ...string[]]), z.boolean())
+      .optional()
+  })
+  .optional()
+  .describe('Substitution context for monitors.preview (variables + conditionals).')
 
 const InputSchema = {
   action: ActionSchema.describe('Action to perform'),
@@ -40,8 +63,23 @@ const InputSchema = {
     .optional()
     .describe('Maximum number of monitors to return (default: 50)'),
   config: z.record(z.unknown()).optional().describe('Monitor configuration (for create/update)'),
-  message: z.string().optional().describe('Mute message (for mute action)'),
+  message: z
+    .string()
+    .optional()
+    .describe(
+      'Mute message (for mute action) OR inline template source for the preview action. ' +
+        'For preview, supply either this inline string or `monitor_id` (or the existing `id` ' +
+        'field) so the action can load the monitor message via getMonitor.'
+    ),
   end: z.number().optional().describe('Mute end timestamp (for mute action)'),
+  monitor_id: z
+    .number()
+    .optional()
+    .describe(
+      'Numeric monitor ID used by the preview action when no inline `message` is supplied. ' +
+        'Equivalent to passing the existing `id` field as a numeric string.'
+    ),
+  context: PreviewContextSchema,
   // Top action parameters
   from: z
     .string()
@@ -82,6 +120,22 @@ const InputSchema = {
     .optional()
     .describe(
       'For history action: filter transitions to a specific multi-alert monitor group (e.g., "pod_name:foo,kube_namespace:bar"). Optional; omit for all groups.'
+    ),
+  dry_run: z
+    .boolean()
+    .optional()
+    .describe(
+      'When create + dry_run=true, validate the monitor body via POST /api/v1/monitor/validate ' +
+        'without creating it. Allowed under --read-only because no monitor is created. ' +
+        'Returns { valid, dryRun, monitor }. 400 responses surface verbatim like a failed create.'
+    ),
+  timezone: z
+    .string()
+    .optional()
+    .describe(
+      'Optional IANA timezone (e.g. "UTC", "Europe/Paris"). When supplied on get/list, ' +
+        'the response adds sibling createdLocal/modifiedLocal ISO 8601 strings next to created/modified. ' +
+        'Omit for byte-identical legacy shape. Invalid zones return EINVALID_TIMEZONE.'
     )
 }
 
@@ -274,6 +328,32 @@ interface MonitorSummary {
   created: string
   modified: string
   url: string
+  /**
+   * Requirement 4: ISO 8601 with offset in the requested IANA timezone.
+   * Present ONLY when the caller supplied a `timezone` parameter. Omitting
+   * `timezone` produces a response shape byte-identical to today.
+   */
+  createdLocal?: string
+  modifiedLocal?: string
+}
+
+/**
+ * Requirement 4: annotate a MonitorSummary (or MonitorDetail) with sibling
+ * `createdLocal` / `modifiedLocal` ISO 8601 strings in the requested IANA
+ * timezone. Returns a shallow copy; the original is untouched. Empty or
+ * unparseable timestamps are left annotated as undefined rather than crashing.
+ */
+function annotateMonitorTimezone<T extends MonitorSummary>(monitor: T, tz: string): T {
+  const annotated: T = { ...monitor }
+  if (monitor.created) {
+    const ms = new Date(monitor.created).getTime()
+    if (Number.isFinite(ms)) annotated.createdLocal = formatLocal(ms, tz)
+  }
+  if (monitor.modified) {
+    const ms = new Date(monitor.modified).getTime()
+    if (Number.isFinite(ms)) annotated.modifiedLocal = formatLocal(ms, tz)
+  }
+  return annotated
 }
 
 export function formatMonitor(m: v1.Monitor, site: string = 'datadoghq.com'): MonitorSummary {
@@ -668,8 +748,15 @@ export async function listMonitors(
   api: v1.MonitorsApi,
   params: { name?: string; tags?: string[]; groupStates?: string[]; limit?: number },
   limits: LimitsConfig,
-  site: string
+  site: string,
+  timezone?: string
 ) {
+  // Requirement 4: validate timezone BEFORE the Datadog call so an invalid zone
+  // never burns API quota and surfaces a stable EINVALID_TIMEZONE.
+  if (timezone !== undefined) {
+    validateIanaZone(timezone)
+  }
+
   const effectiveLimit = params.limit ?? limits.defaultLimit
 
   const response = await api.listMonitors({
@@ -678,7 +765,12 @@ export async function listMonitors(
     groupStates: params.groupStates?.join(',')
   })
 
-  const monitors = response.slice(0, effectiveLimit).map((m) => formatMonitor(m, site))
+  const baseMonitors = response.slice(0, effectiveLimit).map((m) => formatMonitor(m, site))
+  // Requirement 4: opt-in *Local annotations only when timezone is supplied.
+  const monitors =
+    timezone !== undefined
+      ? baseMonitors.map((m) => annotateMonitorTimezone(m, timezone))
+      : baseMonitors
 
   const statusCounts = {
     total: response.length,
@@ -698,15 +790,23 @@ export async function listMonitors(
   }
 }
 
-export async function getMonitor(api: v1.MonitorsApi, id: string, site: string) {
+export async function getMonitor(api: v1.MonitorsApi, id: string, site: string, timezone?: string) {
+  // Requirement 4: validate timezone BEFORE the Datadog call.
+  if (timezone !== undefined) {
+    validateIanaZone(timezone)
+  }
+
   const monitorId = Number.parseInt(id, 10)
   if (Number.isNaN(monitorId)) {
     throw new Error(`Invalid monitor ID: ${id}`)
   }
 
   const monitor = await api.getMonitor({ monitorId })
+  const baseDetail = formatMonitorDetail(monitor, site)
+  // Requirement 4: opt-in *Local annotations only when timezone is supplied.
+  const detail = timezone !== undefined ? annotateMonitorTimezone(baseDetail, timezone) : baseDetail
   return {
-    monitor: formatMonitorDetail(monitor, site),
+    monitor: detail,
     datadog_url: buildMonitorUrl(monitorId, site)
   }
 }
@@ -848,6 +948,119 @@ export async function createMonitor(
     result.warnings = warnings
   }
   return result
+}
+
+/**
+ * Validate a monitor body without creating it (dry-run).
+ * Calls POST /api/v1/monitor/validate. The Datadog SDK exposes this as
+ * `v1.MonitorsApi.validateMonitor({ body })`. A 400 response surfaces verbatim
+ * via `handleDatadogError`, matching the error shape a failed create would yield.
+ *
+ * Read-only safety: this endpoint is non-mutating, so the dispatcher allows
+ * `action: 'create'` with `dry_run: true` even when `--read-only` is set.
+ */
+export async function dryRunMonitor(
+  api: v1.MonitorsApi,
+  config: Record<string, unknown>
+): Promise<{ valid: true; dryRun: true; monitor: Record<string, unknown> }> {
+  const normalized = normalizeMonitorConfig(config)
+  const body = normalized as unknown as v1.Monitor
+  await api.validateMonitor({ body })
+  return {
+    valid: true,
+    dryRun: true,
+    monitor: normalized
+  }
+}
+
+/**
+ * Render a Datadog monitor message template against a caller-supplied context.
+ *
+ * Source of the template:
+ *   - If `inlineMessage` is provided, it is used verbatim.
+ *   - Otherwise `monitorIdSource` is loaded via `getMonitor(api, ..., site)` and
+ *     its `.message` field is used as the template.
+ *
+ * Read-only safety: this action performs at most a read of an existing monitor
+ * (no mutation). The dispatcher therefore allows it under `--read-only`.
+ *
+ * Supported subset matches `renderMonitorTemplate` — see
+ * `src/utils/templatePreview.ts` for the full grammar and error contracts.
+ * Unsupported Mustache constructs (loops, partials, unknown conditionals)
+ * surface as `EUNSUPPORTED_TEMPLATE_SYNTAX`.
+ */
+export async function previewMonitor(
+  api: v1.MonitorsApi,
+  args: {
+    inlineMessage?: string
+    monitorIdSource?: string
+    context?: TemplateContext
+  },
+  site: string = 'datadoghq.com'
+): Promise<PreviewResult & { monitorId?: number }> {
+  let template: string
+  let monitorId: number | undefined
+
+  if (args.inlineMessage !== undefined && args.inlineMessage !== '') {
+    template = args.inlineMessage
+  } else if (args.monitorIdSource !== undefined && args.monitorIdSource !== '') {
+    const loaded = await getMonitor(api, args.monitorIdSource, site)
+    template = loaded.monitor.message ?? ''
+    monitorId = loaded.monitor.id
+  } else {
+    throw new Error(
+      "Action 'preview' requires either an inline 'message' or a 'monitor_id' (or 'id') to load the template from."
+    )
+  }
+
+  const result = renderMonitorTemplate(template, args.context ?? {})
+  return monitorId !== undefined ? { ...result, monitorId } : result
+}
+
+/**
+ * Trigger a Datadog monitor test notification (Requirement 6 / OQ-1).
+ *
+ * **Status: ENOT_SUPPORTED — Datadog has no public test-notification endpoint.**
+ *
+ * Research conducted during Task 8 of the events-dx-improvements spec
+ * (.kiro/specs/events-dx-improvements/tasks.md) audited the Datadog public
+ * OpenAPI specifications at:
+ *   - https://github.com/DataDog/datadog-api-client-python/blob/master/.generator/schemas/v1/openapi.yaml
+ *   - https://github.com/DataDog/datadog-api-client-python/blob/master/.generator/schemas/v2/openapi.yaml
+ *
+ * The full set of `/api/v1/monitor*` paths is:
+ *   `POST/GET /api/v1/monitor`, `GET /api/v1/monitor/can_delete`,
+ *   `GET /api/v1/monitor/groups/search`, `GET /api/v1/monitor/search`,
+ *   `POST /api/v1/monitor/validate`,
+ *   `GET/PUT/DELETE /api/v1/monitor/{monitor_id}`,
+ *   `GET /api/v1/monitor/{monitor_id}/downtimes`,
+ *   `POST /api/v1/monitor/{monitor_id}/validate`.
+ *
+ * The v2 monitor surface (`/api/v2/monitor/notification_rule`,
+ * `/api/v2/monitor/policy`, `/api/v2/monitor/template`, `monitor template
+ * validate`, `monitor downtime_matches`) likewise exposes no `/notify` or
+ * `/test` path. Confirmed against the SDK type definitions at
+ * `node_modules/@datadog/datadog-api-client/dist/packages/datadog-api-client-v1/apis/MonitorsApi.d.ts`
+ * (no `notifyMonitor` / `testMonitor` methods).
+ *
+ * See also Datadog's official monitor API reference for current state:
+ *   https://docs.datadoghq.com/api/latest/monitors/
+ *
+ * Per design.md Requirement 6 AC2 and Open Question OQ-1, this action returns
+ * an explicit `ENOT_SUPPORTED` error including a documentation pointer instead
+ * of silently degrading or faking a success response. Read-only mode allows
+ * this action (Requirement 6 AC4) because no Datadog HTTP call is attempted.
+ *
+ * If Datadog later publishes a public test-notification endpoint, this handler
+ * should switch to invoking it via the SDK's raw request configuration and
+ * surface 429 verbatim via `handleDatadogError` (Requirement 6 AC5) with no
+ * auto-retry.
+ */
+export const TEST_NOTIFICATION_NOT_SUPPORTED_MESSAGE =
+  "ENOT_SUPPORTED: action 'test_notification' is not implemented — the Datadog public REST API exposes no monitor test-notification endpoint at v1 or v2 as of the events-dx-improvements spec. Use the Datadog UI's 'Test Notifications' button on the monitor page, or open an issue if Datadog publishes such an endpoint. Reference: https://docs.datadoghq.com/api/latest/monitors/"
+
+export function testNotificationMonitor(_args: { monitorId?: string }): never {
+  throw new McpError(ErrorCode.InvalidRequest, TEST_NOTIFICATION_NOT_SUPPORTED_MESSAGE)
 }
 
 export async function updateMonitor(
@@ -1116,7 +1329,7 @@ export function registerMonitorsTool(
 ): void {
   server.tool(
     'monitors',
-    `Manage Datadog monitors. Actions: list, get, search, create, update, delete, mute, unmute, top, history.
+    `Manage Datadog monitors. Actions: list, get, search, create, update, delete, mute, unmute, top, history, preview, test_notification.
 Filters: name, tags, groupStates (alert/warn/ok/no data).
 get/create/update return the full options object so callers can safely read-then-patch.
 
@@ -1154,6 +1367,21 @@ history: Count and list real state transitions for one monitor over a time windo
     transition_type filter that excludes renotifies by default. To include renotifies, pass
     transitionType including "renotify".
 
+preview: Render a Datadog monitor message template against a context (read-only safe).
+  - Inputs: either inline 'message' OR 'monitor_id' (or existing 'id'); plus optional 'context' { variables, conditionals }.
+  - Supported syntax: {{variable.name}} substitution and conditional blocks {{#name}}...{{/name}} / {{^name}}...{{/name}}
+    where name is one of: ${SUPPORTED_CONDITIONALS.join(', ')}.
+  - Missing variables render as {{undefined:name}} markers and are reported in 'variablesMissing'.
+  - Loops ({{#each ...}}) and partials ({{> ...}}) return EUNSUPPORTED_TEMPLATE_SYNTAX.
+  - Allowed under --read-only (no mutation; at most a getMonitor load).
+
+test_notification: KNOWN LIMITATION — always returns ENOT_SUPPORTED.
+  - Datadog's public REST API exposes no monitor test-notification endpoint at v1 or v2
+    (audited against the official OpenAPI specs). The v1 SDK has no notifyMonitor / testMonitor method.
+  - Allowed under --read-only because no Datadog HTTP call is attempted.
+  - If Datadog publishes such an endpoint in future, this action will be reimplemented to invoke it.
+  - Workaround: use the 'Test Notifications' button in the Datadog monitor UI.
+
 For generic event grouping (deployments, configs), use events tool instead. Note that the
 events tool's action=search with source:alert ALSO includes renotifies; use its
 transitionType filter (or this action=history) for fires-only counts.`,
@@ -1167,25 +1395,38 @@ transitionType filter (or this action=history) for fires-only counts.`,
       groupStates,
       limit,
       config,
+      message,
       end,
       from,
       to,
       contextTags,
       maxEvents,
       transitionType,
-      group
+      group,
+      dry_run: dryRun,
+      monitor_id: monitorIdNum,
+      context,
+      timezone
     }) => {
       try {
-        checkReadOnly(action, readOnly)
+        // Dry-run create is a non-mutating validation call against POST
+        // /api/v1/monitor/validate. Skip the write-action read-only gate when
+        // (action === 'create' && dryRun === true); for any other branch the
+        // standard gate applies, so plain `create` (or omitted dry_run) is
+        // still blocked under --read-only.
+        const isDryRunCreate = action === 'create' && dryRun === true
+        if (!isDryRunCreate) {
+          checkReadOnly(action, readOnly)
+        }
         switch (action) {
           case 'list':
             return toolResult(
-              await listMonitors(api, { name, tags, groupStates, limit }, limits, site)
+              await listMonitors(api, { name, tags, groupStates, limit }, limits, site, timezone)
             )
 
           case 'get': {
             const monitorId = requireParam(id, 'id', 'get')
-            return toolResult(await getMonitor(api, monitorId, site))
+            return toolResult(await getMonitor(api, monitorId, site, timezone))
           }
 
           case 'search': {
@@ -1195,6 +1436,9 @@ transitionType filter (or this action=history) for fires-only counts.`,
 
           case 'create': {
             const monitorConfig = requireParam(config, 'config', 'create')
+            if (dryRun) {
+              return toolResult(await dryRunMonitor(api, monitorConfig))
+            }
             return toolResult(await createMonitor(api, monitorConfig, site))
           }
 
@@ -1252,6 +1496,38 @@ transitionType filter (or this action=history) for fires-only counts.`,
                 site
               )
             )
+          }
+
+          case 'preview': {
+            // Caller may pass either the new numeric `monitor_id` or the
+            // existing stringly-typed `id`. Both resolve to the same getMonitor
+            // call inside `previewMonitor`. Inline `message` wins when supplied.
+            const monitorIdSource =
+              monitorIdNum !== undefined ? String(monitorIdNum) : (id ?? undefined)
+            return toolResult(
+              await previewMonitor(
+                api,
+                {
+                  inlineMessage: message,
+                  monitorIdSource,
+                  context: context as TemplateContext | undefined
+                },
+                site
+              )
+            )
+          }
+
+          case 'test_notification': {
+            // Requirement 6 / OQ-1: the Datadog public API exposes no
+            // test-notification endpoint, so we surface ENOT_SUPPORTED and do
+            // not attempt a Datadog HTTP call. See JSDoc on
+            // `testNotificationMonitor` for the OpenAPI-spec audit.
+            // `testNotificationMonitor` returns `never` (it always throws),
+            // but we wrap the call in `return` to keep ESLint's no-fallthrough
+            // and TypeScript's switch-exhaustiveness rules both happy.
+            const monitorIdSource =
+              monitorIdNum !== undefined ? String(monitorIdNum) : (id ?? undefined)
+            return testNotificationMonitor({ monitorId: monitorIdSource })
           }
 
           default:

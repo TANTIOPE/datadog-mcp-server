@@ -66,6 +66,28 @@ export const monitors = {
       pageCount: 1,
       page: 0
     }
+  },
+  // Validate (dry-run) success — Datadog returns 200 with an empty body
+  validateOk: {},
+  // Validate (dry-run) 400 — Datadog returns the same error shape `create` would
+  validate400: {
+    errors: ['The value provided for parameter "query" is invalid']
+  },
+  // Preview source — a monitor whose message exercises variable + conditional rendering.
+  // Used by the `preview` action when the caller supplies `monitor_id` instead of an
+  // inline `message`. See Requirement 7 in events-dx-improvements/design.md.
+  previewSource: {
+    id: 77777,
+    name: 'Preview Template Monitor',
+    type: 'metric alert',
+    query: 'avg(last_5m):avg:system.cpu.user{*} > 90',
+    message:
+      'CPU high on {{host.name}}.\n' +
+      '{{#is_alert}}ALERT branch{{/is_alert}}{{^is_alert}}OK branch{{/is_alert}}',
+    tags: ['env:production'],
+    overall_state: 'OK',
+    created: '2024-01-15T10:00:00.000Z',
+    modified: '2024-01-20T15:30:00.000Z'
   }
 }
 
@@ -185,6 +207,52 @@ export const metrics = {
     unit: 'percent',
     per_unit: null,
     statsd_interval: 10
+  },
+  // Datadog returned series at 3600s granularity when the caller asked for 900s.
+  // Used to assert meta.rollupOverridden=true on metrics.query responses.
+  queryRollupOverridden: {
+    series: [
+      {
+        metric: 'system.cpu.user',
+        display_name: 'CPU User',
+        pointlist: [
+          [1705750800000, 45.5],
+          [1705754400000, 48.2], // +3600000 ms (3600s) from previous
+          [1705758000000, 52.1]
+        ],
+        scope: 'host:prod-server-1',
+        unit: [{ name: 'percent' }]
+      }
+    ],
+    from_date: 1705750800000,
+    to_date: 1705758000000
+  },
+  // Two series returned at different intervals (e.g., split-screen aggregations).
+  queryRollupMixedIntervals: {
+    series: [
+      {
+        metric: 'system.cpu.user',
+        display_name: 'CPU User',
+        pointlist: [
+          [1705750800000, 45.5],
+          [1705754400000, 48.2] // 3600s interval
+        ],
+        scope: 'host:prod-server-1',
+        unit: [{ name: 'percent' }]
+      },
+      {
+        metric: 'system.cpu.user',
+        display_name: 'CPU User',
+        pointlist: [
+          [1705750800000, 41.0],
+          [1705751700000, 42.0] // 900s interval
+        ],
+        scope: 'host:prod-server-2',
+        unit: [{ name: 'percent' }]
+      }
+    ],
+    from_date: 1705750800000,
+    to_date: 1705758000000
   }
 }
 
@@ -415,6 +483,57 @@ export const events = {
           message: 'CPU usage exceeded threshold',
           timestamp: '2024-01-20T12:00:00.000Z',
           tags: ['source:alert', 'alert_type:error', 'host:prod-3', 'priority:normal']
+        }
+      }
+    ],
+    meta: {
+      page: {
+        after: null
+      }
+    }
+  },
+  // Events spread across hours-of-day for histogram tests.
+  // One event sits AT the Europe/Paris DST spring-forward boundary
+  // (2026-03-29T01:30:00Z → 03:30 local) so the test can prove the
+  // bucketing path is DST-safe.
+  eventsHistogramFixture: {
+    data: [
+      {
+        id: 'evt-hist-1',
+        attributes: {
+          title: 'event at 00:15 UTC',
+          message: '',
+          timestamp: '2026-03-29T00:15:00.000Z',
+          tags: ['source:alert']
+        }
+      },
+      {
+        id: 'evt-hist-2',
+        // DST spring-forward boundary in Europe/Paris.
+        // 01:30 UTC → 03:30 local (the 02:00-02:59 hour does not exist).
+        attributes: {
+          title: 'event at DST boundary 01:30 UTC',
+          message: '',
+          timestamp: '2026-03-29T01:30:00.000Z',
+          tags: ['source:alert']
+        }
+      },
+      {
+        id: 'evt-hist-3',
+        attributes: {
+          title: 'event at 05:00 UTC',
+          message: '',
+          timestamp: '2026-03-29T05:00:00.000Z',
+          tags: ['source:alert']
+        }
+      },
+      {
+        id: 'evt-hist-4',
+        attributes: {
+          title: 'event at 23:45 UTC',
+          message: '',
+          timestamp: '2026-03-29T23:45:00.000Z',
+          tags: ['source:alert']
         }
       }
     ],

@@ -46,7 +46,12 @@ export const configSchema = z.object({
       defaultLimit: z.number().default(50), // Fallback when AI doesn't specify limit
       defaultLogLines: z.number().default(200), // Fallback when AI doesn't specify log limit
       defaultMetricDataPoints: z.number().default(1000), // Fallback for timeseries data points
-      defaultTimeRangeHours: z.number().default(24)
+      defaultTimeRangeHours: z.number().default(24),
+      // Maximum events scanned by the `events.histogram` action before returning a
+      // partial result with `bucketCountIncomplete: true` and `nextCursor`.
+      // Bounds latency on bucketed queries while still giving callers a path to
+      // continue scanning if they want a fully complete histogram.
+      maxEventsForHistogram: z.number().default(5000)
     })
     .default({}),
   features: z

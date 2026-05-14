@@ -7,7 +7,7 @@ const ResourceSchema = z.enum(schemaResources as [SchemaResource, ...SchemaResou
 
 const InputSchema = {
   resource: ResourceSchema.describe(
-    'Datadog resource type to get schema for: dashboards, metrics, monitors, slos'
+    'Datadog resource type to get schema for: dashboards, events, metrics, monitors, slos'
   )
 }
 
