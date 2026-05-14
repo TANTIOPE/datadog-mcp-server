@@ -5,11 +5,6 @@
  * exposed in tool descriptions and Datadog's REST documentation), while the
  * `@datadog/datadog-api-client` SDK expects camelCase keys at the model layer.
  * These helpers bridge that gap without touching the values themselves.
- *
- * Consumed by `src/tools/slos.ts` and the Logs configuration tools
- * (`logs_pipelines`, `logs_indexes`, `logs_archives`). See design.md
- * "This feature consumes" for the rationale behind lifting these helpers out
- * of `slos.ts` (tools should not import from each other per structure.md).
  */
 
 /**
