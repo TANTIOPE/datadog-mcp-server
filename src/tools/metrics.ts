@@ -95,7 +95,7 @@ export function parseRollupFromQuery(query: string): ParsedRollup | null {
   // We use a non-greedy capture and an explicit closing-paren anchor so nested
   // parens inside the rollup args don't trip the match (the supported subset is
   // simple: method + interval). The `g` flag with `matchAll` gives us all candidates.
-  const matches = [...query.matchAll(/\.rollup\(\s*([^)]*?)\s*\)/g)]
+  const matches = [...query.matchAll(/\.rollup\(\s*([^)]*?)\s*\)/g)] // NOSONAR S5852: bounded query input, polynomial backtracking
   const lastMatch = matches[matches.length - 1]
   if (lastMatch === undefined) return null
 

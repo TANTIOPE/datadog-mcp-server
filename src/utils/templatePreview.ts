@@ -113,8 +113,7 @@ type Token =
   | { kind: 'literal'; text: string }
   | { kind: 'block'; conditional: MonitorConditional; negated: boolean; children: Token[] }
 
-// NOSONAR S5852: input is monitor message templates (bounded, trusted); adjacent \s*/[^}]*?/\s* yields polynomial not exponential backtracking, bounded by template length
-const TAG_REGEX = /\{\{\s*([#^/>])?\s*([^}]*?)\s*\}\}/g
+const TAG_REGEX = /\{\{\s*([#^/>])?\s*([^}]*?)\s*\}\}/g // NOSONAR S5852: bounded template input, polynomial backtracking
 
 /**
  * Parse the raw template into a tree of literal text and conditional blocks.
@@ -247,8 +246,7 @@ function renderBlocks(
   return out
 }
 
-// NOSONAR S5852: input is monitor message templates (bounded, trusted); adjacent \s*/[^}]*?/\s* yields polynomial not exponential backtracking, bounded by template length
-const VARIABLE_TAG_REGEX = /\{\{\s*([^#^/>\s][^}]*?)\s*\}\}/g
+const VARIABLE_TAG_REGEX = /\{\{\s*([^#^/>\s][^}]*?)\s*\}\}/g // NOSONAR S5852: bounded template input, polynomial backtracking
 
 /**
  * Substitute `{{variable.name}}` tags in the already conditional-resolved text.
