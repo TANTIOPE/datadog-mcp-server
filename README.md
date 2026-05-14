@@ -8,43 +8,28 @@
 
 > **DISCLAIMER**: This is a community-maintained project and is not officially affiliated with, endorsed by, or supported by Datadog, Inc. This MCP server utilizes the Datadog API but is developed independently.
 
-MCP server providing AI assistants with full Datadog observability access. Features grep-like log search, APM trace filtering with duration/status/error queries, smart sampling modes for token efficiency, and cross-correlation between logs, traces, and metrics.
+MCP server providing AI assistants with full Datadog observability access. Features grep-like log search, APM trace filtering with duration/status/error queries, smart sampling modes for token efficiency, and cross-correlation between logs, traces, and metrics. Supports both `stdio` (local) and `http` (remote/Kubernetes) transports.
 
-## Configuration
+## Quick Start
 
-### Required Environment Variables
+Minimal Claude Desktop / VS Code / Cursor config — just the two required keys:
 
-```bash
-DD_API_KEY=your-api-key
-DD_APP_KEY=your-app-key
+```json
+{
+  "mcpServers": {
+    "datadog": {
+      "command": "npx",
+      "args": ["-y", "datadog-mcp"],
+      "env": {
+        "DD_API_KEY": "your-api-key",
+        "DD_APP_KEY": "your-app-key"
+      }
+    }
+  }
+}
 ```
 
-### Optional Environment Variables
-
-```bash
-DD_SITE=datadoghq.com  # Default. Use datadoghq.eu for EU, etc.
-
-# Limit defaults (fallbacks when AI doesn't specify)
-MCP_DEFAULT_LIMIT=50              # General tools default limit
-MCP_DEFAULT_LOG_LINES=200         # Logs tool default limit
-MCP_DEFAULT_METRIC_POINTS=1000    # Metrics timeseries data points
-MCP_DEFAULT_TIME_RANGE=24         # Default time range in hours
-```
-
-### Optional Flags
-
-```bash
---site=datadoghq.com     # Datadog site (overrides DD_SITE)
---transport=stdio|http   # Transport mode (default: stdio)
---port=3000              # HTTP port when using http transport
---host=0.0.0.0           # HTTP host when using http transport
---read-only              # Block all write operations
---disable-tools=synthetics,rum,security    # Comma-separated list of tools to disable
-```
-
-## Usage
-
-### Claude Desktop / VS Code / Cursor
+With optional tuning (EU site, custom default limits, longer log windows):
 
 ```json
 {
@@ -55,12 +40,76 @@ MCP_DEFAULT_TIME_RANGE=24         # Default time range in hours
       "env": {
         "DD_API_KEY": "your-api-key",
         "DD_APP_KEY": "your-app-key",
-        "DD_SITE": "datadoghq.com"
+        "DD_SITE": "datadoghq.eu",
+        "MCP_DEFAULT_LIMIT": "50",
+        "MCP_DEFAULT_LOG_LINES": "200",
+        "MCP_DEFAULT_METRIC_POINTS": "1000",
+        "MCP_DEFAULT_TIME_RANGE": "24"
       }
     }
   }
 }
 ```
+
+To run as an HTTP server (e.g. inside a container or Kubernetes pod), add transport variables to the same `env` block:
+
+```json
+"env": {
+  "DD_API_KEY": "your-api-key",
+  "DD_APP_KEY": "your-app-key",
+  "MCP_TRANSPORT": "http",
+  "MCP_PORT": "3000",
+  "MCP_HOST": "0.0.0.0"
+}
+```
+
+## Configuration
+
+### Required environment variables
+
+```bash
+DD_API_KEY=your-api-key
+DD_APP_KEY=your-app-key
+```
+
+### Optional environment variables
+
+```bash
+DD_SITE=datadoghq.com  # Default. Use datadoghq.eu for EU, etc.
+
+# Limit defaults (fallbacks when the AI doesn't specify)
+MCP_DEFAULT_LIMIT=50              # General tools default limit
+MCP_DEFAULT_LOG_LINES=200         # Logs tool default limit
+MCP_DEFAULT_METRIC_POINTS=1000    # Metrics timeseries data points
+MCP_DEFAULT_TIME_RANGE=24         # Default time range in hours
+
+# Transport (alternative to CLI flags — useful in Kubernetes)
+MCP_TRANSPORT=stdio               # stdio | http
+MCP_PORT=3000                     # HTTP port
+MCP_HOST=0.0.0.0                  # HTTP host
+```
+
+### Optional flags
+
+```bash
+--site=datadoghq.com     # Datadog site (overrides DD_SITE)
+--transport=stdio|http   # Transport mode (default: stdio)
+--port=3000              # HTTP port when using http transport
+--host=0.0.0.0           # HTTP host when using http transport
+--read-only              # Block all write operations
+--disable-tools=synthetics,rum,security    # Comma-separated list of tools to disable
+```
+
+## Transports
+
+| Transport | When to use | Endpoints |
+|-----------|-------------|-----------|
+| `stdio` (default) | Local MCP clients — Claude Desktop, Cursor, VS Code | n/a (process stdin/stdout) |
+| `http` | Remote / container / Kubernetes | `POST /mcp` · `GET /mcp` (SSE) · `DELETE /mcp` · `GET /health` |
+
+Select with `--transport=http` or `MCP_TRANSPORT=http`.
+
+## Deployment
 
 ### Docker
 
@@ -88,7 +137,7 @@ MCP_DEFAULT_TIME_RANGE=24         # Default time range in hours
 
 ### Kubernetes
 
-**Use environment variables instead of container args:**
+Use environment variables — not container args — for transport configuration:
 
 ```yaml
 env:
@@ -105,15 +154,6 @@ env:
 ```
 
 > **Note:** Kubernetes `args:` replaces the entire Dockerfile CMD, causing Node.js to receive the flags instead of your application. Environment variables avoid this issue.
-
-### HTTP Transport
-
-When running with `--transport=http`:
-
-- `POST /mcp` — MCP protocol endpoint
-- `GET /mcp` — SSE stream for responses
-- `DELETE /mcp` — Close session
-- `GET /health` — Health check
 
 ## Tools
 
@@ -147,7 +187,7 @@ When running with `--transport=http`:
 | `logs_archives` | list, get | Logs Config | Inspect log archives (S3 / GCS / Azure destinations); per-provider credential fields are forwarded unchanged | `logs_read_archives` |
 | `logs_archives` | create, update, delete, reorder | Logs Config | Manage archive destinations; `destination.type` validated against `s3 | gcs | azure_storage` before SDK call | `logs_write_archives` |
 | `logs_archives` | get_order | Logs Config | Read archive evaluation order | `logs_read_archives` |
-| `metrics` | query | Metrics | Query timeseries data. Response `meta` now includes `rollupRequested` (parsed from `rollup(method, seconds)` in the query, with `methodInferred` flag), `rollupEffective` (interval derived from returned pointlist intervals + deduped `intervalsObserved` for multi-series), and `rollupOverridden: boolean` so callers can detect when Datadog silently downsampled. | `metrics_read`, `timeseries_query` |
+| `metrics` | query | Metrics | Query timeseries data. Response `meta` includes `rollupRequested` (parsed from `rollup(method, seconds)`, with `methodInferred` flag), `rollupEffective` (interval derived from returned pointlist intervals + deduped `intervalsObserved` for multi-series), and `rollupOverridden: boolean` so callers can detect when Datadog silently downsampled. | `metrics_read`, `timeseries_query` |
 | `metrics` | search | Metrics | Search for metrics by name | `metrics_read` |
 | `metrics` | list | Metrics | List active metrics | `metrics_read` |
 | `metrics` | metadata | Metrics | Get metric metadata | `metrics_read` |
@@ -169,8 +209,8 @@ When running with `--transport=http`:
 | `incidents` | create | Incidents | Create an incident | `incident_write` |
 | `incidents` | update | Incidents | Update an incident | `incident_write` |
 | `incidents` | delete | Incidents | Delete an incident | `incident_write` |
-| `slos` | list | SLOs | List SLOs | `slos_read` |
-| `slos` | get | SLOs | Get SLO by ID | `slos_read` |
+| `slos` | list | SLOs | List SLOs. Each item exposes `query`, `monitorIds`, `monitorTags`, `groups`, and a UI `url` so round-trips (get → edit → update) preserve definition fields. | `slos_read` |
+| `slos` | get | SLOs | Get SLO by ID (same projection as `list`). | `slos_read` |
 | `slos` | create | SLOs | Create an SLO | `slos_write` |
 | `slos` | update | SLOs | Update an SLO | `slos_write` |
 | `slos` | delete | SLOs | Delete an SLO | `slos_write` |
@@ -223,11 +263,9 @@ When running with `--transport=http`:
 | `usage` | ingested_spans | Billing | Ingested spans usage | `usage_read` |
 | `auth` | validate | Auth | Test API and App key validity | — |
 
-## Token Efficiency
+## Limit Control
 
-### Limit Control
-
-AI assistants have full control over query limits. The environment variables set what value is used when the AI doesn't specify a limit. They do NOT cap what the AI can request.
+AI assistants have full control over query limits. The `MCP_DEFAULT_*` environment variables only set the fallback used when the AI doesn't specify a limit — they do NOT cap what the AI can request.
 
 | Tool | Default | Parameter | Description |
 |------|---------|-----------|-------------|
@@ -235,65 +273,132 @@ AI assistants have full control over query limits. The environment variables set
 | Metrics (timeseries) | 1000 | `pointLimit` | Data points per series (controls resolution) |
 | General tools | 50 | `limit` | Results to return |
 
-Defaults can be configured via `MCP_DEFAULT_*` environment variables:
+Tool-level token reduction features (`compact: true` on logs, `sample: "diverse" | "spread" | "first"`, field projections, diagnostics) are surfaced in each tool's MCP description and chosen by the AI at call time.
+
+## Recipes
+
+Patterns that show up across investigations. Each one is a single tool call.
+
+### Real fires vs renotify-inflated counts (monitors)
+
+`monitors action=top` counts every event Datadog emits for an alerting monitor — including renotifies every `renotify_interval` minutes while it stays Alert. To get the actual number of state transitions for a single monitor:
+
+```
+monitors({
+  action: "history",
+  monitor_id: 282774192,
+  from: "7d",
+  transitionType: ["alert", "alert recovery"]
+})
+```
+
+Response (truncated):
 
 ```json
 {
-  "mcpServers": {
-    "datadog": {
-      "command": "npx",
-      "args": ["-y", "datadog-mcp"],
-      "env": {
-        "DD_API_KEY": "your-api-key",
-        "DD_APP_KEY": "your-app-key",
-        "MCP_DEFAULT_LIMIT": "50",              // General fallback for most tools
-        "MCP_DEFAULT_LOG_LINES": "200",         // Logs search only
-        "MCP_DEFAULT_METRIC_POINTS": "1000",    // Metrics query timeseries only
-        "MCP_DEFAULT_TIME_RANGE": "24"          // Default time range in hours
-      }
-    }
-  }
+  "transitions": [
+    { "timestamp": "2026-05-08T03:14:00Z", "transition": "alert", "group": "service:api" },
+    { "timestamp": "2026-05-08T03:42:00Z", "transition": "alert recovery", "group": "service:api" }
+  ],
+  "count": 38,
+  "meta": { "rawEventCount": 98, "filteredOut": 60 }
 }
 ```
 
-### Compact Mode (Logs)
+`count` (38) is real transitions. `rawEventCount` (98) is what `top` would have reported. Same filter is available on `events action=search` via `transitionType`.
 
-Use `compact: true` when searching logs to reduce token usage. Strips custom attributes and keeps only essential fields:
+### Hour-of-day alert histograms (events)
+
+Bucket alerts by hour-of-day in a specific timezone (DST-safe — buckets are derived per timestamp via `Intl.DateTimeFormat`):
 
 ```
-logs({ action: "search", status: "error", compact: true })
+events({
+  action: "histogram",
+  from: "30d",
+  bucketBy: "hour_of_day",
+  timezone: "Europe/Paris",
+  transitionType: ["alert"],
+  tags: ["source:alert"]
+})
 ```
 
-Returns: `id`, `timestamp`, `service`, `status`, `message` (truncated), `traceId`, `spanId`, `error`
+Returns `{ buckets: [{ bucket: 0, count: 4 }, …, { bucket: 23, count: 12 }], meta: { … } }`. If the underlying search hits `limits.maxEventsForHistogram` (default 5000, override via `MCP_MAX_EVENTS_HISTOGRAM`), the response includes `bucketCountIncomplete: true` and a `nextCursor` for continuation. Also supports `day_of_week` and `day_of_month`.
 
-### Sampling Modes (Logs)
+### Render a monitor message with context
 
-Control how logs are sampled with the `sample` parameter:
+Preview what a monitor notification will look like with a given alert payload — useful when iterating on `{{#is_alert}}…{{/is_alert}}` blocks and `{{template.vars}}`:
 
-| Mode | Description | Use Case |
-|------|-------------|----------|
-| `first` | Chronological order (default) | Timeline analysis, specific events |
-| `spread` | Evenly distributed across time range | See patterns over time |
-| `diverse` | Deduplicated by message pattern | Error investigation (distinct error types) |
-
-Example - find distinct error patterns:
 ```
-logs({ action: "search", status: "error", sample: "diverse", limit: 25 })
+monitors({
+  action: "preview",
+  monitor_id: 12345,
+  context: {
+    transition: "alert",
+    variables: {
+      "host.name": "prod-api-01",
+      "value": 92,
+      "threshold": 90
+    }
+  }
+})
 ```
 
-The `diverse` mode normalizes messages (strips UUIDs, timestamps, IPs, numbers) to identify unique error patterns instead of returning duplicates.
+Response: `{ rendered, variablesUsed, variablesMissing, conditionalsResolved }`. Supports the documented Datadog Mustache subset: variable substitution plus `is_alert`, `is_warning`, `is_no_data`, `is_recovery`, `is_alert_to_warning`, `is_warning_to_alert`. Unsupported syntax (`{{#each}}`, partials) returns `EUNSUPPORTED_TEMPLATE_SYNTAX`. Read-only.
 
-## Events Aggregation
+### Validate a monitor before creating it
 
-### Top Monitors Report (Monitor-Specific)
+Pass `dry_run: true` to call `/api/v1/monitor/validate` instead of `/api/v1/monitor` — checks the schema and Datadog's server-side validation without persisting. Allowed in `--read-only` mode.
 
-**Use `monitors` tool for monitor alerts with real monitor names:**
+```
+monitors({
+  action: "create",
+  dry_run: true,
+  config: {
+    name: "High API error rate",
+    type: "metric alert",
+    query: "avg(last_5m):sum:trace.express.request.errors{env:prod}.as_count() > 50",
+    message: "@team-platform error rate is {{value}}",
+    options: {
+      thresholds: { critical: 50, warning: 25 },
+      notifyNoData: true,
+      renotifyInterval: 30
+    }
+  }
+})
+```
+
+Validation errors short-circuit before the HTTP call as `EINVALID_MONITOR_CONFIG:` with the offending paths. Unknown keys are reported in `warnings` instead of being silently accepted.
+
+### SLO round-trip (get → edit → update)
+
+`slos get` returns enough of the definition (`query`, `monitorIds`, `monitorTags`, `groups`) to mutate the SLO without losing fields, plus a UI `url`:
+
+```
+// 1. Read
+slos({ action: "get", id: "abc123def456" })
+// → { id, name, type, query: { … }, monitorIds: [], monitorTags: [], groups: [], thresholds: [...], url: "https://app.datadoghq.com/slo/manage/abc123def456" }
+
+// 2. Edit thresholds, keep everything else
+slos({
+  action: "update",
+  id: "abc123def456",
+  config: {
+    name: "API availability",
+    type: "monitor",
+    monitorIds: [12345, 67890],   // preserved from get
+    thresholds: [{ timeframe: "7d", target: 99.5, warning: 99.9 }]
+  }
+})
+```
+
+### Top monitors by alert frequency (with real names)
+
+Use `monitors top` when you want monitor-specific results with the real `{{template.vars}}` rendered names from the monitors API:
 
 ```
 monitors({ action: "top", from: "7d", limit: 10 })
 ```
 
-Returns monitors with **real names** (including {{template.vars}}) from monitors API:
 ```json
 {
   "top": [
@@ -304,70 +409,39 @@ Returns monitors with **real names** (including {{template.vars}}) from monitors
       "message": "Queue {{queue.name}} has {{value}} ready messages",
       "total_count": 50,
       "by_context": [
-        {"context": "queue:email-notifications", "count": 30},
-        {"context": "queue:payment-processing", "count": 20}
-      ]
-    },
-    {
-      "rank": 2,
-      "monitor_id": 134611486,
-      "name": "Nginx some requests on errors (HTTP 5XX) on {{ingress.name}}",
-      "message": "Nginx request on ingress {{ingress.name}} contains some errors (HTTP 5XX)",
-      "total_count": 42,
-      "by_context": [
-        {"context": "ingress:api-gateway", "count": 29},
-        {"context": "ingress:admin-panel", "count": 13}
+        { "context": "queue:email-notifications", "count": 30 },
+        { "context": "queue:payment-processing", "count": 20 }
       ]
     }
   ]
 }
 ```
 
-### Top Events Report (Generic)
+Reminder: `total_count` includes renotifies. Pair with `monitors history` for fires-only counts on a specific monitor.
 
-**Use `events` tool for any event type** (deployments, configs, custom events):
+### Top events report (generic, any event type)
+
+Use `events top` for deployments, configs, and custom events — fast generic grouping, returns event message text:
 
 ```
 events({ action: "top", from: "7d", limit: 10, groupBy: ["service"] })
 ```
 
-Returns event groups by custom fields:
-```json
-{
-  "top": [
-    {
-      "rank": 1,
-      "service": "api-server",
-      "message": "Deployment completed",
-      "total_count": 30,
-      "by_context": [
-        {"context": "env:prod", "count": 20},
-        {"context": "env:staging", "count": 10}
-      ]
-    }
-  ]
-}
-```
+Context tags are auto-extracted: `queue:`, `service:`, `ingress:`, `pod_name:`, `kube_namespace:`, `kube_container_name:`.
 
-**Key Differences:**
-- `monitors top`: Fetches real monitor names from monitors API (slower, monitor-specific)
-- `events top`: Fast generic grouping, returns event message text (any event type)
+### Tag discovery
 
-Context tags are auto-extracted: `queue:`, `service:`, `ingress:`, `pod_name:`, `kube_namespace:`, `kube_container_name:`
-
-### Tag Discovery
-
-Discover available tag prefixes in your alert data:
+Find available tag prefixes in your alert data before designing a `groupBy`:
 
 ```
 events({ action: "discover", from: "7d", tags: ["source:alert"] })
 ```
 
-Returns: `{tagPrefixes: ["queue", "service", "ingress", "pod_name", "monitor", "priority"], sampleSize: 150}`
+Returns `{ tagPrefixes: ["queue", "service", "ingress", "pod_name", "monitor", "priority"], sampleSize: 150 }`.
 
-### Custom Aggregation
+### Custom aggregation
 
-For custom grouping patterns, use `aggregate`:
+For groupings outside the built-in `top` pattern:
 
 ```
 events({
@@ -378,110 +452,53 @@ events({
 })
 ```
 
-Supported groupBy fields: `monitor_name`, `priority`, `alert_type`, `source`, `status`, `host`, or any tag prefix
+Supported groupBy fields: `monitor_name`, `priority`, `alert_type`, `source`, `status`, `host`, or any tag prefix. Streams via v2 API cursor pagination (up to 10k events).
 
-The aggregation uses v2 API with cursor pagination to stream through events efficiently (up to 10k events).
+### Alert trends (timeseries)
 
-## Alert Trends (Timeseries)
-
-Visualize alert patterns over time with time-bucketed aggregation:
+Hourly or daily counts, optionally grouped:
 
 ```
 events({ action: "timeseries", from: "7d", interval: "1d" })
 ```
 
-Returns hourly/daily alert counts grouped by monitor:
-```json
-{
-  "timeseries": [
-    { "timestamp": "2024-01-15T00:00:00Z", "counts": { "High CPU": 5, "Low Disk": 2 }, "total": 7 },
-    { "timestamp": "2024-01-16T00:00:00Z", "counts": { "High CPU": 3 }, "total": 3 }
-  ]
-}
-```
-
-| Interval | Use Case |
+| Interval | Use case |
 |----------|----------|
 | `1h` | Recent incident analysis (default) |
 | `4h` | Daily patterns |
 | `1d` | Weekly trends |
 
-Combine with `groupBy` to see trends per monitor, source, or priority.
+### Incident deduplication
 
-## Incident Deduplication
-
-Consolidate noisy alert floods into logical incidents:
+Consolidate alert floods into logical incidents with Trigger/Recover pairing:
 
 ```
 events({ action: "incidents", from: "24h", dedupeWindow: "5m" })
 ```
 
-Groups repeated triggers within the dedupe window and pairs with recovery events:
-```json
-{
-  "incidents": [
-    {
-      "monitorName": "High CPU Usage",
-      "firstTrigger": "2024-01-15T10:00:00Z",
-      "lastTrigger": "2024-01-15T10:15:00Z",
-      "triggerCount": 4,
-      "recovered": true,
-      "recoveredAt": "2024-01-15T10:30:00Z",
-      "duration": "30m"
-    }
-  ],
-  "meta": { "totalIncidents": 15, "recoveredCount": 12, "activeCount": 3 }
-}
-```
+Returns incident objects with `firstTrigger`, `lastTrigger`, `triggerCount`, `recovered`, `recoveredAt`, `duration`. Tune `dedupeWindow`: `5m` for flapping, `15m` for storms, `1h` for grouping.
 
-| Dedupe Window | Use Case |
-|---------------|----------|
-| `5m` | Flapping detection (default) |
-| `15m` | Alert storm consolidation |
-| `1h` | Incident grouping |
+### Enrich events with monitor metadata
 
-## Monitor Enrichment
-
-Add monitor metadata to search results for deeper context:
+For deep investigation (slower — fetches the monitors list):
 
 ```
 events({ action: "search", tags: ["source:alert"], from: "1h", enrich: true })
 ```
 
-Returns events with monitor details (type, thresholds, tags):
-```json
-{
-  "events": [{
-    "id": "...",
-    "title": "[Triggered on {host:prod-1}] High CPU Usage",
-    "monitorMetadata": {
-      "id": 12345,
-      "type": "metric alert",
-      "message": "CPU is above threshold",
-      "tags": ["team:platform", "env:prod"],
-      "options": { "thresholds": { "critical": 90 } }
-    }
-  }]
-}
-```
-
-Note: Enrichment adds latency (fetches monitor list). Use for detailed investigation, not bulk analysis.
-
-## Cross-Correlation
+Adds `monitorMetadata` (type, thresholds, message, tags) to each event. Avoid for bulk analysis.
 
 ### Logs → Traces → Metrics
 
-1. **Find errors in logs**: `logs({ action: "search", status: "error", sample: "diverse" })`
-2. **Extract trace_id** from log attributes (`dd.trace_id`)
-3. **Get full trace**: `traces({ action: "search", query: "trace_id:<id>" })`
-4. **Query APM metrics** (avg): `metrics({ action: "query", query: "avg:trace.express.request.duration{service:my-service}" })`
-5. **Query APM latency percentiles** (p95): `metrics({ action: "query", query: "p95:trace.express.request{service:my-service}" })` — note: use root metric without `.duration` suffix for percentiles
+1. Find diverse errors in logs: `logs({ action: "search", status: "error", sample: "diverse" })`
+2. Extract `dd.trace_id` from a log attribute
+3. Fetch the full trace: `traces({ action: "search", query: "trace_id:<id>" })`
+4. APM averages: `metrics({ action: "query", query: "avg:trace.express.request.duration{service:my-service}" })`
+5. APM percentiles: `metrics({ action: "query", query: "p95:trace.express.request{service:my-service}" })` — root metric without `.duration` for percentiles
 
 ## Deep Links
 
-All query responses include a `datadog_url` field that links directly to the Datadog UI, allowing AI assistants to provide evidence links back to the source data.
-
-### Example Response
+Every query response includes a `datadog_url` field that links back to the Datadog UI, so the AI can cite evidence:
 
 ```json
 {
@@ -489,27 +506,18 @@ All query responses include a `datadog_url` field that links directly to the Dat
   "meta": {
     "count": 25,
     "query": "service:api status:error",
-    "from": "2024-01-15T10:00:00Z",
-    "to": "2024-01-15T11:00:00Z",
-    "datadog_url": "https://app.datadoghq.com/logs?query=service%3Aapi%20status%3Aerror&from_ts=1705312800000&to_ts=1705316400000"
+    "from": "2026-05-15T10:00:00Z",
+    "to": "2026-05-15T11:00:00Z",
+    "datadog_url": "https://app.datadoghq.com/logs?query=service%3Aapi%20status%3Aerror&from_ts=1747303200000&to_ts=1747306800000"
   }
 }
 ```
 
-### Supported Tools
+Supported tools: `logs`, `metrics`, `traces`, `events`, `monitors`, `rum`, `slos`.
 
-| Tool | URL Type |
-|------|----------|
-| `logs` | Logs Explorer with query and time range |
-| `metrics` | Metrics Explorer with query and time range |
-| `traces` | APM Traces with query and time range |
-| `events` | Event Explorer with query and time range |
-| `monitors` | Monitor detail page (get) or Manage Monitors (list/search) |
-| `rum` | RUM Explorer or Session Replay |
+### Multi-region
 
-### Multi-Region Support
-
-URLs are automatically generated for your configured Datadog site:
+URLs are generated for your configured `DD_SITE`:
 
 | Site | App URL |
 |------|---------|
@@ -519,8 +527,6 @@ URLs are automatically generated for your configured Datadog site:
 | `us5.datadoghq.com` | `https://us5.datadoghq.com` |
 | `ap1.datadoghq.com` | `https://ap1.datadoghq.com` |
 | `ddog-gov.com` | `https://app.ddog-gov.com` |
-
-Configure your site via the `DD_SITE` environment variable or `--site` flag.
 
 ## Contributing
 
