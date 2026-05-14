@@ -470,7 +470,8 @@ function extractTimestamp(outer: { timestamp?: unknown }, inner: { timestamp?: u
     return outerTs.toISOString()
   }
   if (typeof outerTs === 'string' && outerTs.length > 0) {
-    return new Date(outerTs).toISOString()
+    const d = new Date(outerTs)
+    if (!Number.isNaN(d.getTime())) return d.toISOString()
   }
   const innerTs = inner.timestamp
   if (typeof innerTs === 'number' && Number.isFinite(innerTs)) {
