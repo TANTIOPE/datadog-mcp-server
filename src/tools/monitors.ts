@@ -427,9 +427,12 @@ export function buildMonitorHistoryQuery(params: {
 
 /**
  * Shape of the `monitor.transition` block as observed in v2 event responses.
- * The SDK exposes `MonitorType.additionalProperties` for unknown keys, but at
- * runtime the deserializer keeps unknown keys directly on the object, so we
- * read it via a narrow runtime cast.
+ * The SDK's ObjectSerializer moves unknown keys (like `transition`) into
+ * `monitor.additionalProperties` because `transition` is not declared on the
+ * generated `MonitorType` model. Synthetic test events constructed in unit
+ * tests, on the other hand, keep `transition` directly on the monitor object.
+ * We support both shapes via the `additionalProperties` fallback in
+ * `formatMonitorTransition`.
  */
 interface RawMonitorTransition {
   source_state?: string
@@ -442,6 +445,7 @@ interface RawMonitorBlock {
   name?: string
   groups?: unknown
   transition?: RawMonitorTransition
+  additionalProperties?: { transition?: RawMonitorTransition }
 }
 
 function isMonitorState(value: unknown): value is MonitorState {
@@ -495,7 +499,15 @@ export function formatMonitorTransition(event: v2.EventResponse): MonitorTransit
     monitor?: unknown
   }
   const monitor = inner.monitor as RawMonitorBlock | undefined
-  const transition = monitor?.transition
+  if (!monitor) {
+    return null
+  }
+  // After SDK deserialization, unknown keys land in `monitor.additionalProperties`
+  // (see ObjectSerializer behaviour in node_modules/@datadog/datadog-api-client/
+  //  packages/datadog-api-client-v2/models/ObjectSerializer.js). Fall back to
+  //  that location so live API responses parse correctly while synthetic test
+  //  events keep working unchanged.
+  const transition = monitor.transition ?? monitor.additionalProperties?.transition
   if (!transition) {
     return null
   }
