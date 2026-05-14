@@ -5,7 +5,12 @@ import type { SearchServiceLevelObjective } from '@datadog/datadog-api-client/di
 import { handleDatadogError, requireParam, checkReadOnly } from '../errors/datadog.js'
 import { toolResult } from '../utils/format.js'
 import { parseTime, ensureValidTimeRange } from '../utils/time.js'
+import { snakeToCamel, normalizeConfigKeys } from '../utils/normalize.js'
 import type { LimitsConfig } from '../config/schema.js'
+
+// Re-exported so existing public callers (and tests) that import these helpers
+// from '../tools/slos.js' continue to work. Canonical home is '../utils/normalize.js'.
+export { snakeToCamel, normalizeConfigKeys }
 
 const ActionSchema = z.enum(['list', 'get', 'create', 'update', 'delete', 'history'])
 
@@ -192,26 +197,6 @@ export async function getSlo(api: v1.ServiceLevelObjectivesApi, id: string) {
   return {
     slo: response.data ? formatSlo(response.data) : null
   }
-}
-
-/**
- * Recursively convert snake_case keys to camelCase
- */
-export function snakeToCamel(str: string): string {
-  return str.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase())
-}
-
-export function normalizeConfigKeys(obj: unknown): unknown {
-  if (obj === null || obj === undefined) return obj
-  if (Array.isArray(obj)) return obj.map(normalizeConfigKeys)
-  if (typeof obj !== 'object') return obj
-
-  const normalized: Record<string, unknown> = {}
-  for (const [key, value] of Object.entries(obj as Record<string, unknown>)) {
-    const camelKey = snakeToCamel(key)
-    normalized[camelKey] = normalizeConfigKeys(value)
-  }
-  return normalized
 }
 
 /**

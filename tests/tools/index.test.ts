@@ -25,6 +25,9 @@ vi.mock('../../src/tools/tags.js', () => ({ registerTagsTool: vi.fn() }))
 vi.mock('../../src/tools/usage.js', () => ({ registerUsageTool: vi.fn() }))
 vi.mock('../../src/tools/auth.js', () => ({ registerAuthTool: vi.fn() }))
 vi.mock('../../src/tools/schema.js', () => ({ registerSchemaTool: vi.fn() }))
+vi.mock('../../src/tools/logs_pipelines.js', () => ({ registerLogsPipelinesTool: vi.fn() }))
+vi.mock('../../src/tools/logs_indexes.js', () => ({ registerLogsIndexesTool: vi.fn() }))
+vi.mock('../../src/tools/logs_archives.js', () => ({ registerLogsArchivesTool: vi.fn() }))
 
 import { registerMonitorsTool } from '../../src/tools/monitors.js'
 import { registerDashboardsTool } from '../../src/tools/dashboards.js'
@@ -46,6 +49,9 @@ import { registerTagsTool } from '../../src/tools/tags.js'
 import { registerUsageTool } from '../../src/tools/usage.js'
 import { registerAuthTool } from '../../src/tools/auth.js'
 import { registerSchemaTool } from '../../src/tools/schema.js'
+import { registerLogsPipelinesTool } from '../../src/tools/logs_pipelines.js'
+import { registerLogsIndexesTool } from '../../src/tools/logs_indexes.js'
+import { registerLogsArchivesTool } from '../../src/tools/logs_archives.js'
 
 import type { DatadogConfig } from '../../src/config/schema.js'
 
@@ -83,7 +89,10 @@ describe('Tool Registration', () => {
       users: {} as unknown,
       teams: {} as unknown,
       tags: {} as unknown,
-      usage: {} as unknown
+      usage: {} as unknown,
+      logsPipelines: {} as unknown,
+      logsIndexes: {} as unknown,
+      logsArchives: {} as unknown
     }
     mockLimits = {
       maxResults: 100,
@@ -205,6 +214,27 @@ describe('Tool Registration', () => {
     expect(registerUsageTool).toHaveBeenCalledWith(mockServer, mockClients.usage, mockLimits)
     expect(registerAuthTool).toHaveBeenCalledWith(mockServer, mockClients)
     expect(registerSchemaTool).toHaveBeenCalledWith(mockServer)
+    expect(registerLogsPipelinesTool).toHaveBeenCalledWith(
+      mockServer,
+      mockClients.logsPipelines,
+      mockLimits,
+      false,
+      'datadoghq.com'
+    )
+    expect(registerLogsIndexesTool).toHaveBeenCalledWith(
+      mockServer,
+      mockClients.logsIndexes,
+      mockLimits,
+      false,
+      'datadoghq.com'
+    )
+    expect(registerLogsArchivesTool).toHaveBeenCalledWith(
+      mockServer,
+      mockClients.logsArchives,
+      mockLimits,
+      false,
+      'datadoghq.com'
+    )
   })
 
   it('should not register disabled tools', () => {
@@ -227,6 +257,27 @@ describe('Tool Registration', () => {
     expect(registerDashboardsTool).toHaveBeenCalled()
     expect(registerMetricsTool).toHaveBeenCalled()
     expect(registerEventsTool).toHaveBeenCalled()
+    expect(registerLogsPipelinesTool).toHaveBeenCalled()
+    expect(registerLogsIndexesTool).toHaveBeenCalled()
+    expect(registerLogsArchivesTool).toHaveBeenCalled()
+  })
+
+  it('should not register logs config tools when individually disabled', () => {
+    mockFeatures.disabledTools = ['logs_pipelines', 'logs_indexes', 'logs_archives']
+
+    registerAllTools(
+      mockServer,
+      mockClients,
+      mockLimits,
+      mockFeatures,
+      'datadoghq.com',
+      mockDatadogConfig
+    )
+
+    expect(registerLogsPipelinesTool).not.toHaveBeenCalled()
+    expect(registerLogsIndexesTool).not.toHaveBeenCalled()
+    expect(registerLogsArchivesTool).not.toHaveBeenCalled()
+    expect(registerLogsTool).toHaveBeenCalled()
   })
 
   it('should pass readOnly flag correctly', () => {

@@ -25,6 +25,9 @@ export interface DatadogClients {
   spans: v2.SpansApi
   services: v2.ServiceDefinitionApi
   auth: v1.AuthenticationApi
+  logsPipelines: v1.LogsPipelinesApi
+  logsIndexes: v1.LogsIndexesApi
+  logsArchives: v2.LogsArchivesApi
 }
 
 export function createDatadogClients(config: DatadogConfig): DatadogClients {
@@ -72,6 +75,9 @@ export function createDatadogClients(config: DatadogConfig): DatadogClients {
     usage: new v1.UsageMeteringApi(configuration),
     spans: new v2.SpansApi(configuration),
     services: new v2.ServiceDefinitionApi(configuration),
-    auth: new v1.AuthenticationApi(configuration)
+    auth: new v1.AuthenticationApi(configuration),
+    logsPipelines: new v1.LogsPipelinesApi(configuration),
+    logsIndexes: new v1.LogsIndexesApi(configuration),
+    logsArchives: new v2.LogsArchivesApi(configuration)
   }
 }

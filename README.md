@@ -135,6 +135,15 @@ When running with `--transport=http`:
 | `dashboards` | delete | Visualization | Delete a dashboard | `dashboards_write` |
 | `logs` | search | Logs | Search logs with query syntax and filters | `logs_read_data`, `logs_read_index_data` |
 | `logs` | aggregate | Logs | Aggregate log data with groupBy | `logs_read_data` |
+| `logs_pipelines` | list, get | Logs Config | Inspect log processing pipelines and their processors | `logs_read_config` |
+| `logs_pipelines` | create, update, delete, reorder | Logs Config | Author pipelines and processor chains | `logs_write_config` |
+| `logs_pipelines` | get_order | Logs Config | Read pipeline evaluation order | `logs_read_config` |
+| `logs_indexes` | list, get | Logs Config | Inspect indexes (filter, retention, Flex tier, exclusion filters); `create`/`delete` are UI-only per Datadog and not exposed | `logs_read_config` |
+| `logs_indexes` | update, reorder | Logs Config | Update index filter/retention/quota and reorder evaluation | `logs_write_config` |
+| `logs_indexes` | get_order | Logs Config | Read index evaluation order | `logs_read_config` |
+| `logs_archives` | list, get | Logs Config | Inspect log archives (S3 / GCS / Azure destinations); per-provider credential fields are forwarded unchanged | `logs_read_archives` |
+| `logs_archives` | create, update, delete, reorder | Logs Config | Manage archive destinations; `destination.type` validated against `s3 | gcs | azure_storage` before SDK call | `logs_write_archives` |
+| `logs_archives` | get_order | Logs Config | Read archive evaluation order | `logs_read_archives` |
 | `metrics` | query | Metrics | Query timeseries data | `metrics_read`, `timeseries_query` |
 | `metrics` | search | Metrics | Search for metrics by name | `metrics_read` |
 | `metrics` | list | Metrics | List active metrics | `metrics_read` |

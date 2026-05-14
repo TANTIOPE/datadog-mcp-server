@@ -22,6 +22,9 @@ import { registerTagsTool } from './tags.js'
 import { registerUsageTool } from './usage.js'
 import { registerAuthTool } from './auth.js'
 import { registerSchemaTool } from './schema.js'
+import { registerLogsPipelinesTool } from './logs_pipelines.js'
+import { registerLogsIndexesTool } from './logs_indexes.js'
+import { registerLogsArchivesTool } from './logs_archives.js'
 
 export function registerAllTools(
   server: McpServer,
@@ -47,6 +50,12 @@ export function registerAllTools(
   if (enabled('dashboards'))
     registerDashboardsTool(server, clients.dashboards, limits, readOnly, credentials)
   if (enabled('logs')) registerLogsTool(server, clients.logs, limits, site)
+  if (enabled('logs_pipelines'))
+    registerLogsPipelinesTool(server, clients.logsPipelines, limits, readOnly, site)
+  if (enabled('logs_indexes'))
+    registerLogsIndexesTool(server, clients.logsIndexes, limits, readOnly, site)
+  if (enabled('logs_archives'))
+    registerLogsArchivesTool(server, clients.logsArchives, limits, readOnly, site)
   if (enabled('metrics'))
     registerMetricsTool(server, clients.metricsV1, clients.metricsV2, limits, site)
   if (enabled('traces')) registerTracesTool(server, clients.spans, clients.services, limits, site)
