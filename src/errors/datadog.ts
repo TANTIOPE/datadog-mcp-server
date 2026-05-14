@@ -102,7 +102,8 @@ const WRITE_ACTIONS = new Set([
   'unmute',
   'cancel',
   'add',
-  'trigger'
+  'trigger',
+  'reorder'
 ])
 
 /**
