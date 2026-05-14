@@ -18,7 +18,8 @@ const ActionSchema = z.enum([
   'delete',
   'mute',
   'unmute',
-  'top'
+  'top',
+  'history'
 ])
 
 const InputSchema = {
@@ -58,7 +59,30 @@ const InputSchema = {
     .min(1)
     .max(5000)
     .optional()
-    .describe('Maximum events to fetch for top action (default: 5000, max: 5000)')
+    .describe('Maximum events to fetch for top action (default: 5000, max: 5000)'),
+  // History action parameters
+  transitionType: z
+    .array(
+      z.enum([
+        'alert',
+        'alert recovery',
+        'warning',
+        'warning recovery',
+        'no data',
+        'no data recovery',
+        'renotify'
+      ])
+    )
+    .optional()
+    .describe(
+      'For history action: filter by monitor state transition types. Default: ["alert","alert recovery"] (real fires + recoveries, excludes renotifies). Pass ["alert"] for fires only, or include "renotify" for full chronological audit.'
+    ),
+  group: z
+    .string()
+    .optional()
+    .describe(
+      'For history action: filter transitions to a specific multi-alert monitor group (e.g., "pod_name:foo,kube_namespace:bar"). Optional; omit for all groups.'
+    )
 }
 
 // Nested schemas for MonitorOptionsSchema (see design.md Data model).
@@ -290,6 +314,354 @@ export function formatMonitorDetail(m: v1.Monitor, site: string = 'datadoghq.com
     detail.restrictedRoles = m.restrictedRoles
   }
   return detail
+}
+
+// ============ Monitor State History (action=history) types and helpers ============
+
+/**
+ * Monitor transition types as exposed by Datadog's
+ * `@monitor.transition.transition_type` facet on v2 events.
+ *
+ * - 'alert' / 'warning' / 'no data' are forward transitions (OK/Warn → Alert, etc.)
+ * - '<state> recovery' transitions are returns to OK
+ * - 'renotify' is a repeated notification while the monitor is stuck in a non-OK
+ *   state — it is NOT a state transition and is excluded by default.
+ */
+export type TransitionType =
+  | 'alert'
+  | 'alert recovery'
+  | 'warning'
+  | 'warning recovery'
+  | 'no data'
+  | 'no data recovery'
+  | 'renotify'
+
+/** Datadog monitor state values used in `source_state` / `destination_state`. */
+export type MonitorState = 'Alert' | 'Warn' | 'OK' | 'No Data'
+
+/** A single state transition extracted from a v2 events `source:alert` payload. */
+export interface MonitorTransition {
+  /** ISO 8601 timestamp of the transition. */
+  timestamp: string
+  monitorId: number
+  monitorName: string
+  /** Joined `monitor.groups` array (comma-separated) or `null` when not multi-alert. */
+  group: string | null
+  fromState: MonitorState
+  toState: MonitorState
+  transitionType: TransitionType
+  /** Event ID for cross-reference with the events tool. */
+  eventId: string
+}
+
+/** Metadata describing the request and post-filter shape of a history call. */
+export interface MonitorHistoryMeta {
+  monitorId: number
+  query: string
+  from: string
+  to: string
+  transitionTypes: TransitionType[]
+  group: string | null
+  count: number
+  totalFetched: number
+  truncated: boolean
+  datadog_url: string
+}
+
+/** Full response shape for `monitors action=history`. */
+export interface MonitorHistoryResponse {
+  transitions: MonitorTransition[]
+  count: number
+  meta: MonitorHistoryMeta
+}
+
+/** Default transition_type filter applied by `monitors action=history`. */
+export const DEFAULT_HISTORY_TRANSITION_TYPES: readonly TransitionType[] = [
+  'alert',
+  'alert recovery'
+]
+
+/**
+ * Quote a value for inclusion in a Datadog event search query.
+ * Multi-word values (containing whitespace) and values containing characters
+ * other than a small safe set get wrapped in double quotes; single-word safe
+ * values stay unquoted to match the verbatim shape observed in the live
+ * investigation (see design.md "Investigation log").
+ */
+function quoteIfNeeded(value: string): string {
+  // Safe = letters, digits, underscore, hyphen, dot — Datadog accepts these unquoted.
+  return /^[A-Za-z0-9_.-]+$/.test(value) ? value : `"${value}"`
+}
+
+/**
+ * Compose the Datadog event search `filter.query` for `monitors action=history`.
+ *
+ * Always emits `source:alert @monitor.id:N`. When `transitionType` is a non-empty
+ * array, appends `@monitor.transition.transition_type:(a OR "b c" OR ...)` with
+ * multi-word values quoted. When `group` is non-empty, appends
+ * `@monitor.groups:"<group>"`.
+ *
+ * An empty `transitionType: []` is treated as undefined per design (no clause).
+ */
+export function buildMonitorHistoryQuery(params: {
+  monitorId: number
+  transitionType?: TransitionType[]
+  group?: string
+}): string {
+  const parts: string[] = ['source:alert', `@monitor.id:${params.monitorId}`]
+
+  const transitionTypes =
+    params.transitionType && params.transitionType.length > 0 ? params.transitionType : undefined
+
+  if (transitionTypes) {
+    const inner = transitionTypes.map(quoteIfNeeded).join(' OR ')
+    parts.push(`@monitor.transition.transition_type:(${inner})`)
+  }
+
+  if (params.group && params.group.length > 0) {
+    const escaped = params.group.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+    parts.push(`@monitor.groups:"${escaped}"`)
+  }
+
+  return parts.join(' ')
+}
+
+/**
+ * Shape of the `monitor.transition` block as observed in v2 event responses.
+ * The SDK's ObjectSerializer moves unknown keys (like `transition`) into
+ * `monitor.additionalProperties` because `transition` is not declared on the
+ * generated `MonitorType` model. Synthetic test events constructed in unit
+ * tests, on the other hand, keep `transition` directly on the monitor object.
+ * We support both shapes via the `additionalProperties` fallback in
+ * `formatMonitorTransition`.
+ */
+interface RawMonitorTransition {
+  source_state?: string
+  destination_state?: string
+  transition_type?: string
+}
+
+interface RawMonitorBlock {
+  id?: number
+  name?: string
+  groups?: unknown
+  transition?: RawMonitorTransition
+  additionalProperties?: { transition?: RawMonitorTransition }
+}
+
+function isMonitorState(value: unknown): value is MonitorState {
+  return value === 'Alert' || value === 'Warn' || value === 'OK' || value === 'No Data'
+}
+
+function isTransitionType(value: unknown): value is TransitionType {
+  return (
+    value === 'alert' ||
+    value === 'alert recovery' ||
+    value === 'warning' ||
+    value === 'warning recovery' ||
+    value === 'no data' ||
+    value === 'no data recovery' ||
+    value === 'renotify'
+  )
+}
+
+function extractTimestamp(outer: { timestamp?: unknown }, inner: { timestamp?: unknown }): string {
+  const outerTs = outer.timestamp
+  if (outerTs instanceof Date) {
+    return outerTs.toISOString()
+  }
+  if (typeof outerTs === 'string' && outerTs.length > 0) {
+    const d = new Date(outerTs)
+    if (!Number.isNaN(d.getTime())) return d.toISOString()
+  }
+  const innerTs = inner.timestamp
+  if (typeof innerTs === 'number' && Number.isFinite(innerTs)) {
+    return new Date(innerTs).toISOString()
+  }
+  if (typeof innerTs === 'string' && innerTs.length > 0) {
+    const parsed = Number.parseInt(innerTs, 10)
+    if (!Number.isNaN(parsed)) {
+      return new Date(parsed).toISOString()
+    }
+  }
+  return ''
+}
+
+/**
+ * Project a raw v2 `EventResponse` to a typed `MonitorTransition`.
+ *
+ * Returns `null` when the event lacks an `attributes.attributes.monitor.transition`
+ * block — for example renotify rows that slip past a stale filter, or non-monitor
+ * events. The caller is expected to drop nulls before counting.
+ */
+export function formatMonitorTransition(event: v2.EventResponse): MonitorTransition | null {
+  const outer = (event.attributes ?? {}) as { timestamp?: unknown; attributes?: unknown }
+  const inner = (outer.attributes ?? {}) as {
+    timestamp?: unknown
+    monitor?: unknown
+  }
+  const monitor = inner.monitor as RawMonitorBlock | undefined
+  if (!monitor) {
+    return null
+  }
+  // After SDK deserialization, unknown keys land in `monitor.additionalProperties`
+  // (see ObjectSerializer behaviour in node_modules/@datadog/datadog-api-client/
+  //  packages/datadog-api-client-v2/models/ObjectSerializer.js). Fall back to
+  //  that location so live API responses parse correctly while synthetic test
+  //  events keep working unchanged.
+  const transition = monitor.transition ?? monitor.additionalProperties?.transition
+  if (!transition) {
+    return null
+  }
+
+  const fromState = isMonitorState(transition.source_state) ? transition.source_state : null
+  const toState = isMonitorState(transition.destination_state) ? transition.destination_state : null
+  const transitionType = isTransitionType(transition.transition_type)
+    ? transition.transition_type
+    : null
+
+  if (!fromState || !toState || !transitionType) {
+    return null
+  }
+
+  const groupsRaw = monitor.groups
+  const group =
+    Array.isArray(groupsRaw) && groupsRaw.length > 0
+      ? groupsRaw.map((g) => String(g)).join(',')
+      : null
+
+  const monitorId = typeof monitor.id === 'number' ? monitor.id : 0
+  const monitorName =
+    typeof monitor.name === 'string' && monitor.name.length > 0
+      ? monitor.name
+      : `Monitor ${monitorId}`
+
+  return {
+    timestamp: extractTimestamp(outer, inner),
+    monitorId,
+    monitorName,
+    group,
+    fromState,
+    toState,
+    transitionType,
+    eventId: String(event.id ?? '')
+  }
+}
+
+/**
+ * Orchestrate a `monitors action=history` query: paginate `eventsApi.searchEvents`,
+ * project each raw event via `formatMonitorTransition`, and return the structured
+ * `MonitorHistoryResponse`.
+ *
+ * Defaults follow the conventions of other event-based actions in this codebase:
+ * - Time range falls back to `hoursAgo(limits.defaultTimeRangeHours)` → `now()`.
+ * - `transitionType` defaults to `DEFAULT_HISTORY_TRANSITION_TYPES`
+ *   (`['alert', 'alert recovery']`) when undefined OR empty.
+ *
+ * Pagination is bounded identically to `aggregateEventsV2`:
+ * - `maxPages = 100`
+ * - `maxEventsToProcess = 10000`
+ * - per-page `limit = 1000`
+ *
+ * On cap hit, `meta.truncated` is set to `true`. The function is strictly
+ * read-only: it never calls any SDK method whose verb is
+ * `create`/`update`/`delete`/`mute`/`unmute`.
+ */
+export async function historyMonitor(
+  eventsApi: v2.EventsApi,
+  monitorId: number,
+  params: {
+    from?: string
+    to?: string
+    transitionType?: TransitionType[]
+    group?: string
+  },
+  limits: LimitsConfig,
+  site: string
+): Promise<MonitorHistoryResponse> {
+  // Time range setup — identical convention to topMonitors / searchEventsV2.
+  const defaultFrom = hoursAgo(limits.defaultTimeRangeHours)
+  const defaultTo = now()
+  const [validFrom, validTo] = ensureValidTimeRange(
+    parseTime(params.from, defaultFrom),
+    parseTime(params.to, defaultTo)
+  )
+  const fromTime = new Date(validFrom * 1000).toISOString()
+  const toTime = new Date(validTo * 1000).toISOString()
+
+  // Empty array → undefined → default per design's error-handling table.
+  const effectiveTransitionTypes: TransitionType[] =
+    params.transitionType && params.transitionType.length > 0
+      ? params.transitionType
+      : [...DEFAULT_HISTORY_TRANSITION_TYPES]
+
+  const query = buildMonitorHistoryQuery({
+    monitorId,
+    transitionType: effectiveTransitionTypes,
+    group: params.group
+  })
+
+  const transitions: MonitorTransition[] = []
+  const maxEventsToProcess = 10000
+  const maxPages = 100
+  let eventCount = 0
+  let pageCount = 0
+
+  const body: v2.EventsListRequest = {
+    filter: {
+      query,
+      from: fromTime,
+      to: toTime
+    },
+    sort: 'timestamp' as v2.EventsSort,
+    page: { limit: 1000 }
+  }
+
+  let cursor: string | undefined
+
+  while (pageCount < maxPages && eventCount < maxEventsToProcess) {
+    const pageBody = { ...body, page: { ...body.page, cursor } }
+    const response = await eventsApi.searchEvents({ body: pageBody })
+
+    const events = response.data ?? []
+    if (events.length === 0) break
+
+    for (const event of events) {
+      const transition = formatMonitorTransition(event)
+      if (transition !== null) {
+        transitions.push(transition)
+      }
+      eventCount++
+      if (eventCount >= maxEventsToProcess) break
+    }
+
+    cursor = response.meta?.page?.after
+    if (!cursor) break
+    pageCount++
+  }
+
+  const truncated = eventCount >= maxEventsToProcess
+  const resolvedGroup = params.group && params.group.length > 0 ? params.group : null
+  const count = transitions.length
+
+  const meta: MonitorHistoryMeta = {
+    monitorId,
+    query,
+    from: fromTime,
+    to: toTime,
+    transitionTypes: effectiveTransitionTypes,
+    group: resolvedGroup,
+    count,
+    totalFetched: eventCount,
+    truncated,
+    datadog_url: buildEventsUrl(query, validFrom, validTo, site)
+  }
+
+  return {
+    transitions,
+    count,
+    meta
+  }
 }
 
 export async function listMonitors(
@@ -744,7 +1116,7 @@ export function registerMonitorsTool(
 ): void {
   server.tool(
     'monitors',
-    `Manage Datadog monitors. Actions: list, get, search, create, update, delete, mute, unmute, top.
+    `Manage Datadog monitors. Actions: list, get, search, create, update, delete, mute, unmute, top, history.
 Filters: name, tags, groupStates (alert/warn/ok/no data).
 get/create/update return the full options object so callers can safely read-then-patch.
 
@@ -766,8 +1138,25 @@ top: Ranked monitors by alert frequency with real monitor names and context brea
   - Returns: {rank, monitor_id, name (with {{template.vars}}), message (template), total_count, by_context}
   - Perfect for weekly/daily alert reports
   - Gets real monitor names from monitors API (not event titles)
+  - WARNING: total_count is the raw alert-event count and INCLUDES renotifies/re-evaluations.
+    For monitors stuck in Alert state, Datadog emits a renotify event every renotify_interval
+    minutes, which inflates this count well beyond the number of real fires. When the question
+    is "how many times did this monitor actually fire", use action=history instead.
 
-For generic event grouping (deployments, configs), use events tool instead.`,
+history: Count and list real state transitions for one monitor over a time window.
+  - Inputs: id (required, monitor ID), from/to (optional time range), transitionType (optional
+    filter, defaults to ["alert","alert recovery"]), group (optional multi-alert group filter).
+  - Returns: {transitions: [{timestamp, monitorId, monitorName, group, fromState, toState,
+    transitionType, eventId}], count, meta}
+  - count = transitions.length — the number of REAL state changes (fires + recoveries by
+    default), NOT the renotify-inflated count returned by action=top or events action=search.
+  - Backed by Datadog v2 events search with a hardcoded source:alert + @monitor.transition.
+    transition_type filter that excludes renotifies by default. To include renotifies, pass
+    transitionType including "renotify".
+
+For generic event grouping (deployments, configs), use events tool instead. Note that the
+events tool's action=search with source:alert ALSO includes renotifies; use its
+transitionType filter (or this action=history) for fires-only counts.`,
     InputSchema,
     async ({
       action,
@@ -782,7 +1171,9 @@ For generic event grouping (deployments, configs), use events tool instead.`,
       from,
       to,
       contextTags,
-      maxEvents
+      maxEvents,
+      transitionType,
+      group
     }) => {
       try {
         checkReadOnly(action, readOnly)
@@ -845,6 +1236,23 @@ For generic event grouping (deployments, configs), use events tool instead.`,
                 site
               )
             )
+
+          case 'history': {
+            const monitorIdString = requireParam(id, 'id', 'history')
+            const monitorId = Number.parseInt(monitorIdString, 10)
+            if (Number.isNaN(monitorId)) {
+              throw new Error(`Invalid monitor ID: ${monitorIdString}`)
+            }
+            return toolResult(
+              await historyMonitor(
+                eventsApi,
+                monitorId,
+                { from, to, transitionType, group },
+                limits,
+                site
+              )
+            )
+          }
 
           default:
             throw new Error(`Unknown action: ${action}`)

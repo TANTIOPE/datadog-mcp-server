@@ -74,6 +74,23 @@ const InputSchema = {
     .optional()
     .describe(
       'Maximum events to fetch for grouping in top action (default: 5000, max: 5000). Higher = more accurate but slower'
+    ),
+  // Monitor transition filter (additive — see requirement 5.2 / monitors action=history)
+  transitionType: z
+    .array(
+      z.enum([
+        'alert',
+        'alert recovery',
+        'warning',
+        'warning recovery',
+        'no data',
+        'no data recovery',
+        'renotify'
+      ])
+    )
+    .optional()
+    .describe(
+      'Filter events by monitor state transition type. When set, restricts results to events with @monitor.transition.transition_type matching any value. Use ["alert","alert recovery"] to count real fires/recoveries and skip renotifies. Empty array is treated as undefined (no filter). For a fires-only count by monitor ID, prefer monitors action=history.'
     )
 }
 
@@ -517,13 +534,30 @@ export async function createEventV1(
 // ============ V2 API Functions (new capabilities) ============
 
 /**
- * Build a Datadog event search query from filter parameters
+ * Quote a value for inclusion in a Datadog event search query.
+ * Values containing whitespace or characters outside a small safe set are
+ * wrapped in double quotes; safe single-word values stay unquoted. Mirrors the
+ * helper used by `buildMonitorHistoryQuery` in `monitors.ts`.
+ */
+function quoteIfNeeded(value: string): string {
+  return /^[A-Za-z0-9_.-]+$/.test(value) ? value : `"${value}"`
+}
+
+/**
+ * Build a Datadog event search query from filter parameters.
+ *
+ * `transitionType` is additive: when omitted or an empty array, the emitted
+ * query string is byte-identical to the pre-spec behaviour (requirement 5.1).
+ * When non-empty, appends `@monitor.transition.transition_type:(a OR "b c" OR ...)`
+ * with multi-word values quoted, matching the live investigation in
+ * design.md ("API Investigation Result").
  */
 export function buildEventQuery(params: {
   query?: string
   sources?: string[]
   tags?: string[]
   priority?: string
+  transitionType?: string[]
 }): string {
   const parts: string[] = []
 
@@ -546,6 +580,11 @@ export function buildEventQuery(params: {
     parts.push(`priority:${params.priority}`)
   }
 
+  if (params.transitionType && params.transitionType.length > 0) {
+    const inner = params.transitionType.map(quoteIfNeeded).join(' OR ')
+    parts.push(`@monitor.transition.transition_type:(${inner})`)
+  }
+
   return parts.length > 0 ? parts.join(' ') : '*'
 }
 
@@ -560,6 +599,7 @@ export async function searchEventsV2(
     priority?: string
     limit?: number
     cursor?: string
+    transitionType?: string[]
   },
   limits: LimitsConfig,
   site: string
@@ -578,7 +618,8 @@ export async function searchEventsV2(
     query: params.query,
     sources: params.sources,
     tags: params.tags,
-    priority: params.priority
+    priority: params.priority,
+    transitionType: params.transitionType
   })
 
   const effectiveLimit = params.limit ?? limits.defaultLimit
@@ -628,6 +669,7 @@ export async function aggregateEventsV2(
     tags?: string[]
     groupBy?: string[]
     limit?: number
+    transitionType?: string[]
   },
   limits: LimitsConfig,
   site: string
@@ -647,7 +689,8 @@ export async function aggregateEventsV2(
   const fullQuery = buildEventQuery({
     query: params.query,
     sources: params.sources,
-    tags: params.tags
+    tags: params.tags,
+    transitionType: params.transitionType
   })
 
   const groupByFields = params.groupBy ?? ['monitor_name']
@@ -745,6 +788,7 @@ export async function topEventsV2(
     groupBy?: string[]
     contextTags?: string[]
     maxEvents?: number
+    transitionType?: string[]
   },
   limits: LimitsConfig,
   site: string
@@ -780,7 +824,8 @@ export async function topEventsV2(
       to: params.to,
       sources: params.sources,
       tags: effectiveTags,
-      limit: params.maxEvents ?? 5000
+      limit: params.maxEvents ?? 5000,
+      transitionType: params.transitionType
     },
     limits,
     site
@@ -915,6 +960,7 @@ export async function timeseriesEventsV2(
     groupBy?: string[]
     interval?: string
     limit?: number
+    transitionType?: string[]
   },
   limits: LimitsConfig,
   site: string
@@ -932,7 +978,8 @@ export async function timeseriesEventsV2(
   const fullQuery = buildEventQuery({
     query: params.query ?? 'source:alert',
     sources: params.sources,
-    tags: params.tags
+    tags: params.tags,
+    transitionType: params.transitionType
   })
 
   const intervalMs = parseIntervalToMs(params.interval)
@@ -1043,6 +1090,7 @@ export async function incidentsEventsV2(
     tags?: string[]
     dedupeWindow?: string
     limit?: number
+    transitionType?: string[]
   },
   limits: LimitsConfig,
   site: string
@@ -1060,7 +1108,8 @@ export async function incidentsEventsV2(
   const fullQuery = buildEventQuery({
     query: params.query ?? 'source:alert',
     sources: params.sources,
-    tags: params.tags
+    tags: params.tags,
+    transitionType: params.transitionType
   })
 
   // Parse dedupe window (default 5 minutes)
@@ -1333,10 +1382,17 @@ export function registerEventsTool(
     `Track Datadog events. Actions: list, get, create, search, aggregate, top, timeseries, incidents, discover.
 For monitor alerts, use tags: ["source:alert"].
 
+IMPORTANT — re-evaluation vs transition:
+  - source:alert events INCLUDE renotifies and re-evaluations (every Datadog re-evaluation of an alerting monitor emits an event). A "how many times did monitor X fire" question answered with source:alert alone over-counts.
+  - To restrict to real state transitions, pass transitionType (e.g. ["alert","alert recovery"]). This appends @monitor.transition.transition_type:(...) to the query and matches the design's live investigation.
+  - For a fires-only numeric count rooted in a single monitor ID, prefer the higher-level primitive monitors action=history — it returns {transitions, count, meta} with the same filter applied for you.
+
+transitionType: Optional array of monitor transition types (alert, alert recovery, warning, warning recovery, no data, no data recovery, renotify). Empty array is treated as undefined.
 top: Generic event grouping by any fields (groupBy parameter). Returns groups ranked by count with optional context breakdown.
   - Example: {groupBy: ["service"], message: "...", service: "api", total_count: 50, by_context: [{context: "queue:X", count: 30}]}
   - Use for deployments, configs, custom events, or monitor alerts
   - Returns "message" field (event title), NOT monitor name (use monitors tool for real names)
+  - total_count includes renotifies when source:alert is used without transitionType — see monitors action=history for fires-only counts
 discover: Returns available tag prefixes from events.
 aggregate: Custom groupBy, returns pipe-delimited keys.
 search: Full event details.
@@ -1362,7 +1418,8 @@ incidents: Deduplicate alerts with dedupeWindow.`,
       dedupeWindow,
       enrich,
       contextTags,
-      maxEvents
+      maxEvents,
+      transitionType
     }) => {
       try {
         checkReadOnly(action, readOnly)
@@ -1414,7 +1471,8 @@ incidents: Deduplicate alerts with dedupeWindow.`,
                 tags,
                 priority,
                 limit,
-                cursor
+                cursor,
+                transitionType
               },
               limits,
               site
@@ -1440,7 +1498,8 @@ incidents: Deduplicate alerts with dedupeWindow.`,
                   sources,
                   tags,
                   groupBy,
-                  limit
+                  limit,
+                  transitionType
                 },
                 limits,
                 site
@@ -1460,7 +1519,8 @@ incidents: Deduplicate alerts with dedupeWindow.`,
                   limit,
                   groupBy,
                   contextTags,
-                  maxEvents
+                  maxEvents,
+                  transitionType
                 },
                 limits,
                 site
@@ -1495,7 +1555,8 @@ incidents: Deduplicate alerts with dedupeWindow.`,
                   tags,
                   groupBy,
                   interval,
-                  limit
+                  limit,
+                  transitionType
                 },
                 limits,
                 site
@@ -1513,7 +1574,8 @@ incidents: Deduplicate alerts with dedupeWindow.`,
                   sources,
                   tags,
                   dedupeWindow,
-                  limit
+                  limit,
+                  transitionType
                 },
                 limits,
                 site
