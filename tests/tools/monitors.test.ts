@@ -629,7 +629,7 @@ describe('Monitors Tool', () => {
     it('throws EINVALID_MONITOR_CONFIG before any HTTP call when notifyNoData has wrong type', async () => {
       let requestCount = 0
       server.use(
-        http.post(endpoints.createMonitor, () => {
+        http.post(endpoints.listMonitors, () => {
           requestCount++
           return jsonResponse(fixtures.single)
         })
