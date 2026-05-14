@@ -706,6 +706,7 @@ export function computeDiagnostics(input: {
   const diagnostics: EventsDiagnostic[] = []
 
   const query = input.query ?? ''
+  // NOSONAR S5852: anchored alternation, no nested quantifiers, input is bounded user query string
   const queryHasSourceAlert =
     /(^|\s|\()source:alert(\s|\)|$)/.test(query) ||
     (input.sources?.includes('alert') ?? false) ||
