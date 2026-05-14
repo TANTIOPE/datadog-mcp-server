@@ -385,7 +385,10 @@ export function normalizeMonitorConfig(
   if (normalized.options && typeof normalized.options === 'object') {
     const opts = { ...(normalized.options as Record<string, unknown>) }
 
-    // Common snake_case -> camelCase conversions
+    // Common snake_case -> camelCase conversions. Keep this in sync with
+    // `MonitorOptionsSchema` so every documented camelCase key has its
+    // snake_case alias mapped — missing entries surface as spurious
+    // "unknown option key" warnings for callers using snake_case.
     const optionMappings: [string, string][] = [
       ['notify_no_data', 'notifyNoData'],
       ['no_data_timeframe', 'noDataTimeframe'],
@@ -400,6 +403,11 @@ export function normalizeMonitorConfig(
       ['include_tags', 'includeTags'],
       ['require_full_window', 'requireFullWindow'],
       ['escalation_message', 'escalationMessage'],
+      ['notification_preset_name', 'notificationPresetName'],
+      ['on_missing_data', 'onMissingData'],
+      ['group_retention_duration', 'groupRetentionDuration'],
+      ['threshold_windows', 'thresholdWindows'],
+      ['scheduling_options', 'schedulingOptions'],
       ['locked', 'locked'],
       ['silenced', 'silenced']
     ]

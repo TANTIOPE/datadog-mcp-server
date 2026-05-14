@@ -266,6 +266,32 @@ describe('Monitors Helper Functions', () => {
       expect(result.options?.thresholds).toEqual({ critical: 100 })
     })
 
+    it('produces no warnings after normalization for snake_case aliased keys', () => {
+      // Regression: any snake_case key in `optionMappings` MUST be converted to
+      // its camelCase form by `normalizeMonitorConfig`, leaving zero unknown
+      // keys for `collectUnknownKeyWarnings` to report. This guards against
+      // missed alias entries (which would surface as spurious warnings).
+      const config = {
+        name: 'Aliased Snake Monitor',
+        type: 'metric alert',
+        query: 'avg(last_5m):avg:system.cpu.user{*} > 90',
+        options: {
+          notify_no_data: true,
+          no_data_timeframe: 60,
+          notification_preset_name: 'show_all',
+          on_missing_data: 'show_no_data',
+          group_retention_duration: '2d',
+          threshold_windows: { triggerWindow: 'last_5m', recoveryWindow: 'last_5m' },
+          scheduling_options: { evaluationWindow: { dayStarts: '04:00' } }
+        }
+      }
+
+      const normalized = normalizeMonitorConfig(config)
+      const warnings = collectUnknownKeyWarnings(normalized)
+
+      expect(warnings).toEqual([])
+    })
+
     it('should handle complex nested structure', () => {
       const config = {
         name: 'Complex Monitor',
