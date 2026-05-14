@@ -67,6 +67,29 @@ describe('SLOs Tool', () => {
       expect(result.slos[1].overallStatus[0].timeframe).toBe('7d')
     })
 
+    it('should project query/monitorIds/groups via search response (issue #55)', async () => {
+      server.use(
+        http.get(endpoints.searchSlos, () => {
+          return jsonResponse(fixtures.search)
+        })
+      )
+
+      const result = await listSlos(api, {}, defaultLimits)
+
+      // metric SLO carries query + groups
+      expect(result.slos[0].query).toEqual({
+        numerator: 'sum:requests.success{service:api}.as_count()',
+        denominator: 'sum:requests.total{service:api}.as_count()'
+      })
+      expect(result.slos[0].groups).toEqual(['service:api'])
+      expect(result.slos[0].monitorIds).toBeUndefined()
+
+      // monitor SLO carries monitorIds only (search response omits monitor_tags)
+      expect(result.slos[1].monitorIds).toEqual([12345, 12346])
+      expect(result.slos[1].query).toBeUndefined()
+      expect(result.slos[1].groups).toBeUndefined()
+    })
+
     it('should filter SLOs by tags via search query', async () => {
       server.use(
         http.get(endpoints.searchSlos, ({ request }) => {
@@ -130,6 +153,22 @@ describe('SLOs Tool', () => {
       expect(result.slos[0].status.sli).toBeNull()
     })
 
+    it('should project query and monitorIds via the ids/listSLOs path', async () => {
+      server.use(
+        http.get(endpoints.listSlos, () => {
+          return jsonResponse(fixtures.list)
+        })
+      )
+
+      const result = await listSlos(api, { ids: ['slo-001'] }, defaultLimits)
+
+      expect(result.slos[0].query).toEqual({
+        numerator: 'sum:requests.success{service:api}.as_count()',
+        denominator: 'sum:requests.total{service:api}.as_count()'
+      })
+      expect(result.slos[1].monitorIds).toEqual([12345, 12346])
+    })
+
     it('should handle 401 unauthorized error', async () => {
       server.use(
         http.get(endpoints.searchSlos, () => {
@@ -179,6 +218,64 @@ describe('SLOs Tool', () => {
 
       expect(result.slo.id).toBe('slo-001')
       expect(result.slo.name).toBe('API Availability')
+    })
+
+    it('should project query for metric SLOs so update can round-trip (issue #55)', async () => {
+      server.use(
+        http.get(endpoints.getSlo('slo-001'), () => {
+          return jsonResponse(fixtures.single)
+        })
+      )
+
+      const result = await getSlo(api, 'slo-001')
+
+      expect(result.slo.query).toEqual({
+        numerator: 'sum:requests.success{service:api}.as_count()',
+        denominator: 'sum:requests.total{service:api}.as_count()'
+      })
+      expect(result.slo.groups).toEqual(['service:api', 'service:gateway'])
+      // monitorIds is only present on monitor SLOs.
+      expect(result.slo.monitorIds).toBeUndefined()
+    })
+
+    it('should project monitorIds and monitorTags for monitor SLOs (issue #55)', async () => {
+      server.use(
+        http.get(endpoints.getSlo('slo-002'), () => {
+          return jsonResponse(fixtures.singleMonitorBased)
+        })
+      )
+
+      const result = await getSlo(api, 'slo-002')
+
+      expect(result.slo.monitorIds).toEqual([12345, 12346])
+      expect(result.slo.monitorTags).toEqual(['team:payments', 'tier:p99'])
+      // query is only present on metric SLOs.
+      expect(result.slo.query).toBeUndefined()
+    })
+
+    it('should omit round-trip fields when Datadog response does not include them', async () => {
+      server.use(
+        http.get(endpoints.getSlo('slo-bare'), () => {
+          return jsonResponse({
+            data: {
+              id: 'slo-bare',
+              name: 'Bare SLO',
+              type: 'metric',
+              thresholds: [{ target: 99, timeframe: '30d' }],
+              tags: [],
+              created_at: 1704067200,
+              modified_at: 1705276800
+            }
+          })
+        })
+      )
+
+      const result = await getSlo(api, 'slo-bare')
+
+      expect(result.slo.query).toBeUndefined()
+      expect(result.slo.monitorIds).toBeUndefined()
+      expect(result.slo.groups).toBeUndefined()
+      expect(result.slo.monitorTags).toBeUndefined()
     })
 
     it('should handle 404 not found error', async () => {
