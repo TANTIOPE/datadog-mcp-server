@@ -1312,11 +1312,12 @@ export async function topEventsV2(
   )
 
   // Step 2: Group by specified fields
+  type GroupValue = string | number
   const eventGroups = new Map<
     string,
     {
       groupKey: string
-      groupValues: Record<string, any>
+      groupValues: Record<string, GroupValue>
       message: string
       events: EventSummaryV2[]
     }
@@ -1324,11 +1325,11 @@ export async function topEventsV2(
 
   for (const event of result.events) {
     // Extract values for each groupBy field
-    const groupValues: Record<string, any> = {}
+    const groupValues: Record<string, GroupValue> = {}
     const keyParts: string[] = []
 
     for (const field of groupByFields) {
-      let value: any
+      let value: GroupValue
       if (field === 'monitor_id') {
         value = event.monitorId ?? 0
       } else if (field === 'monitor_name') {
@@ -1336,7 +1337,7 @@ export async function topEventsV2(
       } else {
         // Extract from tags (format: field:value)
         const tag = event.tags.find((t) => t.startsWith(`${field}:`))
-        value = tag ? tag.split(':', 2)[1] : 'unknown'
+        value = tag ? (tag.split(':', 2)[1] ?? 'unknown') : 'unknown'
       }
       groupValues[field] = value
       keyParts.push(`${field}:${value}`)
