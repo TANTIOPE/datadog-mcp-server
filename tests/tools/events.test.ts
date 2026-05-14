@@ -1145,5 +1145,30 @@ describe('Events Tool', () => {
       const projection = pickEventFields(fullEvent, ['tags'])
       expect(projection.tags).toBe(fullEvent.tags)
     })
+
+    it('projects monitorMetadata from enriched events when requested', () => {
+      const enrichedEvent = {
+        ...fullEvent,
+        monitorMetadata: {
+          id: 12345,
+          name: 'High error rate monitor',
+          type: 'metric alert',
+          message: 'Errors exceeded threshold',
+          tags: ['team:platform'],
+          options: {
+            thresholds: { critical: 100 },
+            notifyNoData: false,
+            escalationMessage: ''
+          }
+        }
+      }
+      const projection = pickEventFields(enrichedEvent, ['title', 'monitorMetadata'])
+      expect(projection).toEqual({
+        title: 'High error rate',
+        monitorMetadata: enrichedEvent.monitorMetadata
+      })
+      // Same-reference preservation — projection should not deep-clone the metadata.
+      expect(projection.monitorMetadata).toBe(enrichedEvent.monitorMetadata)
+    })
   })
 })

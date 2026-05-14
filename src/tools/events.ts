@@ -123,11 +123,13 @@ const InputSchema = {
     .array(z.string())
     .optional()
     .describe(
-      'Search action only: return only these event fields. Allowed values: id, title, message, timestamp, priority, source, tags, alertType, host, monitorId, monitorInfo. Default: full event.'
+      'Search action only: return only these event fields. Allowed values: id, title, message, timestamp, priority, source, tags, alertType, host, monitorId, monitorInfo, monitorMetadata (only populated when enrich=true). Default: full event.'
     )
 }
 
-const ALLOWED_EVENT_FIELDS = new Set<keyof EventSummaryV2>([
+// Includes EnrichedEvent-only keys (monitorMetadata) so callers can project them
+// alongside EventSummaryV2 fields when enrich=true is set on the search action.
+const ALLOWED_EVENT_FIELDS = new Set<string>([
   'id',
   'title',
   'message',
@@ -138,27 +140,27 @@ const ALLOWED_EVENT_FIELDS = new Set<keyof EventSummaryV2>([
   'alertType',
   'host',
   'monitorId',
-  'monitorInfo'
+  'monitorInfo',
+  'monitorMetadata'
 ])
 
 /**
- * Pick a subset of fields from an EventSummaryV2.
+ * Pick a subset of fields from an EventSummaryV2 or EnrichedEvent.
  * Returns the full event when fields is undefined or empty.
  * Unknown field names are ignored — projecting an empty subset is callers' responsibility.
  */
-export function pickEventFields(
-  event: EventSummaryV2,
+export function pickEventFields<T extends EventSummaryV2>(
+  event: T,
   fields: readonly string[] | undefined
-): Partial<EventSummaryV2> {
+): Partial<T> {
   if (!fields || fields.length === 0) {
     return event
   }
-  const projection: Partial<EventSummaryV2> = {}
+  const projection: Partial<T> = {}
   for (const key of fields) {
-    if (ALLOWED_EVENT_FIELDS.has(key as keyof EventSummaryV2)) {
-      const k = key as keyof EventSummaryV2
+    if (ALLOWED_EVENT_FIELDS.has(key)) {
       // Index signature is incompatible with declared field types, so cast through unknown.
-      ;(projection as Record<string, unknown>)[k] = event[k]
+      ;(projection as Record<string, unknown>)[key] = event[key as keyof typeof event]
     }
   }
   return projection
