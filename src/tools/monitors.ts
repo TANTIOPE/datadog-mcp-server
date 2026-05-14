@@ -510,6 +510,122 @@ export function formatMonitorTransition(event: v2.EventResponse): MonitorTransit
   }
 }
 
+/**
+ * Orchestrate a `monitors action=history` query: paginate `eventsApi.searchEvents`,
+ * project each raw event via `formatMonitorTransition`, and return the structured
+ * `MonitorHistoryResponse`.
+ *
+ * Defaults follow the conventions of other event-based actions in this codebase:
+ * - Time range falls back to `hoursAgo(limits.defaultTimeRangeHours)` → `now()`.
+ * - `transitionType` defaults to `DEFAULT_HISTORY_TRANSITION_TYPES`
+ *   (`['alert', 'alert recovery']`) when undefined OR empty.
+ *
+ * Pagination is bounded identically to `aggregateEventsV2`:
+ * - `maxPages = 100`
+ * - `maxEventsToProcess = 10000`
+ * - per-page `limit = 1000`
+ *
+ * On cap hit, `meta.truncated` is set to `true`. The function is strictly
+ * read-only: it never calls any SDK method whose verb is
+ * `create`/`update`/`delete`/`mute`/`unmute`.
+ */
+export async function historyMonitor(
+  eventsApi: v2.EventsApi,
+  monitorId: number,
+  params: {
+    from?: string
+    to?: string
+    transitionType?: TransitionType[]
+    group?: string
+  },
+  limits: LimitsConfig,
+  site: string
+): Promise<MonitorHistoryResponse> {
+  // Time range setup — identical convention to topMonitors / searchEventsV2.
+  const defaultFrom = hoursAgo(limits.defaultTimeRangeHours)
+  const defaultTo = now()
+  const [validFrom, validTo] = ensureValidTimeRange(
+    parseTime(params.from, defaultFrom),
+    parseTime(params.to, defaultTo)
+  )
+  const fromTime = new Date(validFrom * 1000).toISOString()
+  const toTime = new Date(validTo * 1000).toISOString()
+
+  // Empty array → undefined → default per design's error-handling table.
+  const effectiveTransitionTypes: TransitionType[] =
+    params.transitionType && params.transitionType.length > 0
+      ? params.transitionType
+      : [...DEFAULT_HISTORY_TRANSITION_TYPES]
+
+  const query = buildMonitorHistoryQuery({
+    monitorId,
+    transitionType: effectiveTransitionTypes,
+    group: params.group
+  })
+
+  const transitions: MonitorTransition[] = []
+  const maxEventsToProcess = 10000
+  const maxPages = 100
+  let eventCount = 0
+  let pageCount = 0
+
+  const body: v2.EventsListRequest = {
+    filter: {
+      query,
+      from: fromTime,
+      to: toTime
+    },
+    sort: 'timestamp' as v2.EventsSort,
+    page: { limit: 1000 }
+  }
+
+  let cursor: string | undefined
+
+  while (pageCount < maxPages && eventCount < maxEventsToProcess) {
+    const pageBody = { ...body, page: { ...body.page, cursor } }
+    const response = await eventsApi.searchEvents({ body: pageBody })
+
+    const events = response.data ?? []
+    if (events.length === 0) break
+
+    for (const event of events) {
+      const transition = formatMonitorTransition(event)
+      if (transition !== null) {
+        transitions.push(transition)
+      }
+      eventCount++
+      if (eventCount >= maxEventsToProcess) break
+    }
+
+    cursor = response.meta?.page?.after
+    if (!cursor) break
+    pageCount++
+  }
+
+  const truncated = eventCount >= maxEventsToProcess
+  const resolvedGroup = params.group && params.group.length > 0 ? params.group : null
+  const count = transitions.length
+
+  const meta: MonitorHistoryMeta = {
+    monitorId,
+    query,
+    from: fromTime,
+    to: toTime,
+    transitionTypes: effectiveTransitionTypes,
+    group: resolvedGroup,
+    count,
+    totalFetched: eventCount,
+    truncated,
+    datadog_url: buildEventsUrl(query, validFrom, validTo, site)
+  }
+
+  return {
+    transitions,
+    count,
+    meta
+  }
+}
+
 export async function listMonitors(
   api: v1.MonitorsApi,
   params: { name?: string; tags?: string[]; groupStates?: string[]; limit?: number },
