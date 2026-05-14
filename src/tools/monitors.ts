@@ -38,7 +38,9 @@ const ActionSchema = z.enum([
 const PreviewContextSchema = z
   .object({
     variables: z.record(z.unknown()).optional(),
-    conditionals: z.record(z.boolean()).optional()
+    conditionals: z
+      .record(z.enum(SUPPORTED_CONDITIONALS as unknown as [string, ...string[]]), z.boolean())
+      .optional()
   })
   .optional()
   .describe('Substitution context for monitors.preview (variables + conditionals).')
