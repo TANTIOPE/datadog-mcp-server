@@ -794,6 +794,62 @@ describe('Events Tool', () => {
 
       expect(observedCursor).toBe('resume-from-here')
     })
+
+    it('appends @monitor.transition.transition_type clause when transitionType is supplied', async () => {
+      let observedQuery: string | undefined
+      server.use(
+        http.post(endpoints.searchEvents, async ({ request }) => {
+          const body = (await request.json()) as { filter?: { query?: string } }
+          observedQuery = body.filter?.query
+          return jsonResponse({ data: [], meta: { page: { after: null } } })
+        })
+      )
+
+      await histogramEventsV2(
+        apiV2,
+        {
+          query: '@monitor.id:282774192',
+          sources: ['alert'],
+          transitionType: ['alert', 'alert recovery'],
+          bucket_by: 'hour_of_day',
+          timezone: 'UTC',
+          ...histogramRange
+        },
+        defaultLimits,
+        defaultSite
+      )
+
+      expect(observedQuery).toContain(
+        '@monitor.transition.transition_type:(alert OR "alert recovery")'
+      )
+    })
+
+    it('emits a query without transition_type clause when transitionType is omitted', async () => {
+      let observedQuery: string | undefined
+      server.use(
+        http.post(endpoints.searchEvents, async ({ request }) => {
+          const body = (await request.json()) as { filter?: { query?: string } }
+          observedQuery = body.filter?.query
+          return jsonResponse({ data: [], meta: { page: { after: null } } })
+        })
+      )
+
+      await histogramEventsV2(
+        apiV2,
+        {
+          query: '@monitor.id:282774192',
+          sources: ['alert'],
+          bucket_by: 'hour_of_day',
+          timezone: 'UTC',
+          ...histogramRange
+        },
+        defaultLimits,
+        defaultSite
+      )
+
+      expect(observedQuery).toBeDefined()
+      expect(observedQuery).not.toContain('@monitor.transition.transition_type')
+    })
   })
 
   // Requirement 4 (timezone annotation) — `timezone` is opt-in on read actions

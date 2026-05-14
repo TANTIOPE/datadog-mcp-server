@@ -1053,6 +1053,7 @@ export async function histogramEventsV2(
     bucket_by: HistogramBucketBy
     timezone?: string
     cursor?: string
+    transitionType?: string[]
   },
   limits: LimitsConfig,
   site: string
@@ -1076,7 +1077,8 @@ export async function histogramEventsV2(
   const fullQuery = buildEventQuery({
     query: params.query,
     sources: params.sources,
-    tags: params.tags
+    tags: params.tags,
+    transitionType: params.transitionType
   })
 
   const cap = limits.maxEventsForHistogram
@@ -2183,7 +2185,8 @@ histogram: Bucket events by local hour_of_day / day_of_week / day_of_month in th
                   tags,
                   bucket_by: histogramBucketBy,
                   timezone,
-                  cursor
+                  cursor,
+                  transitionType
                 },
                 limits,
                 site
