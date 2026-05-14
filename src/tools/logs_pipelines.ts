@@ -115,7 +115,9 @@ export async function updatePipeline(
   config: Record<string, unknown>,
   verbose: boolean = false
 ) {
-  const body = normalizeConfigKeys(config) as unknown as v1.LogsPipeline
+  // Datadog's PUT is full-replacement: missing required fields produce a
+  // cryptic API error. Validate name + filter.query before the wire call.
+  const body = normalizePipelineConfig(config) as unknown as v1.LogsPipeline
   const response = await api.updateLogsPipeline({ pipelineId: id, body })
   const result: Record<string, unknown> = {
     success: true,

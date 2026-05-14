@@ -226,6 +226,24 @@ describe('Logs Pipelines Tool', () => {
         })
       ).rejects.toMatchObject({ code: 403 })
     })
+
+    it('should throw when name is missing on update (PUT is full-replacement)', async () => {
+      // Datadog's PUT replaces the full resource — omitting name must fail at
+      // the input surface, not produce a cryptic API error downstream.
+      await expect(
+        updatePipeline(api, 'pipeline-001', {
+          filter: { query: 'source:nginx' }
+        })
+      ).rejects.toThrow(/name/)
+    })
+
+    it('should throw when filter.query is missing on update (PUT is full-replacement)', async () => {
+      await expect(
+        updatePipeline(api, 'pipeline-001', {
+          name: 'Missing filter'
+        })
+      ).rejects.toThrow(/filter\.query/)
+    })
   })
 
   describe('deletePipeline', () => {
