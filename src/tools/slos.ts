@@ -35,7 +35,7 @@ interface SloStatusByTimeframe {
   timeframe: string
 }
 
-export interface SloQueryProjection {
+interface SloQueryProjection {
   numerator: string
   denominator: string
 }
