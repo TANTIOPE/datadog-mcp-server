@@ -945,4 +945,180 @@ describe('Monitors Tool', () => {
       expect(result.message).toContain('12345')
     })
   })
+
+  describe('monitors tool dispatcher — preview action', () => {
+    // Helper: capture the registered tool handler so we can invoke it directly,
+    // mirroring the dry_run dispatcher tests above.
+    type ToolHandler = (input: Record<string, unknown>) => Promise<unknown>
+    function captureHandler(readOnly: boolean): ToolHandler {
+      let capturedHandler: ToolHandler | null = null
+      const mockServer = {
+        tool: vi.fn(
+          (
+            _name: string,
+            _desc: string,
+            _schema: unknown,
+            handler: (input: Record<string, unknown>) => Promise<unknown>
+          ) => {
+            capturedHandler = handler
+          }
+        )
+      } as unknown as Parameters<typeof registerMonitorsTool>[0]
+
+      const eventsApi = {} as v2.EventsApi
+      registerMonitorsTool(mockServer, api, eventsApi, defaultLimits, readOnly, defaultSite)
+
+      if (!capturedHandler) {
+        throw new Error('Tool handler was not captured during registration')
+      }
+      return capturedHandler
+    }
+
+    type PreviewPayload = {
+      rendered: string
+      variablesUsed: string[]
+      variablesMissing: string[]
+      conditionalsResolved: Record<string, boolean>
+    }
+
+    function unwrap(result: unknown): PreviewPayload {
+      const typed = result as { content: { type: string; text: string }[] }
+      return JSON.parse(typed.content[0].text) as PreviewPayload
+    }
+
+    it('renders an inline message with variable substitution', async () => {
+      const handler = captureHandler(false)
+      const result = await handler({
+        action: 'preview',
+        message: 'CPU high on {{host.name}}',
+        context: { variables: { 'host.name': 'web-01' } }
+      })
+
+      const payload = unwrap(result)
+      expect(payload.rendered).toBe('CPU high on web-01')
+      expect(payload.variablesUsed).toContain('host.name')
+      expect(payload.variablesMissing).toEqual([])
+    })
+
+    it('loads template from monitor_id when no inline message is given', async () => {
+      let getCalls = 0
+      server.use(
+        http.get(endpoints.getMonitor(77777), () => {
+          getCalls++
+          return jsonResponse(fixtures.previewSource)
+        })
+      )
+
+      const handler = captureHandler(false)
+      const result = await handler({
+        action: 'preview',
+        monitor_id: 77777,
+        context: {
+          variables: { 'host.name': 'web-01' },
+          conditionals: { is_alert: true }
+        }
+      })
+
+      expect(getCalls).toBe(1)
+      const payload = unwrap(result)
+      expect(payload.rendered).toContain('CPU high on web-01')
+      expect(payload.rendered).toContain('ALERT branch')
+      expect(payload.rendered).not.toContain('OK branch')
+      expect(payload.conditionalsResolved.is_alert).toBe(true)
+    })
+
+    it('loads template from existing `id` field when monitor_id is omitted', async () => {
+      let getCalls = 0
+      server.use(
+        http.get(endpoints.getMonitor(77777), () => {
+          getCalls++
+          return jsonResponse(fixtures.previewSource)
+        })
+      )
+
+      const handler = captureHandler(false)
+      const result = await handler({
+        action: 'preview',
+        id: '77777',
+        context: { variables: { 'host.name': 'web-02' } }
+      })
+
+      expect(getCalls).toBe(1)
+      const payload = unwrap(result)
+      expect(payload.rendered).toContain('CPU high on web-02')
+    })
+
+    it('reports missing variables with the {{undefined:name}} marker', async () => {
+      const handler = captureHandler(false)
+      const result = await handler({
+        action: 'preview',
+        message: 'Host: {{host.name}} pod: {{pod.name}}',
+        context: { variables: { 'host.name': 'web-01' } }
+      })
+
+      const payload = unwrap(result)
+      expect(payload.rendered).toBe('Host: web-01 pod: {{undefined:pod.name}}')
+      expect(payload.variablesMissing).toContain('pod.name')
+      expect(payload.variablesUsed).toContain('host.name')
+    })
+
+    it('resolves a conditional as truthy when set true in context', async () => {
+      const handler = captureHandler(false)
+      const result = await handler({
+        action: 'preview',
+        message: 'Status: {{#is_alert}}ALERT{{/is_alert}}{{^is_alert}}OK{{/is_alert}}',
+        context: { conditionals: { is_alert: true } }
+      })
+
+      const payload = unwrap(result)
+      expect(payload.rendered).toBe('Status: ALERT')
+      expect(payload.conditionalsResolved.is_alert).toBe(true)
+    })
+
+    it('resolves a conditional as falsy when set false (or omitted) in context', async () => {
+      const handler = captureHandler(false)
+      const result = await handler({
+        action: 'preview',
+        message: 'Status: {{#is_warning}}WARN{{/is_warning}}{{^is_warning}}OK{{/is_warning}}',
+        context: { conditionals: { is_warning: false } }
+      })
+
+      const payload = unwrap(result)
+      expect(payload.rendered).toBe('Status: OK')
+      expect(payload.conditionalsResolved.is_warning).toBe(false)
+    })
+
+    it('returns EUNSUPPORTED_TEMPLATE_SYNTAX for {{#each}} loops', async () => {
+      const handler = captureHandler(false)
+      await expect(
+        handler({
+          action: 'preview',
+          message: '{{#each items}}item{{/each}}',
+          context: {}
+        })
+      ).rejects.toThrow(/EUNSUPPORTED_TEMPLATE_SYNTAX/)
+    })
+
+    it('requires either message or a monitor id', async () => {
+      const handler = captureHandler(false)
+      await expect(
+        handler({
+          action: 'preview',
+          context: {}
+        })
+      ).rejects.toThrow(/message.*monitor_id|monitor_id.*message|required/i)
+    })
+
+    it('is allowed in read-only mode (preview is non-mutating)', async () => {
+      const handler = captureHandler(true)
+      const result = await handler({
+        action: 'preview',
+        message: 'hello {{name}}',
+        context: { variables: { name: 'world' } }
+      })
+
+      const payload = unwrap(result)
+      expect(payload.rendered).toBe('hello world')
+    })
+  })
 })

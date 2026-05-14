@@ -12,6 +12,7 @@ import {
   getEventV1,
   createEventV1,
   searchEventsV2,
+  histogramEventsV2,
   computeDiagnostics,
   UNINDEXED_ALERT_TAG_PREFIXES
 } from '../../src/tools/events.js'
@@ -22,7 +23,8 @@ const defaultLimits: LimitsConfig = {
   maxLogLines: 500,
   maxMetricDataPoints: 1000,
   defaultTimeRangeHours: 24,
-  defaultLimit: 100
+  defaultLimit: 100,
+  maxEventsForHistogram: 5000
 }
 
 const defaultSite = 'datadoghq.com'
@@ -555,6 +557,238 @@ describe('Events Tool', () => {
       // With a single value there must be no ` OR ` token inside the clause
       const clauseMatch = /@monitor\.transition\.transition_type:\(([^)]*)\)/.exec(query ?? '')
       expect(clauseMatch?.[1]).toBe('"alert recovery"')
+    })
+  })
+
+  describe('histogramEventsV2', () => {
+    const histogramRange = {
+      from: '2026-03-29T00:00:00Z',
+      to: '2026-03-29T23:59:59Z'
+    }
+
+    it('should return 24-bucket UTC happy path keyed 0-23', async () => {
+      server.use(
+        http.post(endpoints.searchEvents, () => jsonResponse(fixtures.eventsHistogramFixture))
+      )
+
+      const result = await histogramEventsV2(
+        apiV2,
+        {
+          bucket_by: 'hour_of_day',
+          timezone: 'UTC',
+          ...histogramRange
+        },
+        defaultLimits,
+        defaultSite
+      )
+
+      expect(result.bucketBy).toBe('hour_of_day')
+      expect(result.timezone).toBe('UTC')
+      // 4 events at UTC hours: 0, 1, 5, 23
+      expect(result.buckets).toEqual({
+        '0': 1,
+        '1': 1,
+        '5': 1,
+        '23': 1
+      })
+      expect(result.totalEvents).toBe(4)
+      expect(result.bucketCountIncomplete).toBeUndefined()
+      expect(result.nextCursor).toBeUndefined()
+      expect(result.meta.query).toBeDefined()
+      expect(result.meta.from).toBe('2026-03-29T00:00:00.000Z')
+      expect(result.meta.to).toBe('2026-03-29T23:59:59.000Z')
+      expect(result.meta.datadog_url).toContain('app.datadoghq.com')
+    })
+
+    it('should bucket DST spring-forward correctly in Europe/Paris', async () => {
+      // Europe/Paris spring-forward 2026-03-29: 02:00 local → 03:00 local.
+      // The DST-boundary event at 01:30 UTC lands at 03:30 local (hour 3),
+      // not 02:30 (which does not exist in local time on this day).
+      server.use(
+        http.post(endpoints.searchEvents, () => jsonResponse(fixtures.eventsHistogramFixture))
+      )
+
+      const result = await histogramEventsV2(
+        apiV2,
+        {
+          bucket_by: 'hour_of_day',
+          timezone: 'Europe/Paris',
+          ...histogramRange
+        },
+        defaultLimits,
+        defaultSite
+      )
+
+      // Paris-local hours for the four UTC events on 2026-03-29:
+      //   00:15 UTC → 01:15 local (CET, UTC+1) → bucket 1
+      //   01:30 UTC → 03:30 local (DST spring-forward) → bucket 3  ← key assertion
+      //   05:00 UTC → 07:00 local (CEST, UTC+2) → bucket 7
+      //   23:45 UTC → 01:45 local NEXT day (CEST) → bucket 1
+      expect(result.buckets['3']).toBe(1)
+      // The DST-skipped 02:00-02:59 local hour must contain zero events (or be absent).
+      expect(result.buckets['2'] ?? 0).toBe(0)
+      expect(result.totalEvents).toBe(4)
+    })
+
+    it('should throw EINVALID_TIMEZONE before hitting Datadog when timezone is invalid', async () => {
+      let datadogHit = false
+      server.use(
+        http.post(endpoints.searchEvents, () => {
+          datadogHit = true
+          return jsonResponse(fixtures.eventsHistogramFixture)
+        })
+      )
+
+      await expect(
+        histogramEventsV2(
+          apiV2,
+          {
+            bucket_by: 'hour_of_day',
+            timezone: 'Not/AZone',
+            ...histogramRange
+          },
+          defaultLimits,
+          defaultSite
+        )
+      ).rejects.toThrow(/EINVALID_TIMEZONE/)
+
+      expect(datadogHit).toBe(false)
+    })
+
+    it('should set bucketCountIncomplete and nextCursor when cap is reached', async () => {
+      // Build a fixture where every page returns the cap and a continuation cursor
+      // so the histogram loop must stop at the cap.
+      const page1Events = Array.from({ length: 3 }, (_, i) => ({
+        id: `evt-cap-${i}`,
+        attributes: {
+          title: `event ${i}`,
+          message: '',
+          timestamp: '2026-03-29T05:00:00.000Z',
+          tags: ['source:alert']
+        }
+      }))
+
+      server.use(
+        http.post(endpoints.searchEvents, () =>
+          jsonResponse({
+            data: page1Events,
+            meta: { page: { after: 'continuation-cursor-1' } }
+          })
+        )
+      )
+
+      const tightLimits: LimitsConfig = {
+        ...defaultLimits,
+        maxEventsForHistogram: 3
+      }
+
+      const result = await histogramEventsV2(
+        apiV2,
+        {
+          bucket_by: 'hour_of_day',
+          timezone: 'UTC',
+          ...histogramRange
+        },
+        tightLimits,
+        defaultSite
+      )
+
+      expect(result.totalEvents).toBe(3)
+      expect(result.bucketCountIncomplete).toBe(true)
+      expect(result.nextCursor).toBe('continuation-cursor-1')
+      expect(result.buckets['5']).toBe(3)
+    })
+
+    it('should support day_of_week bucketing', async () => {
+      server.use(
+        http.post(endpoints.searchEvents, () => jsonResponse(fixtures.eventsHistogramFixture))
+      )
+
+      const result = await histogramEventsV2(
+        apiV2,
+        {
+          bucket_by: 'day_of_week',
+          timezone: 'UTC',
+          ...histogramRange
+        },
+        defaultLimits,
+        defaultSite
+      )
+
+      // 2026-03-29 UTC is a Sunday → bucket 0 for all 4 fixture events.
+      expect(result.bucketBy).toBe('day_of_week')
+      expect(result.buckets['0']).toBe(4)
+      expect(result.totalEvents).toBe(4)
+    })
+
+    it('should support day_of_month bucketing', async () => {
+      server.use(
+        http.post(endpoints.searchEvents, () => jsonResponse(fixtures.eventsHistogramFixture))
+      )
+
+      const result = await histogramEventsV2(
+        apiV2,
+        {
+          bucket_by: 'day_of_month',
+          timezone: 'UTC',
+          ...histogramRange
+        },
+        defaultLimits,
+        defaultSite
+      )
+
+      // All fixture events fall on 2026-03-29 (UTC) → day-of-month 29.
+      expect(result.bucketBy).toBe('day_of_month')
+      expect(result.buckets['29']).toBe(4)
+      expect(result.totalEvents).toBe(4)
+    })
+
+    it('should default timezone to UTC when omitted', async () => {
+      server.use(
+        http.post(endpoints.searchEvents, () => jsonResponse(fixtures.eventsHistogramFixture))
+      )
+
+      const result = await histogramEventsV2(
+        apiV2,
+        {
+          bucket_by: 'hour_of_day',
+          ...histogramRange
+        },
+        defaultLimits,
+        defaultSite
+      )
+
+      expect(result.timezone).toBe('UTC')
+      expect(result.buckets['0']).toBe(1)
+      expect(result.buckets['1']).toBe(1)
+    })
+
+    it('should forward a supplied cursor as the first page cursor', async () => {
+      let observedCursor: string | undefined
+      server.use(
+        http.post(endpoints.searchEvents, async ({ request }) => {
+          const body = (await request.json()) as { page?: { cursor?: string } }
+          observedCursor = body.page?.cursor
+          return jsonResponse({
+            data: [],
+            meta: { page: { after: null } }
+          })
+        })
+      )
+
+      await histogramEventsV2(
+        apiV2,
+        {
+          bucket_by: 'hour_of_day',
+          timezone: 'UTC',
+          cursor: 'resume-from-here',
+          ...histogramRange
+        },
+        defaultLimits,
+        defaultSite
+      )
+
+      expect(observedCursor).toBe('resume-from-here')
     })
   })
 })

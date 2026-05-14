@@ -72,6 +72,22 @@ export const monitors = {
   // Validate (dry-run) 400 — Datadog returns the same error shape `create` would
   validate400: {
     errors: ['The value provided for parameter "query" is invalid']
+  },
+  // Preview source — a monitor whose message exercises variable + conditional rendering.
+  // Used by the `preview` action when the caller supplies `monitor_id` instead of an
+  // inline `message`. See Requirement 7 in events-dx-improvements/design.md.
+  previewSource: {
+    id: 77777,
+    name: 'Preview Template Monitor',
+    type: 'metric alert',
+    query: 'avg(last_5m):avg:system.cpu.user{*} > 90',
+    message:
+      'CPU high on {{host.name}}.\n' +
+      '{{#is_alert}}ALERT branch{{/is_alert}}{{^is_alert}}OK branch{{/is_alert}}',
+    tags: ['env:production'],
+    overall_state: 'OK',
+    created: '2024-01-15T10:00:00.000Z',
+    modified: '2024-01-20T15:30:00.000Z'
   }
 }
 
@@ -467,6 +483,57 @@ export const events = {
           message: 'CPU usage exceeded threshold',
           timestamp: '2024-01-20T12:00:00.000Z',
           tags: ['source:alert', 'alert_type:error', 'host:prod-3', 'priority:normal']
+        }
+      }
+    ],
+    meta: {
+      page: {
+        after: null
+      }
+    }
+  },
+  // Events spread across hours-of-day for histogram tests.
+  // One event sits AT the Europe/Paris DST spring-forward boundary
+  // (2026-03-29T01:30:00Z → 03:30 local) so the test can prove the
+  // bucketing path is DST-safe.
+  eventsHistogramFixture: {
+    data: [
+      {
+        id: 'evt-hist-1',
+        attributes: {
+          title: 'event at 00:15 UTC',
+          message: '',
+          timestamp: '2026-03-29T00:15:00.000Z',
+          tags: ['source:alert']
+        }
+      },
+      {
+        id: 'evt-hist-2',
+        // DST spring-forward boundary in Europe/Paris.
+        // 01:30 UTC → 03:30 local (the 02:00-02:59 hour does not exist).
+        attributes: {
+          title: 'event at DST boundary 01:30 UTC',
+          message: '',
+          timestamp: '2026-03-29T01:30:00.000Z',
+          tags: ['source:alert']
+        }
+      },
+      {
+        id: 'evt-hist-3',
+        attributes: {
+          title: 'event at 05:00 UTC',
+          message: '',
+          timestamp: '2026-03-29T05:00:00.000Z',
+          tags: ['source:alert']
+        }
+      },
+      {
+        id: 'evt-hist-4',
+        attributes: {
+          title: 'event at 23:45 UTC',
+          message: '',
+          timestamp: '2026-03-29T23:45:00.000Z',
+          tags: ['source:alert']
         }
       }
     ],

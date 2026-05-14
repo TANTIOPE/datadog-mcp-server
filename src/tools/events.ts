@@ -5,6 +5,12 @@ import { handleDatadogError, requireParam, checkReadOnly } from '../errors/datad
 import { toolResult } from '../utils/format.js'
 import { hoursAgo, now, parseTime, ensureValidTimeRange, parseDurationToNs } from '../utils/time.js'
 import { buildEventsUrl } from '../utils/urls.js'
+import {
+  bucketHourOfDay,
+  bucketDayOfWeek,
+  bucketDayOfMonth,
+  validateIanaZone
+} from '../utils/timezone.js'
 import type { LimitsConfig } from '../config/schema.js'
 
 const ActionSchema = z.enum([
@@ -16,8 +22,12 @@ const ActionSchema = z.enum([
   'top',
   'timeseries',
   'incidents',
-  'discover'
+  'discover',
+  'histogram'
 ])
+
+const HistogramBucketBySchema = z.enum(['hour_of_day', 'day_of_week', 'day_of_month'])
+export type HistogramBucketBy = z.infer<typeof HistogramBucketBySchema>
 
 const InputSchema = {
   action: ActionSchema.describe('Action to perform'),
@@ -91,6 +101,16 @@ const InputSchema = {
     .optional()
     .describe(
       'Filter events by monitor state transition type. When set, restricts results to events with @monitor.transition.transition_type matching any value. Use ["alert","alert recovery"] to count real fires/recoveries and skip renotifies. Empty array is treated as undefined (no filter). For a fires-only count by monitor ID, prefer monitors action=history.'
+    ),
+  // Histogram action (Requirement 3): bucket events by local hour/day-of-week/day-of-month.
+  bucket_by: HistogramBucketBySchema.optional().describe(
+    'Bucket dimension for histogram action: hour_of_day (0-23), day_of_week (0=Sun..6=Sat), day_of_month (1-31).'
+  ),
+  timezone: z
+    .string()
+    .optional()
+    .describe(
+      'IANA timezone for histogram bucketing (e.g. "UTC", "Europe/Paris"). DST-safe. Default: UTC.'
     )
 }
 
@@ -846,6 +866,214 @@ export async function searchEventsV2(
   return baseResult
 }
 
+// ============ Histogram action (Requirement 3) ============
+
+/**
+ * Output shape for the `events.histogram` action.
+ *
+ * `buckets` is an object map keyed by stringified bucket key (e.g. `"0".."23"`
+ * for hour_of_day, `"0".."6"` for day_of_week, `"1".."31"` for day_of_month).
+ * Object form chosen so JSON output is self-describing and stable across
+ * runtimes — see design.md Requirement 3 / task DoD.
+ */
+export interface EventsHistogramOutput {
+  buckets: Record<string, number>
+  bucketBy: HistogramBucketBy
+  timezone: string
+  totalEvents: number
+  bucketCountIncomplete?: boolean
+  nextCursor?: string
+  meta: {
+    query: string
+    from: string
+    to: string
+    datadog_url: string
+  }
+}
+
+/**
+ * Bucket a single event timestamp (epoch milliseconds) into the requested
+ * dimension, in the requested IANA timezone.
+ *
+ * All zone math is delegated to `src/utils/timezone.ts`, which uses
+ * `Intl.DateTimeFormat` — DST-safe by construction.
+ */
+function bucketEvent(epochMs: number, bucketBy: HistogramBucketBy, tz: string): number {
+  switch (bucketBy) {
+    case 'hour_of_day':
+      return bucketHourOfDay(epochMs, tz)
+    case 'day_of_week':
+      return bucketDayOfWeek(epochMs, tz)
+    case 'day_of_month':
+      return bucketDayOfMonth(epochMs, tz)
+    default: {
+      // Exhaustiveness — z.enum prevents this at the input boundary, but the
+      // assertion guards against future variants slipping through.
+      const exhaustive: never = bucketBy
+      throw new Error(`Unhandled bucket_by: ${String(exhaustive)}`)
+    }
+  }
+}
+
+/**
+ * Convert a Datadog v2 event timestamp into epoch milliseconds.
+ *
+ * The v2 events SDK sometimes returns `attributes.timestamp` as an ISO 8601
+ * string and sometimes as a `Date` (depending on serializer config). We accept
+ * either — and silently skip any event whose timestamp cannot be parsed,
+ * rather than crashing the entire histogram on a single bad row.
+ */
+function eventEpochMs(event: v2.EventResponse): number | null {
+  const ts = event.attributes?.timestamp
+  if (ts === undefined || ts === null) return null
+  if (ts instanceof Date) {
+    const ms = ts.getTime()
+    return Number.isFinite(ms) ? ms : null
+  }
+  // Strings and numbers both parse via Date(); guard against NaN.
+  const ms = new Date(String(ts)).getTime()
+  return Number.isFinite(ms) ? ms : null
+}
+
+/**
+ * Client-side histogram for events.
+ *
+ * Paginates `searchEvents` with the supplied cursor (or starts fresh), bucketing
+ * each event in the requested IANA timezone. Stops as soon as either:
+ *  - the underlying API runs out of pages, or
+ *  - we hit `limits.maxEventsForHistogram` (returning `bucketCountIncomplete: true`
+ *    and the `nextCursor` so a follow-up call can resume).
+ *
+ * The timezone is validated up-front: an invalid zone throws `EINVALID_TIMEZONE`
+ * BEFORE any Datadog request is made.
+ */
+export async function histogramEventsV2(
+  api: v2.EventsApi,
+  params: {
+    query?: string
+    from?: string
+    to?: string
+    sources?: string[]
+    tags?: string[]
+    bucket_by: HistogramBucketBy
+    timezone?: string
+    cursor?: string
+  },
+  limits: LimitsConfig,
+  site: string
+): Promise<EventsHistogramOutput> {
+  const timezone = params.timezone ?? 'UTC'
+
+  // Validate the zone BEFORE any Datadog call so an invalid zone never burns
+  // an API request quota.
+  validateIanaZone(timezone)
+
+  const defaultFrom = hoursAgo(limits.defaultTimeRangeHours)
+  const defaultTo = now()
+
+  const [validFrom, validTo] = ensureValidTimeRange(
+    parseTime(params.from, defaultFrom),
+    parseTime(params.to, defaultTo)
+  )
+  const fromTime = new Date(validFrom * 1000).toISOString()
+  const toTime = new Date(validTo * 1000).toISOString()
+
+  const fullQuery = buildEventQuery({
+    query: params.query,
+    sources: params.sources,
+    tags: params.tags
+  })
+
+  const cap = limits.maxEventsForHistogram
+  // Per-page limit caps at 1000 (Datadog API max). When the histogram cap is
+  // smaller (e.g. tight limits in tests) honor that to avoid overshooting.
+  const perPage = Math.max(1, Math.min(1000, cap))
+
+  const buckets: Record<string, number> = {}
+  let totalEvents = 0
+  let cursor: string | undefined = params.cursor
+  let bucketCountIncomplete = false
+  let exhaustedPages = false
+
+  // Bound pagination to avoid runaway loops even in pathological fixtures.
+  const maxPages = 100
+  let pageCount = 0
+
+  while (pageCount < maxPages) {
+    const body: v2.EventsListRequest = {
+      filter: {
+        query: fullQuery,
+        from: fromTime,
+        to: toTime
+      },
+      sort: 'timestamp' as v2.EventsSort,
+      page: {
+        limit: perPage,
+        cursor
+      }
+    }
+
+    const response = await api.searchEvents({ body })
+    const data = response.data ?? []
+    const responseCursor = response.meta?.page?.after ?? undefined
+
+    for (const event of data) {
+      const epochMs = eventEpochMs(event)
+      if (epochMs === null) continue
+      const bucket = bucketEvent(epochMs, params.bucket_by, timezone)
+      const key = String(bucket)
+      buckets[key] = (buckets[key] ?? 0) + 1
+      totalEvents++
+
+      if (totalEvents >= cap) {
+        // Cap reached mid-page. Use the cursor from THIS response as the
+        // continuation token; it points at the page boundary, not a per-event
+        // offset (Datadog cursor semantics).
+        bucketCountIncomplete = true
+        cursor = responseCursor
+        break
+      }
+    }
+
+    if (bucketCountIncomplete) break
+
+    if (data.length === 0 || !responseCursor) {
+      exhaustedPages = true
+      break
+    }
+
+    cursor = responseCursor
+    pageCount++
+  }
+
+  const result: EventsHistogramOutput = {
+    buckets,
+    bucketBy: params.bucket_by,
+    timezone,
+    totalEvents,
+    meta: {
+      query: fullQuery,
+      from: fromTime,
+      to: toTime,
+      datadog_url: buildEventsUrl(fullQuery, validFrom, validTo, site)
+    }
+  }
+
+  if (bucketCountIncomplete) {
+    result.bucketCountIncomplete = true
+    if (cursor) {
+      result.nextCursor = cursor
+    }
+  } else if (!exhaustedPages && pageCount >= maxPages && cursor) {
+    // Defensive: page guard hit (shouldn't happen in normal flows). Surface
+    // a continuation token rather than silently truncating.
+    result.bucketCountIncomplete = true
+    result.nextCursor = cursor
+  }
+
+  return result
+}
+
 /**
  * Client-side aggregation for events
  * Streams through all matching events and counts by group key
@@ -1570,7 +1798,7 @@ export function registerEventsTool(
 ): void {
   server.tool(
     'events',
-    `Track Datadog events. Actions: list, get, create, search, aggregate, top, timeseries, incidents, discover.
+    `Track Datadog events. Actions: list, get, create, search, aggregate, top, timeseries, incidents, discover, histogram.
 For monitor alerts, use tags: ["source:alert"].
 
 IMPORTANT — re-evaluation vs transition:
@@ -1588,7 +1816,8 @@ discover: Returns available tag prefixes from events.
 aggregate: Custom groupBy, returns pipe-delimited keys.
 search: Full event details.
 timeseries: Time-bucketed trends with interval.
-incidents: Deduplicate alerts with dedupeWindow.`,
+incidents: Deduplicate alerts with dedupeWindow.
+histogram: Bucket events by local hour_of_day / day_of_week / day_of_month in the requested IANA timezone (DST-safe). Pass bucket_by (required) and optional timezone (default UTC) and cursor (for continuation). Caps at limits.maxEventsForHistogram (default 5000); when reached returns bucketCountIncomplete:true + nextCursor.`,
     InputSchema,
     async ({
       action,
@@ -1610,7 +1839,9 @@ incidents: Deduplicate alerts with dedupeWindow.`,
       enrich,
       contextTags,
       maxEvents,
-      transitionType
+      transitionType,
+      bucket_by,
+      timezone
     }) => {
       try {
         checkReadOnly(action, readOnly)
@@ -1772,6 +2003,27 @@ incidents: Deduplicate alerts with dedupeWindow.`,
                 site
               )
             )
+
+          case 'histogram': {
+            const histogramBucketBy = requireParam(bucket_by, 'bucket_by', 'histogram')
+            return toolResult(
+              await histogramEventsV2(
+                apiV2,
+                {
+                  query,
+                  from,
+                  to,
+                  sources,
+                  tags,
+                  bucket_by: histogramBucketBy,
+                  timezone,
+                  cursor
+                },
+                limits,
+                site
+              )
+            )
+          }
 
           default:
             throw new Error(`Unknown action: ${action}`)

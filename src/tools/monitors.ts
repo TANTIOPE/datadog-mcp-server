@@ -7,6 +7,12 @@ import { buildMonitorUrl, buildMonitorsListUrl } from '../utils/urls.js'
 import { hoursAgo, now, parseTime, ensureValidTimeRange } from '../utils/time.js'
 import { buildEventsUrl } from '../utils/urls.js'
 import { formatEventV2 } from './events.js'
+import {
+  renderMonitorTemplate,
+  SUPPORTED_CONDITIONALS,
+  type PreviewResult,
+  type TemplateContext
+} from '../utils/templatePreview.js'
 import type { LimitsConfig } from '../config/schema.js'
 
 const ActionSchema = z.enum([
@@ -19,8 +25,20 @@ const ActionSchema = z.enum([
   'mute',
   'unmute',
   'top',
-  'history'
+  'history',
+  'preview'
 ])
+
+// Mustache-subset preview context — keep loose at the schema boundary so we
+// surface our own EUNSUPPORTED_TEMPLATE_SYNTAX / variablesMissing semantics
+// from `renderMonitorTemplate` rather than zod-rejecting unknown variable keys.
+const PreviewContextSchema = z
+  .object({
+    variables: z.record(z.unknown()).optional(),
+    conditionals: z.record(z.boolean()).optional()
+  })
+  .optional()
+  .describe('Substitution context for monitors.preview (variables + conditionals).')
 
 const InputSchema = {
   action: ActionSchema.describe('Action to perform'),
@@ -40,8 +58,23 @@ const InputSchema = {
     .optional()
     .describe('Maximum number of monitors to return (default: 50)'),
   config: z.record(z.unknown()).optional().describe('Monitor configuration (for create/update)'),
-  message: z.string().optional().describe('Mute message (for mute action)'),
+  message: z
+    .string()
+    .optional()
+    .describe(
+      'Mute message (for mute action) OR inline template source for the preview action. ' +
+        'For preview, supply either this inline string or `monitor_id` (or the existing `id` ' +
+        'field) so the action can load the monitor message via getMonitor.'
+    ),
   end: z.number().optional().describe('Mute end timestamp (for mute action)'),
+  monitor_id: z
+    .number()
+    .optional()
+    .describe(
+      'Numeric monitor ID used by the preview action when no inline `message` is supplied. ' +
+        'Equivalent to passing the existing `id` field as a numeric string.'
+    ),
+  context: PreviewContextSchema,
   // Top action parameters
   from: z
     .string()
@@ -881,6 +914,50 @@ export async function dryRunMonitor(
   }
 }
 
+/**
+ * Render a Datadog monitor message template against a caller-supplied context.
+ *
+ * Source of the template:
+ *   - If `inlineMessage` is provided, it is used verbatim.
+ *   - Otherwise `monitorIdSource` is loaded via `getMonitor(api, ..., site)` and
+ *     its `.message` field is used as the template.
+ *
+ * Read-only safety: this action performs at most a read of an existing monitor
+ * (no mutation). The dispatcher therefore allows it under `--read-only`.
+ *
+ * Supported subset matches `renderMonitorTemplate` — see
+ * `src/utils/templatePreview.ts` for the full grammar and error contracts.
+ * Unsupported Mustache constructs (loops, partials, unknown conditionals)
+ * surface as `EUNSUPPORTED_TEMPLATE_SYNTAX`.
+ */
+export async function previewMonitor(
+  api: v1.MonitorsApi,
+  args: {
+    inlineMessage?: string
+    monitorIdSource?: string
+    context?: TemplateContext
+  },
+  site: string = 'datadoghq.com'
+): Promise<PreviewResult & { monitorId?: number }> {
+  let template: string
+  let monitorId: number | undefined
+
+  if (args.inlineMessage !== undefined && args.inlineMessage !== '') {
+    template = args.inlineMessage
+  } else if (args.monitorIdSource !== undefined && args.monitorIdSource !== '') {
+    const loaded = await getMonitor(api, args.monitorIdSource, site)
+    template = loaded.monitor.message ?? ''
+    monitorId = loaded.monitor.id
+  } else {
+    throw new Error(
+      "Action 'preview' requires either an inline 'message' or a 'monitor_id' (or 'id') to load the template from."
+    )
+  }
+
+  const result = renderMonitorTemplate(template, args.context ?? {})
+  return monitorId !== undefined ? { ...result, monitorId } : result
+}
+
 export async function updateMonitor(
   api: v1.MonitorsApi,
   id: string,
@@ -1147,7 +1224,7 @@ export function registerMonitorsTool(
 ): void {
   server.tool(
     'monitors',
-    `Manage Datadog monitors. Actions: list, get, search, create, update, delete, mute, unmute, top, history.
+    `Manage Datadog monitors. Actions: list, get, search, create, update, delete, mute, unmute, top, history, preview.
 Filters: name, tags, groupStates (alert/warn/ok/no data).
 get/create/update return the full options object so callers can safely read-then-patch.
 
@@ -1185,6 +1262,14 @@ history: Count and list real state transitions for one monitor over a time windo
     transition_type filter that excludes renotifies by default. To include renotifies, pass
     transitionType including "renotify".
 
+preview: Render a Datadog monitor message template against a context (read-only safe).
+  - Inputs: either inline 'message' OR 'monitor_id' (or existing 'id'); plus optional 'context' { variables, conditionals }.
+  - Supported syntax: {{variable.name}} substitution and conditional blocks {{#name}}...{{/name}} / {{^name}}...{{/name}}
+    where name is one of: ${SUPPORTED_CONDITIONALS.join(', ')}.
+  - Missing variables render as {{undefined:name}} markers and are reported in 'variablesMissing'.
+  - Loops ({{#each ...}}) and partials ({{> ...}}) return EUNSUPPORTED_TEMPLATE_SYNTAX.
+  - Allowed under --read-only (no mutation; at most a getMonitor load).
+
 For generic event grouping (deployments, configs), use events tool instead. Note that the
 events tool's action=search with source:alert ALSO includes renotifies; use its
 transitionType filter (or this action=history) for fires-only counts.`,
@@ -1198,6 +1283,7 @@ transitionType filter (or this action=history) for fires-only counts.`,
       groupStates,
       limit,
       config,
+      message,
       end,
       from,
       to,
@@ -1205,7 +1291,9 @@ transitionType filter (or this action=history) for fires-only counts.`,
       maxEvents,
       transitionType,
       group,
-      dry_run: dryRun
+      dry_run: dryRun,
+      monitor_id: monitorIdNum,
+      context
     }) => {
       try {
         // Dry-run create is a non-mutating validation call against POST
@@ -1292,6 +1380,25 @@ transitionType filter (or this action=history) for fires-only counts.`,
                 monitorId,
                 { from, to, transitionType, group },
                 limits,
+                site
+              )
+            )
+          }
+
+          case 'preview': {
+            // Caller may pass either the new numeric `monitor_id` or the
+            // existing stringly-typed `id`. Both resolve to the same getMonitor
+            // call inside `previewMonitor`. Inline `message` wins when supplied.
+            const monitorIdSource =
+              monitorIdNum !== undefined ? String(monitorIdNum) : (id ?? undefined)
+            return toolResult(
+              await previewMonitor(
+                api,
+                {
+                  inlineMessage: message,
+                  monitorIdSource,
+                  context: context as TemplateContext | undefined
+                },
                 site
               )
             )
