@@ -122,8 +122,8 @@ When running with `--transport=http`:
 | `monitors` | list | Alerting | List monitors with optional filters | `monitors_read` |
 | `monitors` | get | Alerting | Get monitor by ID | `monitors_read` |
 | `monitors` | search | Alerting | Search monitors by query | `monitors_read` |
-| `monitors` | create | Alerting | Create a new monitor | `monitors_write` |
-| `monitors` | update | Alerting | Update an existing monitor | `monitors_write` |
+| `monitors` | create | Alerting | Create a new monitor; `config` is validated against a typed schema covering documented options (notifyNoData, renotifyInterval, thresholds, …) — unknown keys surface in `warnings` | `monitors_write` |
+| `monitors` | update | Alerting | Update an existing monitor; same validated schema as `create`; partial configs accepted; validation errors short-circuit before any HTTP call as `EINVALID_MONITOR_CONFIG:` | `monitors_write` |
 | `monitors` | delete | Alerting | Delete a monitor | `monitors_write` |
 | `monitors` | mute | Alerting | Mute a monitor | `monitors_write` |
 | `monitors` | unmute | Alerting | Unmute a monitor | `monitors_write` |
