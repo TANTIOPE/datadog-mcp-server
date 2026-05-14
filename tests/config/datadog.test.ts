@@ -33,7 +33,9 @@ vi.mock('@datadog/datadog-api-client', () => {
       NotebooksApi: MockApi,
       TagsApi: MockApi,
       UsageMeteringApi: MockApi,
-      AuthenticationApi: MockApi
+      AuthenticationApi: MockApi,
+      LogsPipelinesApi: MockApi,
+      LogsIndexesApi: MockApi
     },
     v2: {
       LogsApi: MockApi,
@@ -46,7 +48,8 @@ vi.mock('@datadog/datadog-api-client', () => {
       UsersApi: MockApi,
       TeamsApi: MockApi,
       SpansApi: MockApi,
-      ServiceDefinitionApi: MockApi
+      ServiceDefinitionApi: MockApi,
+      LogsArchivesApi: MockApi
     }
   }
 })
@@ -79,6 +82,8 @@ describe('Datadog Client Creation', () => {
       expect(clients.tags).toBeDefined()
       expect(clients.usage).toBeDefined()
       expect(clients.auth).toBeDefined()
+      expect(clients.logsPipelines).toBeDefined()
+      expect(clients.logsIndexes).toBeDefined()
 
       // Verify all v2 APIs
       expect(clients.logs).toBeDefined()
@@ -89,6 +94,7 @@ describe('Datadog Client Creation', () => {
       expect(clients.rum).toBeDefined()
       expect(clients.security).toBeDefined()
       expect(clients.users).toBeDefined()
+      expect(clients.logsArchives).toBeDefined()
       expect(clients.teams).toBeDefined()
       expect(clients.spans).toBeDefined()
       expect(clients.services).toBeDefined()
