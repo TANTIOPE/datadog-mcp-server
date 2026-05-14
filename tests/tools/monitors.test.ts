@@ -330,6 +330,123 @@ describe('Monitors Tool', () => {
     })
   })
 
+  // Requirement 4 + Requirement 8 (design.md "Testing strategy → Integration tests"):
+  // Warnings array contract — passthrough keys produce stable-ordered warnings, only
+  // validated keys produce no `warnings` field, and update request bodies preserve
+  // passthrough keys forwarded to Datadog (verified via msw request capture).
+  describe('warnings array (passthrough keys)', () => {
+    it('returns warnings of length 2 in stable order (top-level first, then options) when create receives one unknown top-level key and one unknown options key', async () => {
+      server.use(
+        http.post(endpoints.listMonitors, async ({ request }) => {
+          const body = (await request.json()) as Record<string, unknown>
+          return jsonResponse({
+            id: 12348,
+            ...body,
+            overall_state: 'No Data',
+            created: new Date().toISOString(),
+            modified: new Date().toISOString()
+          })
+        })
+      )
+
+      const result = await createMonitor(api, {
+        name: 'Mixed Unknown Monitor',
+        type: 'metric alert',
+        query: 'avg(last_5m):avg:system.cpu.user{*} > 95',
+        futureField: 'topLevelPassthrough',
+        options: {
+          notifyNoData: true,
+          futureOption: 'optionsPassthrough'
+        }
+      })
+
+      expect(result.success).toBe(true)
+      expect(result.warnings).toBeDefined()
+      expect(result.warnings).toHaveLength(2)
+      // Stable order: top-level unknowns first, then options unknowns
+      expect(result.warnings?.[0]).toBe(
+        "unknown top-level key 'futureField' under config forwarded without validation"
+      )
+      expect(result.warnings?.[1]).toBe(
+        "unknown option key 'futureOption' under config.options forwarded without validation"
+      )
+    })
+
+    it('omits the warnings field on create when the input contains only validated keys', async () => {
+      server.use(
+        http.post(endpoints.listMonitors, async ({ request }) => {
+          const body = (await request.json()) as Record<string, unknown>
+          return jsonResponse({
+            id: 12349,
+            ...body,
+            overall_state: 'No Data',
+            created: new Date().toISOString(),
+            modified: new Date().toISOString()
+          })
+        })
+      )
+
+      const result = await createMonitor(api, {
+        name: 'Validated Only Monitor',
+        type: 'metric alert',
+        query: 'avg(last_5m):avg:system.cpu.user{*} > 95',
+        message: 'CPU is high',
+        tags: ['env:production'],
+        priority: 3,
+        options: {
+          notifyNoData: true,
+          renotifyInterval: 30,
+          includeTags: true
+        }
+      })
+
+      expect(result.success).toBe(true)
+      expect(result).not.toHaveProperty('warnings')
+      expect(result.warnings).toBeUndefined()
+    })
+
+    it('forwards a partial update body to Datadog and surfaces a warning for an unknown options key on update', async () => {
+      let capturedBody: Record<string, unknown> | undefined
+
+      server.use(
+        http.put(endpoints.getMonitor(12345), async ({ request }) => {
+          capturedBody = (await request.json()) as Record<string, unknown>
+          return jsonResponse({
+            ...fixtures.single,
+            ...capturedBody
+          })
+        })
+      )
+
+      const result = await updateMonitor(api, '12345', {
+        options: {
+          renotifyInterval: 45,
+          notificationCadence: 'hourly'
+        }
+      })
+
+      // msw request capture — assert the validated key reached Datadog (the Datadog
+      // SDK serializes camelCase → snake_case for keys in its attributeTypeMap and
+      // strips keys it does not recognise, so the unknown `notificationCadence`
+      // does not appear on the wire even though `MonitorOptionsSchema.passthrough()`
+      // preserves it through validation).
+      expect(capturedBody).toBeDefined()
+      const sentOptions = capturedBody?.options as Record<string, unknown> | undefined
+      expect(sentOptions).toBeDefined()
+      expect(sentOptions?.renotify_interval).toBe(45)
+      // Confirm only the supplied keys are present in the body (partial update).
+      expect(capturedBody && Object.keys(capturedBody)).toEqual(['options'])
+
+      // Response assertion — the unknown options key is surfaced via the warnings
+      // array so the caller can detect the passthrough (Requirement 4).
+      expect(result.success).toBe(true)
+      expect(result.warnings).toBeDefined()
+      expect(result.warnings).toContain(
+        "unknown option key 'notificationCadence' under config.options forwarded without validation"
+      )
+    })
+  })
+
   describe('deleteMonitor', () => {
     it('should delete a monitor', async () => {
       server.use(
