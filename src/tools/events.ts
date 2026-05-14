@@ -185,6 +185,12 @@ interface TimeseriesBucket {
   timestampMs: number
   counts: Record<string, number>
   total: number
+  /**
+   * ISO 8601 string with offset rendered in the requested IANA timezone.
+   * Present ONLY when the caller passed a `timezone` parameter (Requirement 4).
+   * Omitting `timezone` produces a response shape byte-identical to today.
+   */
+  timestampLocal?: string
 }
 
 // Incident format (Phase 2 - deduplicated events)
@@ -1442,10 +1448,17 @@ export async function timeseriesEventsV2(
     interval?: string
     limit?: number
     transitionType?: string[]
+    timezone?: string
   },
   limits: LimitsConfig,
   site: string
 ) {
+  // Requirement 4: validate timezone BEFORE any Datadog call so an invalid zone
+  // never burns an API request quota and surfaces a stable EINVALID_TIMEZONE.
+  if (params.timezone !== undefined) {
+    validateIanaZone(params.timezone)
+  }
+
   const defaultFrom = hoursAgo(limits.defaultTimeRangeHours)
   const defaultTo = now()
 
@@ -1517,6 +1530,7 @@ export async function timeseriesEventsV2(
   }
 
   // Convert to sorted array of buckets
+  const tz = params.timezone
   const sortedBuckets = [...timeBuckets.entries()]
     .sort((a, b) => a[0] - b[0])
     .map(([bucketTs, groupCounts]) => {
@@ -1526,12 +1540,18 @@ export async function timeseriesEventsV2(
         counts[key] = count
         total += count
       }
-      return {
+      const bucket: TimeseriesBucket = {
         timestamp: new Date(bucketTs).toISOString(),
         timestampMs: bucketTs,
         counts,
         total
-      } satisfies TimeseriesBucket
+      }
+      // Requirement 4: annotate bucket timestamps with a sibling timestampLocal
+      // ONLY when the caller supplied a timezone — preserves byte-identical legacy shape.
+      if (tz !== undefined) {
+        bucket.timestampLocal = formatLocal(bucketTs, tz)
+      }
+      return bucket
     })
 
   // Apply limit to buckets if specified
@@ -2062,7 +2082,8 @@ histogram: Bucket events by local hour_of_day / day_of_week / day_of_month in th
                   groupBy,
                   interval,
                   limit,
-                  transitionType
+                  transitionType,
+                  timezone
                 },
                 limits,
                 site

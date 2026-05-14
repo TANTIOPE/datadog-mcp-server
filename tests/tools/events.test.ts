@@ -15,6 +15,7 @@ import {
   histogramEventsV2,
   aggregateEventsV2,
   incidentsEventsV2,
+  timeseriesEventsV2,
   computeDiagnostics,
   UNINDEXED_ALERT_TAG_PREFIXES
 } from '../../src/tools/events.js'
@@ -992,6 +993,80 @@ describe('Events Tool', () => {
             false
           )
         }
+      })
+    })
+
+    describe('events.timeseries', () => {
+      it('attaches timestampLocal to each bucket when timezone is provided', async () => {
+        server.use(http.post(endpoints.searchEvents, () => jsonResponse(fixtures.searchV2)))
+
+        const result = await timeseriesEventsV2(
+          apiV2,
+          {
+            query: 'source:alert',
+            from: '2024-01-20T00:00:00Z',
+            to: '2024-01-20T23:59:59Z',
+            interval: '1h',
+            timezone: 'Europe/Paris'
+          },
+          defaultLimits,
+          defaultSite
+        )
+
+        expect(result.timeseries.length).toBeGreaterThan(0)
+        for (const bucket of result.timeseries) {
+          expect(typeof bucket.timestampLocal).toBe('string')
+          expect(bucket.timestampLocal).toMatch(
+            /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}([+-]\d{2}:\d{2}|Z)$/
+          )
+        }
+      })
+
+      it('does NOT add timestampLocal when timezone is omitted (byte-identical shape)', async () => {
+        server.use(http.post(endpoints.searchEvents, () => jsonResponse(fixtures.searchV2)))
+
+        const result = await timeseriesEventsV2(
+          apiV2,
+          {
+            query: 'source:alert',
+            from: '2024-01-20T00:00:00Z',
+            to: '2024-01-20T23:59:59Z',
+            interval: '1h'
+          },
+          defaultLimits,
+          defaultSite
+        )
+
+        expect(result.timeseries.length).toBeGreaterThan(0)
+        for (const bucket of result.timeseries) {
+          expect(Object.prototype.hasOwnProperty.call(bucket, 'timestampLocal')).toBe(false)
+        }
+      })
+
+      it('throws EINVALID_TIMEZONE before any Datadog call when timezone is invalid', async () => {
+        let hit = false
+        server.use(
+          http.post(endpoints.searchEvents, () => {
+            hit = true
+            return jsonResponse(fixtures.searchV2)
+          })
+        )
+
+        await expect(
+          timeseriesEventsV2(
+            apiV2,
+            {
+              query: 'source:alert',
+              from: '2024-01-20T00:00:00Z',
+              to: '2024-01-20T23:59:59Z',
+              interval: '1h',
+              timezone: 'Not/AZone'
+            },
+            defaultLimits,
+            defaultSite
+          )
+        ).rejects.toThrow(/EINVALID_TIMEZONE/)
+        expect(hit).toBe(false)
       })
     })
 
