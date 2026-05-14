@@ -1,4 +1,5 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
+import { McpError, ErrorCode } from '@modelcontextprotocol/sdk/types.js'
 import { z } from 'zod'
 import { v1, v2 } from '@datadog/datadog-api-client'
 import { handleDatadogError, requireParam, checkReadOnly } from '../errors/datadog.js'
@@ -27,7 +28,8 @@ const ActionSchema = z.enum([
   'unmute',
   'top',
   'history',
-  'preview'
+  'preview',
+  'test_notification'
 ])
 
 // Mustache-subset preview context — keep loose at the schema boundary so we
@@ -1013,6 +1015,52 @@ export async function previewMonitor(
   return monitorId !== undefined ? { ...result, monitorId } : result
 }
 
+/**
+ * Trigger a Datadog monitor test notification (Requirement 6 / OQ-1).
+ *
+ * **Status: ENOT_SUPPORTED — Datadog has no public test-notification endpoint.**
+ *
+ * Research conducted during Task 8 of the events-dx-improvements spec
+ * (.kiro/specs/events-dx-improvements/tasks.md) audited the Datadog public
+ * OpenAPI specifications at:
+ *   - https://github.com/DataDog/datadog-api-client-python/blob/master/.generator/schemas/v1/openapi.yaml
+ *   - https://github.com/DataDog/datadog-api-client-python/blob/master/.generator/schemas/v2/openapi.yaml
+ *
+ * The full set of `/api/v1/monitor*` paths is:
+ *   `POST/GET /api/v1/monitor`, `GET /api/v1/monitor/can_delete`,
+ *   `GET /api/v1/monitor/groups/search`, `GET /api/v1/monitor/search`,
+ *   `POST /api/v1/monitor/validate`,
+ *   `GET/PUT/DELETE /api/v1/monitor/{monitor_id}`,
+ *   `GET /api/v1/monitor/{monitor_id}/downtimes`,
+ *   `POST /api/v1/monitor/{monitor_id}/validate`.
+ *
+ * The v2 monitor surface (`/api/v2/monitor/notification_rule`,
+ * `/api/v2/monitor/policy`, `/api/v2/monitor/template`, `monitor template
+ * validate`, `monitor downtime_matches`) likewise exposes no `/notify` or
+ * `/test` path. Confirmed against the SDK type definitions at
+ * `node_modules/@datadog/datadog-api-client/dist/packages/datadog-api-client-v1/apis/MonitorsApi.d.ts`
+ * (no `notifyMonitor` / `testMonitor` methods).
+ *
+ * See also Datadog's official monitor API reference for current state:
+ *   https://docs.datadoghq.com/api/latest/monitors/
+ *
+ * Per design.md Requirement 6 AC2 and Open Question OQ-1, this action returns
+ * an explicit `ENOT_SUPPORTED` error including a documentation pointer instead
+ * of silently degrading or faking a success response. Read-only mode allows
+ * this action (Requirement 6 AC4) because no Datadog HTTP call is attempted.
+ *
+ * If Datadog later publishes a public test-notification endpoint, this handler
+ * should switch to invoking it via the SDK's raw request configuration and
+ * surface 429 verbatim via `handleDatadogError` (Requirement 6 AC5) with no
+ * auto-retry.
+ */
+export const TEST_NOTIFICATION_NOT_SUPPORTED_MESSAGE =
+  "ENOT_SUPPORTED: action 'test_notification' is not implemented — the Datadog public REST API exposes no monitor test-notification endpoint at v1 or v2 as of the events-dx-improvements spec. Use the Datadog UI's 'Test Notifications' button on the monitor page, or open an issue if Datadog publishes such an endpoint. Reference: https://docs.datadoghq.com/api/latest/monitors/"
+
+export function testNotificationMonitor(_args: { monitorId?: string }): never {
+  throw new McpError(ErrorCode.InvalidRequest, TEST_NOTIFICATION_NOT_SUPPORTED_MESSAGE)
+}
+
 export async function updateMonitor(
   api: v1.MonitorsApi,
   id: string,
@@ -1279,7 +1327,7 @@ export function registerMonitorsTool(
 ): void {
   server.tool(
     'monitors',
-    `Manage Datadog monitors. Actions: list, get, search, create, update, delete, mute, unmute, top, history, preview.
+    `Manage Datadog monitors. Actions: list, get, search, create, update, delete, mute, unmute, top, history, preview, test_notification.
 Filters: name, tags, groupStates (alert/warn/ok/no data).
 get/create/update return the full options object so callers can safely read-then-patch.
 
@@ -1324,6 +1372,13 @@ preview: Render a Datadog monitor message template against a context (read-only 
   - Missing variables render as {{undefined:name}} markers and are reported in 'variablesMissing'.
   - Loops ({{#each ...}}) and partials ({{> ...}}) return EUNSUPPORTED_TEMPLATE_SYNTAX.
   - Allowed under --read-only (no mutation; at most a getMonitor load).
+
+test_notification: KNOWN LIMITATION — always returns ENOT_SUPPORTED.
+  - Datadog's public REST API exposes no monitor test-notification endpoint at v1 or v2
+    (audited against the official OpenAPI specs). The v1 SDK has no notifyMonitor / testMonitor method.
+  - Allowed under --read-only because no Datadog HTTP call is attempted.
+  - If Datadog publishes such an endpoint in future, this action will be reimplemented to invoke it.
+  - Workaround: use the 'Test Notifications' button in the Datadog monitor UI.
 
 For generic event grouping (deployments, configs), use events tool instead. Note that the
 events tool's action=search with source:alert ALSO includes renotifies; use its
@@ -1458,6 +1513,19 @@ transitionType filter (or this action=history) for fires-only counts.`,
                 site
               )
             )
+          }
+
+          case 'test_notification': {
+            // Requirement 6 / OQ-1: the Datadog public API exposes no
+            // test-notification endpoint, so we surface ENOT_SUPPORTED and do
+            // not attempt a Datadog HTTP call. See JSDoc on
+            // `testNotificationMonitor` for the OpenAPI-spec audit.
+            // `testNotificationMonitor` returns `never` (it always throws),
+            // but we wrap the call in `return` to keep ESLint's no-fallthrough
+            // and TypeScript's switch-exhaustiveness rules both happy.
+            const monitorIdSource =
+              monitorIdNum !== undefined ? String(monitorIdNum) : (id ?? undefined)
+            return testNotificationMonitor({ monitorId: monitorIdSource })
           }
 
           default:
