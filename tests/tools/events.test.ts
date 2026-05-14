@@ -214,4 +214,164 @@ describe('Events Tool', () => {
       })
     })
   })
+
+  describe('searchEventsV2 with transitionType filter', () => {
+    interface CapturedBody {
+      filter?: { query?: string; from?: string; to?: string }
+      sort?: string
+      page?: { limit?: number; cursor?: string }
+    }
+
+    /**
+     * Install a handler that records the request body so the test can assert
+     * the exact `filter.query` string emitted by buildEventQuery via
+     * searchEventsV2. Returns a getter for the latest captured body.
+     */
+    function installCapturingHandler(): () => CapturedBody | undefined {
+      let captured: CapturedBody | undefined
+      server.use(
+        http.post(endpoints.searchEvents, async ({ request }) => {
+          captured = (await request.json()) as CapturedBody
+          return jsonResponse(fixtures.searchV2)
+        })
+      )
+      return () => captured
+    }
+
+    it('produces a byte-identical filter.query when transitionType is omitted (requirement 5.1)', async () => {
+      // Baseline: call without transitionType
+      const getBaseline = installCapturingHandler()
+      await searchEventsV2(
+        apiV2,
+        {
+          query: 'source:alert',
+          tags: ['env:prod'],
+          from: '2024-01-20T00:00:00Z',
+          to: '2024-01-20T23:59:59Z'
+        },
+        defaultLimits,
+        defaultSite
+      )
+      const baselineQuery = getBaseline()?.filter?.query
+      expect(baselineQuery).toBeDefined()
+
+      // Reset MSW handlers and install a fresh capturing handler. The second
+      // call passes transitionType explicitly as undefined to prove the
+      // shape is byte-identical to omission.
+      server.resetHandlers()
+      const getActual = installCapturingHandler()
+      await searchEventsV2(
+        apiV2,
+        {
+          query: 'source:alert',
+          tags: ['env:prod'],
+          from: '2024-01-20T00:00:00Z',
+          to: '2024-01-20T23:59:59Z',
+          transitionType: undefined
+        },
+        defaultLimits,
+        defaultSite
+      )
+
+      expect(getActual()?.filter?.query).toBe(baselineQuery)
+      // Negative guard: the additive clause must NOT appear when omitted
+      expect(baselineQuery).not.toContain('@monitor.transition.transition_type')
+    })
+
+    it('produces the same filter.query for empty transitionType as for omitted transitionType', async () => {
+      const getBaseline = installCapturingHandler()
+      await searchEventsV2(
+        apiV2,
+        {
+          query: 'source:alert',
+          from: '2024-01-20T00:00:00Z',
+          to: '2024-01-20T23:59:59Z'
+        },
+        defaultLimits,
+        defaultSite
+      )
+      const baselineQuery = getBaseline()?.filter?.query
+
+      server.resetHandlers()
+      const getEmpty = installCapturingHandler()
+      await searchEventsV2(
+        apiV2,
+        {
+          query: 'source:alert',
+          from: '2024-01-20T00:00:00Z',
+          to: '2024-01-20T23:59:59Z',
+          transitionType: []
+        },
+        defaultLimits,
+        defaultSite
+      )
+
+      expect(getEmpty()?.filter?.query).toBe(baselineQuery)
+      expect(getEmpty()?.filter?.query).not.toContain('@monitor.transition.transition_type')
+    })
+
+    it('appends @monitor.transition.transition_type with OR for multi-valued input', async () => {
+      const getBody = installCapturingHandler()
+      await searchEventsV2(
+        apiV2,
+        {
+          query: 'source:alert',
+          from: '2024-01-20T00:00:00Z',
+          to: '2024-01-20T23:59:59Z',
+          transitionType: ['alert', 'warning']
+        },
+        defaultLimits,
+        defaultSite
+      )
+
+      const query = getBody()?.filter?.query
+      expect(query).toBeDefined()
+      // Clause is present and OR'd, multi-word values that aren't here stay unquoted
+      expect(query).toContain('@monitor.transition.transition_type:(alert OR warning)')
+      // The original user query is preserved as a leading clause
+      expect(query?.startsWith('source:alert ')).toBe(true)
+    })
+
+    it('quotes multi-word transition types like "alert recovery"', async () => {
+      const getBody = installCapturingHandler()
+      await searchEventsV2(
+        apiV2,
+        {
+          query: 'source:alert',
+          from: '2024-01-20T00:00:00Z',
+          to: '2024-01-20T23:59:59Z',
+          transitionType: ['alert', 'alert recovery']
+        },
+        defaultLimits,
+        defaultSite
+      )
+
+      const query = getBody()?.filter?.query
+      expect(query).toBeDefined()
+      expect(query).toContain('@monitor.transition.transition_type:(alert OR "alert recovery")')
+      // Single-word values must remain unquoted in the same clause
+      expect(query).not.toContain('"alert"')
+    })
+
+    it('emits a single-valued clause without an OR when only one transition type is provided', async () => {
+      const getBody = installCapturingHandler()
+      await searchEventsV2(
+        apiV2,
+        {
+          query: 'source:alert',
+          from: '2024-01-20T00:00:00Z',
+          to: '2024-01-20T23:59:59Z',
+          transitionType: ['alert recovery']
+        },
+        defaultLimits,
+        defaultSite
+      )
+
+      const query = getBody()?.filter?.query
+      expect(query).toContain('@monitor.transition.transition_type:("alert recovery")')
+      // With a single value there must be no ` OR ` token inside the clause
+      const clauseMatch = /@monitor\.transition\.transition_type:\(([^)]*)\)/.exec(query ?? '')
+      expect(clauseMatch?.[1]).toBe('"alert recovery"')
+    })
+  })
 })
