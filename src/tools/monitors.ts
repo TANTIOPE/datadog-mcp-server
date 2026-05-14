@@ -13,6 +13,7 @@ import {
   type PreviewResult,
   type TemplateContext
 } from '../utils/templatePreview.js'
+import { validateIanaZone, formatLocal } from '../utils/timezone.js'
 import type { LimitsConfig } from '../config/schema.js'
 
 const ActionSchema = z.enum([
@@ -123,6 +124,14 @@ const InputSchema = {
       'When create + dry_run=true, validate the monitor body via POST /api/v1/monitor/validate ' +
         'without creating it. Allowed under --read-only because no monitor is created. ' +
         'Returns { valid, dryRun, monitor }. 400 responses surface verbatim like a failed create.'
+    ),
+  timezone: z
+    .string()
+    .optional()
+    .describe(
+      'Optional IANA timezone (e.g. "UTC", "Europe/Paris"). When supplied on get/list, ' +
+        'the response adds sibling createdLocal/modifiedLocal ISO 8601 strings next to created/modified. ' +
+        'Omit for byte-identical legacy shape. Invalid zones return EINVALID_TIMEZONE.'
     )
 }
 
@@ -315,6 +324,32 @@ interface MonitorSummary {
   created: string
   modified: string
   url: string
+  /**
+   * Requirement 4: ISO 8601 with offset in the requested IANA timezone.
+   * Present ONLY when the caller supplied a `timezone` parameter. Omitting
+   * `timezone` produces a response shape byte-identical to today.
+   */
+  createdLocal?: string
+  modifiedLocal?: string
+}
+
+/**
+ * Requirement 4: annotate a MonitorSummary (or MonitorDetail) with sibling
+ * `createdLocal` / `modifiedLocal` ISO 8601 strings in the requested IANA
+ * timezone. Returns a shallow copy; the original is untouched. Empty or
+ * unparseable timestamps are left annotated as undefined rather than crashing.
+ */
+function annotateMonitorTimezone<T extends MonitorSummary>(monitor: T, tz: string): T {
+  const annotated: T = { ...monitor }
+  if (monitor.created) {
+    const ms = new Date(monitor.created).getTime()
+    if (Number.isFinite(ms)) annotated.createdLocal = formatLocal(ms, tz)
+  }
+  if (monitor.modified) {
+    const ms = new Date(monitor.modified).getTime()
+    if (Number.isFinite(ms)) annotated.modifiedLocal = formatLocal(ms, tz)
+  }
+  return annotated
 }
 
 export function formatMonitor(m: v1.Monitor, site: string = 'datadoghq.com'): MonitorSummary {
@@ -709,8 +744,15 @@ export async function listMonitors(
   api: v1.MonitorsApi,
   params: { name?: string; tags?: string[]; groupStates?: string[]; limit?: number },
   limits: LimitsConfig,
-  site: string
+  site: string,
+  timezone?: string
 ) {
+  // Requirement 4: validate timezone BEFORE the Datadog call so an invalid zone
+  // never burns API quota and surfaces a stable EINVALID_TIMEZONE.
+  if (timezone !== undefined) {
+    validateIanaZone(timezone)
+  }
+
   const effectiveLimit = params.limit ?? limits.defaultLimit
 
   const response = await api.listMonitors({
@@ -719,7 +761,12 @@ export async function listMonitors(
     groupStates: params.groupStates?.join(',')
   })
 
-  const monitors = response.slice(0, effectiveLimit).map((m) => formatMonitor(m, site))
+  const baseMonitors = response.slice(0, effectiveLimit).map((m) => formatMonitor(m, site))
+  // Requirement 4: opt-in *Local annotations only when timezone is supplied.
+  const monitors =
+    timezone !== undefined
+      ? baseMonitors.map((m) => annotateMonitorTimezone(m, timezone))
+      : baseMonitors
 
   const statusCounts = {
     total: response.length,
@@ -739,15 +786,23 @@ export async function listMonitors(
   }
 }
 
-export async function getMonitor(api: v1.MonitorsApi, id: string, site: string) {
+export async function getMonitor(api: v1.MonitorsApi, id: string, site: string, timezone?: string) {
+  // Requirement 4: validate timezone BEFORE the Datadog call.
+  if (timezone !== undefined) {
+    validateIanaZone(timezone)
+  }
+
   const monitorId = Number.parseInt(id, 10)
   if (Number.isNaN(monitorId)) {
     throw new Error(`Invalid monitor ID: ${id}`)
   }
 
   const monitor = await api.getMonitor({ monitorId })
+  const baseDetail = formatMonitorDetail(monitor, site)
+  // Requirement 4: opt-in *Local annotations only when timezone is supplied.
+  const detail = timezone !== undefined ? annotateMonitorTimezone(baseDetail, timezone) : baseDetail
   return {
-    monitor: formatMonitorDetail(monitor, site),
+    monitor: detail,
     datadog_url: buildMonitorUrl(monitorId, site)
   }
 }
@@ -1293,7 +1348,8 @@ transitionType filter (or this action=history) for fires-only counts.`,
       group,
       dry_run: dryRun,
       monitor_id: monitorIdNum,
-      context
+      context,
+      timezone
     }) => {
       try {
         // Dry-run create is a non-mutating validation call against POST
@@ -1308,12 +1364,12 @@ transitionType filter (or this action=history) for fires-only counts.`,
         switch (action) {
           case 'list':
             return toolResult(
-              await listMonitors(api, { name, tags, groupStates, limit }, limits, site)
+              await listMonitors(api, { name, tags, groupStates, limit }, limits, site, timezone)
             )
 
           case 'get': {
             const monitorId = requireParam(id, 'id', 'get')
-            return toolResult(await getMonitor(api, monitorId, site))
+            return toolResult(await getMonitor(api, monitorId, site, timezone))
           }
 
           case 'search': {

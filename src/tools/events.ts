@@ -9,7 +9,8 @@ import {
   bucketHourOfDay,
   bucketDayOfWeek,
   bucketDayOfMonth,
-  validateIanaZone
+  validateIanaZone,
+  formatLocal
 } from '../utils/timezone.js'
 import type { LimitsConfig } from '../config/schema.js'
 
@@ -110,7 +111,10 @@ const InputSchema = {
     .string()
     .optional()
     .describe(
-      'IANA timezone for histogram bucketing (e.g. "UTC", "Europe/Paris"). DST-safe. Default: UTC.'
+      'Optional IANA timezone (e.g. "UTC", "Europe/Paris"). DST-safe. ' +
+        'For histogram: controls hour/day bucketing (default: UTC). ' +
+        'For search/aggregate/top/incidents read actions: adds sibling *Local ISO 8601 ' +
+        'strings (e.g. timestampLocal) next to existing timestamps. Omit for byte-identical legacy shape.'
     )
 }
 
@@ -145,6 +149,27 @@ interface EventSummaryV2 {
     scope: string
     priority?: string
   }
+  /**
+   * ISO 8601 string with offset rendered in the requested IANA timezone.
+   * Present ONLY when the caller passed a `timezone` parameter (Requirement 4).
+   * Omitting `timezone` produces a response shape byte-identical to today.
+   */
+  timestampLocal?: string
+}
+
+/**
+ * Annotate a single event's `timestamp` with a sibling `timestampLocal` ISO 8601
+ * string in the requested IANA timezone (Requirement 4).
+ *
+ * Returns a shallow-copied event; the original is left untouched. Events with a
+ * missing or unparseable timestamp are returned unchanged — better to surface a
+ * silent skip than to crash the whole search on one bad row.
+ */
+function annotateEventTimezone(event: EventSummaryV2, tz: string): EventSummaryV2 {
+  if (!event.timestamp) return event
+  const ms = new Date(event.timestamp).getTime()
+  if (!Number.isFinite(ms)) return event
+  return { ...event, timestampLocal: formatLocal(ms, tz) }
 }
 
 // Aggregation bucket format
@@ -172,6 +197,10 @@ interface IncidentEvent {
   recoveredAt?: string
   duration?: string
   sample: EventSummaryV2
+  // Requirement 4: present only when caller supplied `timezone`.
+  firstTriggerLocal?: string
+  lastTriggerLocal?: string
+  recoveredAtLocal?: string
 }
 
 // Enriched event with monitor metadata (Phase 3)
@@ -796,10 +825,17 @@ export async function searchEventsV2(
     limit?: number
     cursor?: string
     transitionType?: string[]
+    timezone?: string
   },
   limits: LimitsConfig,
   site: string
 ) {
+  // Requirement 4: validate timezone BEFORE any Datadog call so an invalid zone
+  // never burns an API request quota and surfaces a stable EINVALID_TIMEZONE.
+  if (params.timezone !== undefined) {
+    validateIanaZone(params.timezone)
+  }
+
   const defaultFrom = hoursAgo(limits.defaultTimeRangeHours)
   const defaultTo = now()
 
@@ -835,7 +871,12 @@ export async function searchEventsV2(
 
   const response = await api.searchEvents({ body })
 
-  const events = (response.data ?? []).map(formatEventV2)
+  const rawEvents = (response.data ?? []).map(formatEventV2)
+  // Requirement 4: annotate only when timezone is supplied — opt-in shape change.
+  const events =
+    params.timezone !== undefined
+      ? rawEvents.map((e) => annotateEventTimezone(e, params.timezone as string))
+      : rawEvents
   const nextCursor = response.meta?.page?.after
 
   const baseResult = {
@@ -1089,10 +1130,16 @@ export async function aggregateEventsV2(
     groupBy?: string[]
     limit?: number
     transitionType?: string[]
+    timezone?: string
   },
   limits: LimitsConfig,
   site: string
 ) {
+  // Requirement 4: validate timezone BEFORE any Datadog call.
+  if (params.timezone !== undefined) {
+    validateIanaZone(params.timezone)
+  }
+
   const counts = new Map<string, { count: number; sample: EventSummaryV2 }>()
 
   const defaultFrom = hoursAgo(limits.defaultTimeRangeHours)
@@ -1172,7 +1219,11 @@ export async function aggregateEventsV2(
   const buckets: AggregationBucket[] = sorted.map(([key, data]) => ({
     key,
     count: data.count,
-    sample: data.sample
+    // Requirement 4: annotate sample timestamps only when timezone is supplied.
+    sample:
+      params.timezone !== undefined
+        ? annotateEventTimezone(data.sample, params.timezone)
+        : data.sample
   }))
 
   return {
@@ -1208,10 +1259,20 @@ export async function topEventsV2(
     contextTags?: string[]
     maxEvents?: number
     transitionType?: string[]
+    timezone?: string
   },
   limits: LimitsConfig,
   site: string
 ) {
+  // Requirement 4: validate timezone BEFORE any Datadog call. The current `top`
+  // response shape exposes grouped counts and context breakdown — no per-event
+  // timestamps — so annotation is a no-op on the output today; threading the
+  // param ensures invalid zones still fail fast and reserves space for future
+  // sample fields without a contract break.
+  if (params.timezone !== undefined) {
+    validateIanaZone(params.timezone)
+  }
+
   // Validate contextTags if provided
   if (params.contextTags !== undefined) {
     if (!Array.isArray(params.contextTags)) {
@@ -1510,10 +1571,16 @@ export async function incidentsEventsV2(
     dedupeWindow?: string
     limit?: number
     transitionType?: string[]
+    timezone?: string
   },
   limits: LimitsConfig,
   site: string
 ) {
+  // Requirement 4: validate timezone BEFORE any Datadog call.
+  if (params.timezone !== undefined) {
+    validateIanaZone(params.timezone)
+  }
+
   const defaultFrom = hoursAgo(limits.defaultTimeRangeHours)
   const defaultTo = now()
 
@@ -1669,6 +1736,7 @@ export async function incidentsEventsV2(
   }
 
   // Convert to array and calculate durations
+  const tz = params.timezone
   const incidentList: IncidentEvent[] = [...incidents.values()].map((inc) => {
     let duration: string | undefined
     if (inc.recoveredAt) {
@@ -1682,7 +1750,7 @@ export async function incidentsEventsV2(
       }
     }
 
-    return {
+    const base: IncidentEvent = {
       monitorName: inc.monitorName,
       firstTrigger: inc.firstTrigger.toISOString(),
       lastTrigger: inc.lastTrigger.toISOString(),
@@ -1690,8 +1758,20 @@ export async function incidentsEventsV2(
       recovered: inc.recovered,
       recoveredAt: inc.recoveredAt?.toISOString(),
       duration,
-      sample: inc.sample
+      // Requirement 4: annotate the nested sample event timestamp when tz is supplied.
+      sample: tz !== undefined ? annotateEventTimezone(inc.sample, tz) : inc.sample
     }
+
+    // Requirement 4: opt-in sibling *Local strings for trigger/recovery timestamps.
+    if (tz !== undefined) {
+      base.firstTriggerLocal = formatLocal(inc.firstTrigger.getTime(), tz)
+      base.lastTriggerLocal = formatLocal(inc.lastTrigger.getTime(), tz)
+      if (inc.recoveredAt) {
+        base.recoveredAtLocal = formatLocal(inc.recoveredAt.getTime(), tz)
+      }
+    }
+
+    return base
   })
 
   // Sort by first trigger descending, apply limit
@@ -1894,7 +1974,8 @@ histogram: Bucket events by local hour_of_day / day_of_week / day_of_month in th
                 priority,
                 limit,
                 cursor,
-                transitionType
+                transitionType,
+                timezone
               },
               limits,
               site
@@ -1921,7 +2002,8 @@ histogram: Bucket events by local hour_of_day / day_of_week / day_of_month in th
                   tags,
                   groupBy,
                   limit,
-                  transitionType
+                  transitionType,
+                  timezone
                 },
                 limits,
                 site
@@ -1942,7 +2024,8 @@ histogram: Bucket events by local hour_of_day / day_of_week / day_of_month in th
                   groupBy,
                   contextTags,
                   maxEvents,
-                  transitionType
+                  transitionType,
+                  timezone
                 },
                 limits,
                 site
@@ -1997,7 +2080,8 @@ histogram: Bucket events by local hour_of_day / day_of_week / day_of_month in th
                   tags,
                   dedupeWindow,
                   limit,
-                  transitionType
+                  transitionType,
+                  timezone
                 },
                 limits,
                 site

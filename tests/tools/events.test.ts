@@ -13,6 +13,8 @@ import {
   createEventV1,
   searchEventsV2,
   histogramEventsV2,
+  aggregateEventsV2,
+  incidentsEventsV2,
   computeDiagnostics,
   UNINDEXED_ALERT_TAG_PREFIXES
 } from '../../src/tools/events.js'
@@ -789,6 +791,237 @@ describe('Events Tool', () => {
       )
 
       expect(observedCursor).toBe('resume-from-here')
+    })
+  })
+
+  // Requirement 4 (timezone annotation) — `timezone` is opt-in on read actions
+  // and adds sibling `*Local` ISO 8601 strings next to every existing epoch /
+  // ISO timestamp. Omitting `timezone` produces today's exact response shape.
+  describe('timezone annotation (Requirement 4)', () => {
+    describe('events.search', () => {
+      it('attaches timestampLocal to each event when timezone is provided', async () => {
+        server.use(http.post(endpoints.searchEvents, () => jsonResponse(fixtures.searchV2)))
+
+        const result = await searchEventsV2(
+          apiV2,
+          {
+            query: 'source:alert',
+            from: '2024-01-20T00:00:00Z',
+            to: '2024-01-20T23:59:59Z',
+            timezone: 'Europe/Paris'
+          },
+          defaultLimits,
+          defaultSite
+        )
+
+        expect(result.events.length).toBeGreaterThan(0)
+        for (const event of result.events) {
+          expect(typeof event.timestampLocal).toBe('string')
+          // ISO 8601 with offset (or Z for UTC) — never the raw UTC trailing-Z form when zone != UTC.
+          expect(event.timestampLocal).toMatch(
+            /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}([+-]\d{2}:\d{2}|Z)$/
+          )
+        }
+        // 2024-01-20T10:00:00Z in Europe/Paris (CET = UTC+1) → 11:00 local
+        const first = result.events[0]
+        expect(first?.timestamp).toBe('2024-01-20T10:00:00.000Z')
+        expect(first?.timestampLocal).toBe('2024-01-20T11:00:00+01:00')
+      })
+
+      it('does NOT add timestampLocal when timezone is omitted (byte-identical shape)', async () => {
+        server.use(http.post(endpoints.searchEvents, () => jsonResponse(fixtures.searchV2)))
+
+        const result = await searchEventsV2(
+          apiV2,
+          {
+            query: 'source:alert',
+            from: '2024-01-20T00:00:00Z',
+            to: '2024-01-20T23:59:59Z'
+          },
+          defaultLimits,
+          defaultSite
+        )
+
+        expect(result.events.length).toBeGreaterThan(0)
+        for (const event of result.events) {
+          expect(Object.prototype.hasOwnProperty.call(event, 'timestampLocal')).toBe(false)
+        }
+      })
+
+      it('throws EINVALID_TIMEZONE before any Datadog call when timezone is invalid', async () => {
+        let hit = false
+        server.use(
+          http.post(endpoints.searchEvents, () => {
+            hit = true
+            return jsonResponse(fixtures.searchV2)
+          })
+        )
+
+        await expect(
+          searchEventsV2(
+            apiV2,
+            {
+              query: 'source:alert',
+              timezone: 'Not/AValidZone'
+            },
+            defaultLimits,
+            defaultSite
+          )
+        ).rejects.toThrow(/EINVALID_TIMEZONE/)
+
+        expect(hit).toBe(false)
+      })
+    })
+
+    describe('events.aggregate', () => {
+      it('attaches timestampLocal to each bucket sample when timezone is provided', async () => {
+        server.use(http.post(endpoints.searchEvents, () => jsonResponse(fixtures.searchV2)))
+
+        const result = await aggregateEventsV2(
+          apiV2,
+          {
+            from: '2024-01-20T00:00:00Z',
+            to: '2024-01-20T23:59:59Z',
+            timezone: 'Europe/Paris'
+          },
+          defaultLimits,
+          defaultSite
+        )
+
+        expect(result.buckets.length).toBeGreaterThan(0)
+        for (const bucket of result.buckets) {
+          expect(typeof bucket.sample.timestampLocal).toBe('string')
+          expect(bucket.sample.timestampLocal).toMatch(
+            /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}([+-]\d{2}:\d{2}|Z)$/
+          )
+        }
+      })
+
+      it('does NOT add timestampLocal on samples when timezone omitted', async () => {
+        server.use(http.post(endpoints.searchEvents, () => jsonResponse(fixtures.searchV2)))
+
+        const result = await aggregateEventsV2(
+          apiV2,
+          {
+            from: '2024-01-20T00:00:00Z',
+            to: '2024-01-20T23:59:59Z'
+          },
+          defaultLimits,
+          defaultSite
+        )
+
+        for (const bucket of result.buckets) {
+          expect(Object.prototype.hasOwnProperty.call(bucket.sample, 'timestampLocal')).toBe(false)
+        }
+      })
+
+      it('throws EINVALID_TIMEZONE before any Datadog call when timezone is invalid', async () => {
+        let hit = false
+        server.use(
+          http.post(endpoints.searchEvents, () => {
+            hit = true
+            return jsonResponse(fixtures.searchV2)
+          })
+        )
+
+        await expect(
+          aggregateEventsV2(
+            apiV2,
+            {
+              from: '2024-01-20T00:00:00Z',
+              to: '2024-01-20T23:59:59Z',
+              timezone: 'Not/AZone'
+            },
+            defaultLimits,
+            defaultSite
+          )
+        ).rejects.toThrow(/EINVALID_TIMEZONE/)
+        expect(hit).toBe(false)
+      })
+    })
+
+    describe('events.incidents', () => {
+      it('attaches *Local fields to firstTrigger / lastTrigger / recoveredAt when timezone is provided', async () => {
+        server.use(http.post(endpoints.searchEvents, () => jsonResponse(fixtures.searchV2)))
+
+        const result = await incidentsEventsV2(
+          apiV2,
+          {
+            from: '2024-01-20T00:00:00Z',
+            to: '2024-01-20T23:59:59Z',
+            timezone: 'Europe/Paris'
+          },
+          defaultLimits,
+          defaultSite
+        )
+
+        expect(result.incidents.length).toBeGreaterThan(0)
+        for (const incident of result.incidents) {
+          expect(typeof incident.firstTriggerLocal).toBe('string')
+          expect(typeof incident.lastTriggerLocal).toBe('string')
+          expect(incident.firstTriggerLocal).toMatch(
+            /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}([+-]\d{2}:\d{2}|Z)$/
+          )
+          // recoveredAtLocal only present when recoveredAt itself is present.
+          if (incident.recoveredAt) {
+            expect(typeof incident.recoveredAtLocal).toBe('string')
+          }
+          // The nested sample event must also get its own timestampLocal.
+          expect(typeof incident.sample.timestampLocal).toBe('string')
+        }
+      })
+
+      it('does NOT add *Local fields when timezone is omitted', async () => {
+        server.use(http.post(endpoints.searchEvents, () => jsonResponse(fixtures.searchV2)))
+
+        const result = await incidentsEventsV2(
+          apiV2,
+          {
+            from: '2024-01-20T00:00:00Z',
+            to: '2024-01-20T23:59:59Z'
+          },
+          defaultLimits,
+          defaultSite
+        )
+
+        for (const incident of result.incidents) {
+          expect(Object.prototype.hasOwnProperty.call(incident, 'firstTriggerLocal')).toBe(false)
+          expect(Object.prototype.hasOwnProperty.call(incident, 'lastTriggerLocal')).toBe(false)
+          expect(Object.prototype.hasOwnProperty.call(incident, 'recoveredAtLocal')).toBe(false)
+          expect(Object.prototype.hasOwnProperty.call(incident.sample, 'timestampLocal')).toBe(
+            false
+          )
+        }
+      })
+    })
+
+    describe('events.histogram', () => {
+      it('throws EINVALID_TIMEZONE on invalid zone (already validated)', async () => {
+        // Sanity: histogram already validates via Task 5; this test ensures
+        // the behavior is preserved under Task 6 plumbing.
+        let hit = false
+        server.use(
+          http.post(endpoints.searchEvents, () => {
+            hit = true
+            return jsonResponse(fixtures.searchV2)
+          })
+        )
+
+        await expect(
+          histogramEventsV2(
+            apiV2,
+            {
+              bucket_by: 'hour_of_day',
+              timezone: 'Bogus/Zone',
+              from: '2024-01-20T00:00:00Z',
+              to: '2024-01-20T23:59:59Z'
+            },
+            defaultLimits,
+            defaultSite
+          )
+        ).rejects.toThrow(/EINVALID_TIMEZONE/)
+        expect(hit).toBe(false)
+      })
     })
   })
 })

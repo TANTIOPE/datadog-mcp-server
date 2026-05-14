@@ -1121,4 +1121,158 @@ describe('Monitors Tool', () => {
       expect(payload.rendered).toBe('hello world')
     })
   })
+
+  // Requirement 4 (timezone annotation) — opt-in `timezone` param on
+  // monitors.get / monitors.list adds `createdLocal` / `modifiedLocal` siblings.
+  // Omitting `timezone` produces today's exact response shape.
+  describe('monitors read actions — timezone annotation (Requirement 4)', () => {
+    describe('getMonitor', () => {
+      it('adds createdLocal and modifiedLocal next to created/modified when timezone is provided', async () => {
+        server.use(http.get(endpoints.getMonitor(12345), () => jsonResponse(fixtures.single)))
+
+        const result = await getMonitor(api, '12345', defaultSite, 'Europe/Paris')
+
+        expect(result.monitor.created).toBe('2024-01-15T10:00:00.000Z')
+        // 2024-01-15T10:00:00Z in Europe/Paris (CET = UTC+1) → 11:00 local
+        expect(result.monitor.createdLocal).toBe('2024-01-15T11:00:00+01:00')
+        // 2024-01-20T15:30:00Z in Europe/Paris (CET = UTC+1) → 16:30 local
+        expect(result.monitor.modifiedLocal).toBe('2024-01-20T16:30:00+01:00')
+      })
+
+      it('does NOT add *Local fields when timezone is omitted', async () => {
+        server.use(http.get(endpoints.getMonitor(12345), () => jsonResponse(fixtures.single)))
+
+        const result = await getMonitor(api, '12345', defaultSite)
+
+        expect(Object.prototype.hasOwnProperty.call(result.monitor, 'createdLocal')).toBe(false)
+        expect(Object.prototype.hasOwnProperty.call(result.monitor, 'modifiedLocal')).toBe(false)
+      })
+
+      it('throws EINVALID_TIMEZONE without calling Datadog when timezone is invalid', async () => {
+        let hit = false
+        server.use(
+          http.get(endpoints.getMonitor(12345), () => {
+            hit = true
+            return jsonResponse(fixtures.single)
+          })
+        )
+
+        await expect(getMonitor(api, '12345', defaultSite, 'Not/AZone')).rejects.toThrow(
+          /EINVALID_TIMEZONE/
+        )
+        expect(hit).toBe(false)
+      })
+    })
+
+    describe('listMonitors', () => {
+      it('adds createdLocal and modifiedLocal on every monitor when timezone is provided', async () => {
+        server.use(http.get(endpoints.listMonitors, () => jsonResponse(fixtures.list)))
+
+        const result = await listMonitors(api, {}, defaultLimits, defaultSite, 'Europe/Paris')
+
+        expect(result.monitors.length).toBeGreaterThan(0)
+        for (const monitor of result.monitors) {
+          expect(typeof monitor.createdLocal).toBe('string')
+          expect(typeof monitor.modifiedLocal).toBe('string')
+          expect(monitor.createdLocal).toMatch(
+            /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}([+-]\d{2}:\d{2}|Z)$/
+          )
+        }
+      })
+
+      it('does NOT add *Local fields on monitors when timezone is omitted', async () => {
+        server.use(http.get(endpoints.listMonitors, () => jsonResponse(fixtures.list)))
+
+        const result = await listMonitors(api, {}, defaultLimits, defaultSite)
+
+        for (const monitor of result.monitors) {
+          expect(Object.prototype.hasOwnProperty.call(monitor, 'createdLocal')).toBe(false)
+          expect(Object.prototype.hasOwnProperty.call(monitor, 'modifiedLocal')).toBe(false)
+        }
+      })
+
+      it('throws EINVALID_TIMEZONE without calling Datadog when timezone is invalid', async () => {
+        let hit = false
+        server.use(
+          http.get(endpoints.listMonitors, () => {
+            hit = true
+            return jsonResponse(fixtures.list)
+          })
+        )
+
+        await expect(
+          listMonitors(api, {}, defaultLimits, defaultSite, 'Not/AZone')
+        ).rejects.toThrow(/EINVALID_TIMEZONE/)
+        expect(hit).toBe(false)
+      })
+    })
+
+    describe('dispatcher — timezone plumbing', () => {
+      type ToolHandler = (input: Record<string, unknown>) => Promise<unknown>
+
+      function captureHandler(readOnly: boolean): ToolHandler {
+        let capturedHandler: ToolHandler | null = null
+        const mockServer = {
+          tool: vi.fn(
+            (
+              _name: string,
+              _desc: string,
+              _schema: unknown,
+              handler: (input: Record<string, unknown>) => Promise<unknown>
+            ) => {
+              capturedHandler = handler
+            }
+          )
+        } as unknown as Parameters<typeof registerMonitorsTool>[0]
+
+        const eventsApi = {} as v2.EventsApi
+        registerMonitorsTool(mockServer, api, eventsApi, defaultLimits, readOnly, defaultSite)
+
+        if (!capturedHandler) {
+          throw new Error('Tool handler was not captured during registration')
+        }
+        return capturedHandler
+      }
+
+      function unwrapJson<T>(result: unknown): T {
+        const typed = result as { content: { type: string; text: string }[] }
+        return JSON.parse(typed.content[0].text) as T
+      }
+
+      it('threads `timezone` through monitors.get and emits *Local fields', async () => {
+        server.use(http.get(endpoints.getMonitor(12345), () => jsonResponse(fixtures.single)))
+
+        const handler = captureHandler(false)
+        const result = await handler({
+          action: 'get',
+          id: '12345',
+          timezone: 'Europe/Paris'
+        })
+
+        const payload = unwrapJson<{ monitor: { createdLocal?: string; modifiedLocal?: string } }>(
+          result
+        )
+        expect(payload.monitor.createdLocal).toBe('2024-01-15T11:00:00+01:00')
+        expect(payload.monitor.modifiedLocal).toBe('2024-01-20T16:30:00+01:00')
+      })
+
+      it('threads `timezone` through monitors.list and emits *Local fields', async () => {
+        server.use(http.get(endpoints.listMonitors, () => jsonResponse(fixtures.list)))
+
+        const handler = captureHandler(false)
+        const result = await handler({
+          action: 'list',
+          timezone: 'Europe/Paris'
+        })
+
+        const payload = unwrapJson<{
+          monitors: Array<{ createdLocal?: string; modifiedLocal?: string }>
+        }>(result)
+        for (const m of payload.monitors) {
+          expect(typeof m.createdLocal).toBe('string')
+          expect(typeof m.modifiedLocal).toBe('string')
+        }
+      })
+    })
+  })
 })
