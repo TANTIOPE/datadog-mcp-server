@@ -625,6 +625,50 @@ describe('Monitors Tool', () => {
     })
   })
 
+  describe('validation short-circuit (Task 12)', () => {
+    it('throws EINVALID_MONITOR_CONFIG before any HTTP call when notifyNoData has wrong type', async () => {
+      let requestCount = 0
+      server.use(
+        http.post(endpoints.createMonitor, () => {
+          requestCount++
+          return jsonResponse(fixtures.single)
+        })
+      )
+
+      await expect(
+        createMonitor(api, {
+          name: 'Bad Monitor',
+          type: 'metric alert',
+          query: 'avg(last_5m):avg:system.cpu.user{*} > 90',
+          options: {
+            // Wrong type — notifyNoData must be boolean per MonitorOptionsSchema.
+            notifyNoData: 'yes'
+          }
+        })
+      ).rejects.toThrow(/^EINVALID_MONITOR_CONFIG:/)
+
+      expect(requestCount).toBe(0)
+    })
+
+    it('throws EINVALID_MONITOR_CONFIG before any HTTP call on updateMonitor with bad priority', async () => {
+      let requestCount = 0
+      server.use(
+        http.put(endpoints.getMonitor(12345), () => {
+          requestCount++
+          return jsonResponse(fixtures.single)
+        })
+      )
+
+      await expect(
+        updateMonitor(api, '12345', {
+          priority: 7 // out of 1-5 range
+        })
+      ).rejects.toThrow(/^EINVALID_MONITOR_CONFIG:/)
+
+      expect(requestCount).toBe(0)
+    })
+  })
+
   describe('deleteMonitor', () => {
     it('should delete a monitor', async () => {
       server.use(
