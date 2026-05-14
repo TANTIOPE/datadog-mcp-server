@@ -18,9 +18,11 @@ import {
   timeseriesEventsV2,
   computeDiagnostics,
   UNINDEXED_ALERT_TAG_PREFIXES,
-  pickEventFields
+  pickEventFields,
+  registerEventsTool
 } from '../../src/tools/events.js'
 import type { LimitsConfig } from '../../src/config/schema.js'
+import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 
 const defaultLimits: LimitsConfig = {
   maxResults: 100,
@@ -793,6 +795,98 @@ describe('Events Tool', () => {
       )
 
       expect(observedCursor).toBe('resume-from-here')
+    })
+
+    // Captures the wire request body so histogram tests can assert exactly what
+    // buildEventQuery emitted into filter.query.
+    function captureHistogramQuery(): () => string | undefined {
+      let observedQuery: string | undefined
+      server.use(
+        http.post(endpoints.searchEvents, async ({ request }) => {
+          const body = (await request.json()) as { filter?: { query?: string } }
+          observedQuery = body.filter?.query
+          return jsonResponse({ data: [], meta: { page: { after: null } } })
+        })
+      )
+      return () => observedQuery
+    }
+
+    async function runHistogramWithTransitionType(transitionType?: string[]): Promise<void> {
+      await histogramEventsV2(
+        apiV2,
+        {
+          query: '@monitor.id:282774192',
+          sources: ['alert'],
+          transitionType,
+          bucket_by: 'hour_of_day',
+          timezone: 'UTC',
+          ...histogramRange
+        },
+        defaultLimits,
+        defaultSite
+      )
+    }
+
+    it('appends @monitor.transition.transition_type clause when transitionType is supplied', async () => {
+      const getQuery = captureHistogramQuery()
+      await runHistogramWithTransitionType(['alert', 'alert recovery'])
+      expect(getQuery()).toContain(
+        '@monitor.transition.transition_type:(alert OR "alert recovery")'
+      )
+    })
+
+    it('emits a query without transition_type clause when transitionType is omitted', async () => {
+      const getQuery = captureHistogramQuery()
+      await runHistogramWithTransitionType(undefined)
+      expect(getQuery()).toBeDefined()
+      expect(getQuery()).not.toContain('@monitor.transition.transition_type')
+    })
+
+    it('treats empty transitionType array as omitted (no clause appended)', async () => {
+      const getQuery = captureHistogramQuery()
+      await runHistogramWithTransitionType([])
+      expect(getQuery()).not.toContain('@monitor.transition.transition_type')
+    })
+
+    it('forwards transitionType from the registered tool handler into the wire query', async () => {
+      // Captures the handler registered via server.tool() so we can exercise
+      // the dispatcher's `case 'histogram'` block end-to-end. This guards the
+      // wiring from input schema → dispatcher → histogramEventsV2.
+      let registeredHandler: ((args: Record<string, unknown>) => Promise<unknown>) | undefined
+      const mockServer = {
+        tool: (
+          _name: string,
+          _desc: string,
+          _schema: unknown,
+          handler: (args: Record<string, unknown>) => Promise<unknown>
+        ) => {
+          registeredHandler = handler
+        }
+      } as unknown as McpServer
+
+      registerEventsTool(
+        mockServer,
+        {} as unknown as v1.EventsApi,
+        apiV2,
+        {} as unknown as v1.MonitorsApi,
+        defaultLimits,
+        false,
+        defaultSite
+      )
+      expect(registeredHandler).toBeDefined()
+
+      const getQuery = captureHistogramQuery()
+      await registeredHandler!({
+        action: 'histogram',
+        query: '@monitor.id:282774192',
+        sources: ['alert'],
+        transitionType: ['alert'],
+        bucket_by: 'hour_of_day',
+        timezone: 'UTC',
+        ...histogramRange
+      })
+
+      expect(getQuery()).toContain('@monitor.transition.transition_type:(alert)')
     })
   })
 
