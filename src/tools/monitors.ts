@@ -419,7 +419,8 @@ export function buildMonitorHistoryQuery(params: {
   }
 
   if (params.group && params.group.length > 0) {
-    parts.push(`@monitor.groups:"${params.group}"`)
+    const escaped = params.group.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+    parts.push(`@monitor.groups:"${escaped}"`)
   }
 
   return parts.join(' ')

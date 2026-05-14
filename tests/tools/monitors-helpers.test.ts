@@ -863,6 +863,19 @@ describe('MonitorConfigSchema — top-level rejection', () => {
       })
       expect(emptyGroup).not.toContain('@monitor.groups')
     })
+
+    it('escapes backslashes and double quotes inside a group value', () => {
+      // A group name containing a literal double quote must not break out of
+      // the quoted clause. Backslashes are escaped first so that subsequent
+      // quote-escaping does not produce dangling backslashes.
+      const query = buildMonitorHistoryQuery({
+        monitorId: 42,
+        group: 'pod_name:weird"name\\with\\slashes'
+      })
+      expect(query).toBe(
+        'source:alert @monitor.id:42 @monitor.groups:"pod_name:weird\\"name\\\\with\\\\slashes"'
+      )
+    })
   })
 
   describe('formatMonitorTransition', () => {
