@@ -1017,6 +1017,48 @@ describe('MonitorConfigSchema — top-level rejection', () => {
       expect(formatMonitorTransition(event)?.monitorName).toBe('Monitor 999')
     })
 
+    it('reads the transition from monitor.additionalProperties when the SDK moves unknown keys there', () => {
+      // The Datadog SDK's ObjectSerializer deserializes unknown properties
+      // (like `transition`, which is not declared on the generated MonitorType)
+      // into a `monitor.additionalProperties` bag. formatMonitorTransition must
+      // fall back to that location so live API responses parse correctly.
+      const event = {
+        id: 'evt-ap',
+        attributes: {
+          timestamp: new Date('2026-05-13T23:24:00.000Z'),
+          attributes: {
+            monitor: {
+              id: 282774192,
+              name: '[DO-1712] Pod readiness production',
+              groups: ['kube_namespace:production'],
+              // No top-level transition — only the SDK-deserialized shape.
+              additionalProperties: {
+                transition: {
+                  source_state: 'Alert',
+                  destination_state: 'OK',
+                  transition_type: 'alert recovery'
+                }
+              }
+            }
+          }
+        }
+      } as unknown as v2.EventResponse
+
+      const transition = formatMonitorTransition(event)
+
+      expect(transition).not.toBeNull()
+      expect(transition).toMatchObject({
+        timestamp: '2026-05-13T23:24:00.000Z',
+        monitorId: 282774192,
+        monitorName: '[DO-1712] Pod readiness production',
+        fromState: 'Alert',
+        toState: 'OK',
+        transitionType: 'alert recovery',
+        group: 'kube_namespace:production',
+        eventId: 'evt-ap'
+      })
+    })
+
     it('uses numeric timestamp at the inner attributes when the outer Date is absent', () => {
       const event = {
         id: 'evt-6',
