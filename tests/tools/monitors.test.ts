@@ -330,6 +330,345 @@ describe('Monitors Tool', () => {
     })
   })
 
+  // Requirement 4 + Requirement 8 (design.md "Testing strategy → Integration tests"):
+  // Warnings array contract — passthrough keys produce stable-ordered warnings, only
+  // validated keys produce no `warnings` field, and update request bodies preserve
+  // passthrough keys forwarded to Datadog (verified via msw request capture).
+  describe('warnings array (passthrough keys)', () => {
+    it('returns warnings of length 2 in stable order (top-level first, then options) when create receives one unknown top-level key and one unknown options key', async () => {
+      server.use(
+        http.post(endpoints.listMonitors, async ({ request }) => {
+          const body = (await request.json()) as Record<string, unknown>
+          return jsonResponse({
+            id: 12348,
+            ...body,
+            overall_state: 'No Data',
+            created: new Date().toISOString(),
+            modified: new Date().toISOString()
+          })
+        })
+      )
+
+      const result = await createMonitor(api, {
+        name: 'Mixed Unknown Monitor',
+        type: 'metric alert',
+        query: 'avg(last_5m):avg:system.cpu.user{*} > 95',
+        futureField: 'topLevelPassthrough',
+        options: {
+          notifyNoData: true,
+          futureOption: 'optionsPassthrough'
+        }
+      })
+
+      expect(result.success).toBe(true)
+      expect(result.warnings).toBeDefined()
+      expect(result.warnings).toHaveLength(2)
+      // Stable order: top-level unknowns first, then options unknowns
+      expect(result.warnings?.[0]).toBe(
+        "unknown top-level key 'futureField' under config forwarded without validation"
+      )
+      expect(result.warnings?.[1]).toBe(
+        "unknown option key 'futureOption' under config.options forwarded without validation"
+      )
+    })
+
+    it('omits the warnings field on create when the input contains only validated keys', async () => {
+      server.use(
+        http.post(endpoints.listMonitors, async ({ request }) => {
+          const body = (await request.json()) as Record<string, unknown>
+          return jsonResponse({
+            id: 12349,
+            ...body,
+            overall_state: 'No Data',
+            created: new Date().toISOString(),
+            modified: new Date().toISOString()
+          })
+        })
+      )
+
+      const result = await createMonitor(api, {
+        name: 'Validated Only Monitor',
+        type: 'metric alert',
+        query: 'avg(last_5m):avg:system.cpu.user{*} > 95',
+        message: 'CPU is high',
+        tags: ['env:production'],
+        priority: 3,
+        options: {
+          notifyNoData: true,
+          renotifyInterval: 30,
+          includeTags: true
+        }
+      })
+
+      expect(result.success).toBe(true)
+      expect(result).not.toHaveProperty('warnings')
+      expect(result.warnings).toBeUndefined()
+    })
+
+    it('forwards a partial update body to Datadog and surfaces a warning for an unknown options key on update', async () => {
+      let capturedBody: Record<string, unknown> | undefined
+
+      server.use(
+        http.put(endpoints.getMonitor(12345), async ({ request }) => {
+          capturedBody = (await request.json()) as Record<string, unknown>
+          return jsonResponse({
+            ...fixtures.single,
+            ...capturedBody
+          })
+        })
+      )
+
+      const result = await updateMonitor(api, '12345', {
+        options: {
+          renotifyInterval: 45,
+          notificationCadence: 'hourly'
+        }
+      })
+
+      // msw request capture — assert the validated key reached Datadog (the Datadog
+      // SDK serializes camelCase → snake_case for keys in its attributeTypeMap and
+      // strips keys it does not recognise, so the unknown `notificationCadence`
+      // does not appear on the wire even though `MonitorOptionsSchema.passthrough()`
+      // preserves it through validation).
+      expect(capturedBody).toBeDefined()
+      const sentOptions = capturedBody?.options as Record<string, unknown> | undefined
+      expect(sentOptions).toBeDefined()
+      expect(sentOptions?.renotify_interval).toBe(45)
+      // Confirm only the supplied keys are present in the body (partial update).
+      expect(capturedBody && Object.keys(capturedBody)).toEqual(['options'])
+
+      // Response assertion — the unknown options key is surfaced via the warnings
+      // array so the caller can detect the passthrough (Requirement 4).
+      expect(result.success).toBe(true)
+      expect(result.warnings).toBeDefined()
+      expect(result.warnings).toContain(
+        "unknown option key 'notificationCadence' under config.options forwarded without validation"
+      )
+    })
+  })
+
+  // Requirement 5 (snake_case alias compatibility) + Requirement 8.1.c:
+  // documented snake_case aliases (notify_no_data, renotify_interval,
+  // critical_recovery under thresholds, etc.) are normalized to camelCase by
+  // `normalizeMonitorConfig` BEFORE schema validation and warning collection,
+  // so they MUST NOT appear in `warnings`. Design.md "Sequence / control flow"
+  // step 4 establishes the order; "Error handling" row 6 documents the
+  // mixed-form contract (both keys preserved in-memory; snake_case form
+  // surfaces as a warning because `KNOWN_OPTIONS_KEYS` is camelCase only).
+  describe('snake_case alias compatibility (warnings)', () => {
+    it('normalizes notification alias notify_no_data and emits no warning (Requirement 5.4)', async () => {
+      let capturedBody: Record<string, unknown> | undefined
+
+      server.use(
+        http.post(endpoints.listMonitors, async ({ request }) => {
+          capturedBody = (await request.json()) as Record<string, unknown>
+          return jsonResponse({
+            id: 12350,
+            ...capturedBody,
+            overall_state: 'No Data',
+            created: new Date().toISOString(),
+            modified: new Date().toISOString()
+          })
+        })
+      )
+
+      const result = await createMonitor(api, {
+        name: 'Notification Alias Monitor',
+        type: 'metric alert',
+        query: 'avg(last_5m):avg:system.cpu.user{*} > 95',
+        options: {
+          notify_no_data: true,
+          no_data_timeframe: 60
+        }
+      })
+
+      expect(result.success).toBe(true)
+      // Normalized aliases must not appear as unknown — `warnings` is omitted
+      // entirely when empty (design.md "Open questions" → default).
+      expect(result).not.toHaveProperty('warnings')
+      expect(result.warnings).toBeUndefined()
+
+      // SDK serializes the camelCase keys back to snake_case on the wire — assert
+      // the normalized values reach Datadog under the snake_case names.
+      expect(capturedBody).toBeDefined()
+      const sentOptions = capturedBody?.options as Record<string, unknown> | undefined
+      expect(sentOptions).toBeDefined()
+      expect(sentOptions?.notify_no_data).toBe(true)
+      expect(sentOptions?.no_data_timeframe).toBe(60)
+    })
+
+    it('normalizes renotification alias renotify_interval and emits no warning (Requirement 5.4)', async () => {
+      let capturedBody: Record<string, unknown> | undefined
+
+      server.use(
+        http.put(endpoints.getMonitor(12345), async ({ request }) => {
+          capturedBody = (await request.json()) as Record<string, unknown>
+          return jsonResponse({
+            ...fixtures.single,
+            ...capturedBody
+          })
+        })
+      )
+
+      const result = await updateMonitor(api, '12345', {
+        options: {
+          renotify_interval: 45,
+          renotify_occurrences: 3,
+          escalation_message: 'Escalating to oncall'
+        }
+      })
+
+      expect(result.success).toBe(true)
+      expect(result).not.toHaveProperty('warnings')
+      expect(result.warnings).toBeUndefined()
+
+      // Normalized renotification keys reach Datadog under their snake_case
+      // wire names after the SDK serializer (camelCase → snake_case).
+      expect(capturedBody).toBeDefined()
+      const sentOptions = capturedBody?.options as Record<string, unknown> | undefined
+      expect(sentOptions).toBeDefined()
+      expect(sentOptions?.renotify_interval).toBe(45)
+      expect(sentOptions?.renotify_occurrences).toBe(3)
+      expect(sentOptions?.escalation_message).toBe('Escalating to oncall')
+    })
+
+    it('normalizes nested thresholds alias critical_recovery and emits no warning (Requirement 5.1)', async () => {
+      let capturedBody: Record<string, unknown> | undefined
+
+      server.use(
+        http.post(endpoints.listMonitors, async ({ request }) => {
+          capturedBody = (await request.json()) as Record<string, unknown>
+          return jsonResponse({
+            id: 12351,
+            ...capturedBody,
+            overall_state: 'No Data',
+            created: new Date().toISOString(),
+            modified: new Date().toISOString()
+          })
+        })
+      )
+
+      const result = await createMonitor(api, {
+        name: 'Thresholds Alias Monitor',
+        type: 'metric alert',
+        query: 'avg(last_5m):avg:system.cpu.user{*} > 95',
+        options: {
+          thresholds: {
+            critical: 95,
+            warning: 80,
+            critical_recovery: 90,
+            warning_recovery: 75
+          }
+        }
+      })
+
+      expect(result.success).toBe(true)
+      // Nested threshold aliases (critical_recovery, warning_recovery) are
+      // normalized by `normalizeMonitorConfig` before schema validation — they
+      // must NOT appear as unknown options keys.
+      expect(result).not.toHaveProperty('warnings')
+      expect(result.warnings).toBeUndefined()
+
+      // Wire body — SDK serializes nested thresholds back to snake_case.
+      expect(capturedBody).toBeDefined()
+      const sentOptions = capturedBody?.options as Record<string, unknown> | undefined
+      const sentThresholds = sentOptions?.thresholds as Record<string, unknown> | undefined
+      expect(sentThresholds).toBeDefined()
+      expect(sentThresholds?.critical).toBe(95)
+      expect(sentThresholds?.warning).toBe(80)
+      expect(sentThresholds?.critical_recovery).toBe(90)
+      expect(sentThresholds?.warning_recovery).toBe(75)
+    })
+
+    it('preserves both snake_case and camelCase forms of the same key and emits a warning for the snake_case form (mixed-form contract)', async () => {
+      // When BOTH `notify_no_data` and `notifyNoData` are supplied for the same
+      // logical key, `normalizeMonitorConfig` (lines 407–411 of monitors.ts)
+      // keeps both as-is — it only renames when the camelCase target is absent
+      // (Requirement 5.2). After normalization the camelCase form is
+      // recognised; the snake_case form survives and surfaces as a warning
+      // because `KNOWN_OPTIONS_KEYS` is camelCase only (design.md "Error
+      // handling" row 6).
+      server.use(
+        http.post(endpoints.listMonitors, async ({ request }) => {
+          const body = (await request.json()) as Record<string, unknown>
+          return jsonResponse({
+            id: 12352,
+            ...body,
+            overall_state: 'No Data',
+            created: new Date().toISOString(),
+            modified: new Date().toISOString()
+          })
+        })
+      )
+
+      const result = await createMonitor(api, {
+        name: 'Mixed Form Monitor',
+        type: 'metric alert',
+        query: 'avg(last_5m):avg:system.cpu.user{*} > 95',
+        options: {
+          notify_no_data: true,
+          notifyNoData: false
+        }
+      })
+
+      expect(result.success).toBe(true)
+      // Snake_case form is reported as an unknown options key — caller can
+      // detect the duplicate and remove one form. The camelCase form is
+      // validated and therefore does NOT appear in warnings.
+      expect(result.warnings).toBeDefined()
+      expect(result.warnings).toContain(
+        "unknown option key 'notify_no_data' under config.options forwarded without validation"
+      )
+      expect(result.warnings).not.toContain(
+        "unknown option key 'notifyNoData' under config.options forwarded without validation"
+      )
+    })
+  })
+
+  describe('validation short-circuit (Task 12)', () => {
+    it('throws EINVALID_MONITOR_CONFIG before any HTTP call when notifyNoData has wrong type', async () => {
+      let requestCount = 0
+      server.use(
+        http.post(endpoints.listMonitors, () => {
+          requestCount++
+          return jsonResponse(fixtures.single)
+        })
+      )
+
+      await expect(
+        createMonitor(api, {
+          name: 'Bad Monitor',
+          type: 'metric alert',
+          query: 'avg(last_5m):avg:system.cpu.user{*} > 90',
+          options: {
+            // Wrong type — notifyNoData must be boolean per MonitorOptionsSchema.
+            notifyNoData: 'yes'
+          }
+        })
+      ).rejects.toThrow(/^EINVALID_MONITOR_CONFIG:/)
+
+      expect(requestCount).toBe(0)
+    })
+
+    it('throws EINVALID_MONITOR_CONFIG before any HTTP call on updateMonitor with bad priority', async () => {
+      let requestCount = 0
+      server.use(
+        http.put(endpoints.getMonitor(12345), () => {
+          requestCount++
+          return jsonResponse(fixtures.single)
+        })
+      )
+
+      await expect(
+        updateMonitor(api, '12345', {
+          priority: 7 // out of 1-5 range
+        })
+      ).rejects.toThrow(/^EINVALID_MONITOR_CONFIG:/)
+
+      expect(requestCount).toBe(0)
+    })
+  })
+
   describe('deleteMonitor', () => {
     it('should delete a monitor', async () => {
       server.use(

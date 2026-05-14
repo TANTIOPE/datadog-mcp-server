@@ -61,6 +61,184 @@ const InputSchema = {
     .describe('Maximum events to fetch for top action (default: 5000, max: 5000)')
 }
 
+// Nested schemas for MonitorOptionsSchema (see design.md Data model).
+// Each uses .passthrough() so unknown sub-keys are forwarded to Datadog unchanged.
+// Exported so they can be composed by MonitorOptionsSchema (Task 2) and asserted
+// by unit tests (Task 9) without changing module-local visibility later.
+// Thresholds — values are all documented as numbers in Datadog Monitor API
+export const MonitorThresholdsSchema = z
+  .object({
+    critical: z.number().optional(),
+    warning: z.number().optional(),
+    ok: z.number().optional(),
+    criticalRecovery: z.number().optional(),
+    warningRecovery: z.number().optional(),
+    unknown: z.number().optional()
+  })
+  .passthrough()
+
+// Threshold windows for anomaly / forecast monitors
+export const MonitorThresholdWindowsSchema = z
+  .object({
+    triggerWindow: z.string().optional(),
+    recoveryWindow: z.string().optional()
+  })
+  .passthrough()
+
+// Scheduling options (e.g., evaluation_window for SLO-driven monitors)
+export const SchedulingOptionsSchema = z
+  .object({
+    evaluationWindow: z.record(z.unknown()).optional(),
+    customSchedule: z.record(z.unknown()).optional()
+  })
+  .passthrough()
+
+// Validated schema for `config.options.*` keys (see design.md Data model).
+// Each documented Datadog Monitor options key is typed; nullable keys
+// (`renotifyInterval`, `timeoutH`, `silenced` values) follow Datadog docs.
+// `.passthrough()` preserves unknown keys so callers can use newly-shipped
+// Datadog options before this schema enumerates them; `collectUnknownKeyWarnings`
+// (Task 5) emits warnings for those keys.
+export const MonitorOptionsSchema = z
+  .object({
+    // Notification
+    notifyNoData: z.boolean().optional(),
+    noDataTimeframe: z.number().optional(),
+    notifyAudit: z.boolean().optional(),
+    notificationPresetName: z.string().optional(),
+    // Evaluation / delay
+    newHostDelay: z.number().optional(),
+    newGroupDelay: z.number().optional(),
+    evaluationDelay: z.number().optional(),
+    requireFullWindow: z.boolean().optional(),
+    onMissingData: z.string().optional(),
+    // Renotification
+    renotifyInterval: z.number().nullable().optional(),
+    renotifyOccurrences: z.number().optional(),
+    renotifyStatuses: z.array(z.string()).optional(),
+    escalationMessage: z.string().optional(),
+    // Lifecycle
+    timeoutH: z.number().nullable().optional(),
+    includeTags: z.boolean().optional(),
+    locked: z.boolean().optional(),
+    silenced: z.record(z.number().nullable()).optional(),
+    groupRetentionDuration: z.string().optional(),
+    // Thresholds & scheduling
+    thresholds: MonitorThresholdsSchema.optional(),
+    thresholdWindows: MonitorThresholdWindowsSchema.optional(),
+    schedulingOptions: SchedulingOptionsSchema.optional()
+  })
+  .passthrough()
+
+// Validated schema for top-level `config` keys (see design.md Data model).
+// Eight documented top-level keys are enumerated; `options` composes
+// `MonitorOptionsSchema`. `priority` is constrained to integers 1–5 per
+// Datadog's documented priority range (Requirement 2.4); `.nullable()`
+// allows callers to clear it on update. `.passthrough()` preserves unknown
+// top-level keys; `collectUnknownKeyWarnings` (Task 5) emits warnings for
+// those keys.
+export const MonitorConfigSchema = z
+  .object({
+    name: z.string().optional(),
+    type: z.string().optional(),
+    query: z.string().optional(),
+    message: z.string().optional(),
+    tags: z.array(z.string()).optional(),
+    priority: z.number().int().min(1).max(5).nullable().optional(),
+    restrictedRoles: z.array(z.string()).nullable().optional(),
+    multi: z.boolean().optional(),
+    options: MonitorOptionsSchema.optional()
+  })
+  .passthrough()
+
+export type MonitorConfigInput = z.infer<typeof MonitorConfigSchema>
+
+// Known-key sets derived from the schema shapes — single source of truth
+// (see design.md "Risks and trade-offs" → "Deriving KNOWN_*_KEYS from
+// Object.keys(schema.shape) rather than hand-maintaining a parallel list").
+// DO NOT refactor these to hand-maintained literals: drift between the
+// schemas and the warning logic (Task 5) would re-introduce the silent
+// pass-through bug this spec is fixing. Used by `collectUnknownKeyWarnings`
+// to diff caller input against the validated key set.
+// `options` is excluded from KNOWN_TOP_LEVEL_KEYS because it is a known
+// nested holder (validated via MonitorOptionsSchema) — flagging it as an
+// unknown top-level key would emit a spurious warning whenever a caller
+// supplies any nested options.
+export const KNOWN_TOP_LEVEL_KEYS: ReadonlySet<string> = new Set(
+  Object.keys(MonitorConfigSchema.shape).filter((key) => key !== 'options')
+)
+
+export const KNOWN_OPTIONS_KEYS: ReadonlySet<string> = new Set(
+  Object.keys(MonitorOptionsSchema.shape)
+)
+
+/**
+ * Collect human-readable warnings for any keys in `config` (or `config.options`)
+ * that the validated schema does not enumerate. Pure function — operates on the
+ * already-normalized (post-`normalizeMonitorConfig`, camelCase) config so that
+ * documented snake_case aliases do NOT appear as unknown.
+ *
+ * Ordering (Requirement 4.4): top-level unknowns first, then options unknowns;
+ * within each group, the caller's insertion order is preserved so that log
+ * diffing is deterministic.
+ *
+ * Robustness: `config.options` being absent, `null`, a non-object, or an array
+ * is tolerated silently — the nested scan is simply skipped. This mirrors the
+ * normalizer's lenient handling and avoids throwing before schema validation
+ * has a chance to surface a better error.
+ *
+ * @param config Normalized monitor config (output of `normalizeMonitorConfig`).
+ * @returns Stable-ordered warnings; empty array when all keys are recognised.
+ */
+export function collectUnknownKeyWarnings(config: Record<string, unknown>): string[] {
+  const warnings: string[] = []
+
+  for (const key of Object.keys(config)) {
+    if (!KNOWN_TOP_LEVEL_KEYS.has(key) && key !== 'options') {
+      warnings.push(`unknown top-level key '${key}' under config forwarded without validation`)
+    }
+  }
+
+  const options = config.options
+  if (isPlainObject(options)) {
+    for (const key of Object.keys(options)) {
+      if (!KNOWN_OPTIONS_KEYS.has(key)) {
+        warnings.push(
+          `unknown option key '${key}' under config.options forwarded without validation`
+        )
+      }
+    }
+  }
+
+  return warnings
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+/**
+ * Summarize the FIRST issue from a `ZodError` into a single-line string for
+ * the `EINVALID_MONITOR_CONFIG:` error message (design.md "Error handling" →
+ * row 1). Includes the dotted key path and the expected type so callers can
+ * locate and fix the wrong-type value without parsing the full ZodError.
+ */
+function summarizeZodIssue(error: z.ZodError): string {
+  const issue = error.issues[0]
+  if (!issue) {
+    return 'validation failed'
+  }
+  const path = issue.path.length > 0 ? issue.path.join('.') : '<root>'
+  // `z.ZodInvalidTypeIssue` carries an `expected` field; other issue codes
+  // (out-of-range, etc.) do not. Fall back to the issue `message` so callers
+  // still see a useful hint (e.g., "Number must be less than or equal to 5").
+  const expected =
+    issue.code === 'invalid_type' && 'expected' in issue
+      ? `expected ${String(issue.expected)}`
+      : issue.message
+  return `${path}: ${expected}`
+}
+
 interface MonitorSummary {
   id: number
   name: string
@@ -207,7 +385,10 @@ export function normalizeMonitorConfig(
   if (normalized.options && typeof normalized.options === 'object') {
     const opts = { ...(normalized.options as Record<string, unknown>) }
 
-    // Common snake_case -> camelCase conversions
+    // Common snake_case -> camelCase conversions. Keep this in sync with
+    // `MonitorOptionsSchema` so every documented camelCase key has its
+    // snake_case alias mapped — missing entries surface as spurious
+    // "unknown option key" warnings for callers using snake_case.
     const optionMappings: [string, string][] = [
       ['notify_no_data', 'notifyNoData'],
       ['no_data_timeframe', 'noDataTimeframe'],
@@ -222,6 +403,11 @@ export function normalizeMonitorConfig(
       ['include_tags', 'includeTags'],
       ['require_full_window', 'requireFullWindow'],
       ['escalation_message', 'escalationMessage'],
+      ['notification_preset_name', 'notificationPresetName'],
+      ['on_missing_data', 'onMissingData'],
+      ['group_retention_duration', 'groupRetentionDuration'],
+      ['threshold_windows', 'thresholdWindows'],
+      ['scheduling_options', 'schedulingOptions'],
       ['locked', 'locked'],
       ['silenced', 'silenced']
     ]
@@ -263,12 +449,33 @@ export async function createMonitor(
   config: Record<string, unknown>,
   site: string = 'datadoghq.com'
 ) {
-  const body = normalizeMonitorConfig(config) as unknown as v1.Monitor
+  const normalized = normalizeMonitorConfig(config)
+
+  // Validate the normalized (camelCase) config against the typed schema before
+  // any HTTP call (design.md "Sequence / control flow" steps 4–7). Wrong-type
+  // values surface as `EINVALID_MONITOR_CONFIG:` errors; `.passthrough()`
+  // preserves unknown keys so they still reach Datadog.
+  try {
+    MonitorConfigSchema.parse(normalized)
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      throw new Error(`EINVALID_MONITOR_CONFIG: ${summarizeZodIssue(error)}`)
+    }
+    throw error
+  }
+
+  const warnings = collectUnknownKeyWarnings(normalized)
+
+  const body = normalized as unknown as v1.Monitor
   const monitor = await api.createMonitor({ body })
-  return {
+  const result: { success: true; monitor: MonitorDetail; warnings?: string[] } = {
     success: true,
     monitor: formatMonitorDetail(monitor, site)
   }
+  if (warnings.length > 0) {
+    result.warnings = warnings
+  }
+  return result
 }
 
 export async function updateMonitor(
@@ -278,12 +485,35 @@ export async function updateMonitor(
   site: string = 'datadoghq.com'
 ) {
   const monitorId = Number.parseInt(id, 10)
-  const body = normalizeMonitorConfig(config, true) as unknown as v1.MonitorUpdateRequest
+  const normalized = normalizeMonitorConfig(config, true)
+
+  // Validate the normalized (camelCase) config against the typed schema before
+  // any HTTP call (design.md "Sequence / control flow" steps 4–7). Partial
+  // configs are accepted because every key on `MonitorConfigSchema` is
+  // `.optional()`; only the supplied keys are forwarded to Datadog. Wrong-type
+  // values surface as `EINVALID_MONITOR_CONFIG:` errors; `.passthrough()`
+  // preserves unknown keys so they still reach Datadog.
+  try {
+    MonitorConfigSchema.parse(normalized)
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      throw new Error(`EINVALID_MONITOR_CONFIG: ${summarizeZodIssue(error)}`)
+    }
+    throw error
+  }
+
+  const warnings = collectUnknownKeyWarnings(normalized)
+
+  const body = normalized as unknown as v1.MonitorUpdateRequest
   const monitor = await api.updateMonitor({ monitorId, body })
-  return {
+  const result: { success: true; monitor: MonitorDetail; warnings?: string[] } = {
     success: true,
     monitor: formatMonitorDetail(monitor, site)
   }
+  if (warnings.length > 0) {
+    result.warnings = warnings
+  }
+  return result
 }
 
 export async function deleteMonitor(api: v1.MonitorsApi, id: string) {
@@ -516,7 +746,21 @@ export function registerMonitorsTool(
     'monitors',
     `Manage Datadog monitors. Actions: list, get, search, create, update, delete, mute, unmute, top.
 Filters: name, tags, groupStates (alert/warn/ok/no data).
-get/create/update return the full options object (notify_no_data, renotify_interval, thresholds, etc.) so callers can safely read-then-patch.
+get/create/update return the full options object so callers can safely read-then-patch.
+
+create/update accept a config object validated against a typed schema covering the documented Datadog Monitor fields:
+  - Top-level: name, type, query, message, tags, priority (1-5, nullable), restrictedRoles, multi, options.
+  - options.* validated keys grouped by category:
+    - notification:    notifyNoData, noDataTimeframe, notifyAudit, notificationPresetName.
+    - evaluation/delay: newHostDelay, newGroupDelay, evaluationDelay, requireFullWindow, onMissingData.
+    - renotification:  renotifyInterval (nullable), renotifyOccurrences, renotifyStatuses, escalationMessage.
+    - lifecycle:       timeoutH (nullable), includeTags, locked, silenced (record of timestamps/null), groupRetentionDuration.
+    - thresholds:      thresholds (critical/warning/ok/criticalRecovery/warningRecovery/unknown), thresholdWindows.
+    - scheduling:      schedulingOptions.
+Unknown keys (top-level or under options) are forwarded to Datadog as-is and surfaced via an optional warnings array on the response, so the schema does not lag the API.
+snake_case aliases are accepted on input and normalized to camelCase before validation.
+Validation errors short-circuit before any HTTP call and surface as 'EINVALID_MONITOR_CONFIG: <path>: <expected>'.
+Reference: https://docs.datadoghq.com/api/latest/monitors/
 
 top: Ranked monitors by alert frequency with real monitor names and context breakdown.
   - Returns: {rank, monitor_id, name (with {{template.vars}}), message (template), total_count, by_context}
