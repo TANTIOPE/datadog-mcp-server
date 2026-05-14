@@ -6,6 +6,7 @@ import { handleDatadogError, requireParam, checkReadOnly } from '../errors/datad
 import { toolResult } from '../utils/format.js'
 import { parseTime, ensureValidTimeRange } from '../utils/time.js'
 import { snakeToCamel, normalizeConfigKeys } from '../utils/normalize.js'
+import { buildSloUrl } from '../utils/urls.js'
 import type { LimitsConfig } from '../config/schema.js'
 
 // Re-exported so existing public callers (and tests) that import these helpers
@@ -67,12 +68,19 @@ interface SloSummary {
   monitorIds?: number[]
   monitorTags?: string[]
   groups?: string[]
+  // Deep link to the Datadog UI.
+  // Empty string when id is unavailable on the upstream payload.
+  url: string
 }
 
-export function formatSlo(s: v1.ServiceLevelObjective | v1.SLOResponseData): SloSummary {
+export function formatSlo(
+  s: v1.ServiceLevelObjective | v1.SLOResponseData,
+  site: string = 'datadoghq.com'
+): SloSummary {
   const primaryThreshold = s.thresholds?.[0]
+  const id = s.id ?? ''
   const summary: SloSummary = {
-    id: s.id ?? '',
+    id,
     name: s.name ?? '',
     description: s.description ?? null,
     type: String(s.type ?? 'unknown'),
@@ -87,7 +95,8 @@ export function formatSlo(s: v1.ServiceLevelObjective | v1.SLOResponseData): Slo
     },
     overallStatus: [],
     createdAt: s.createdAt ? new Date(s.createdAt * 1000).toISOString() : '',
-    modifiedAt: s.modifiedAt ? new Date(s.modifiedAt * 1000).toISOString() : ''
+    modifiedAt: s.modifiedAt ? new Date(s.modifiedAt * 1000).toISOString() : '',
+    url: id ? buildSloUrl(id, site) : ''
   }
 
   if (s.query?.numerator && s.query.denominator) {
@@ -106,11 +115,15 @@ export function formatSlo(s: v1.ServiceLevelObjective | v1.SLOResponseData): Slo
   return summary
 }
 
-export function formatSearchSlo(slo: SearchServiceLevelObjective): SloSummary {
+export function formatSearchSlo(
+  slo: SearchServiceLevelObjective,
+  site: string = 'datadoghq.com'
+): SloSummary {
   const attrs = slo.data?.attributes
   const primaryThreshold = attrs?.thresholds?.[0]
+  const id = slo.data?.id ?? ''
   const summary: SloSummary = {
-    id: slo.data?.id ?? '',
+    id,
     name: attrs?.name ?? '',
     description: attrs?.description ?? null,
     type: String(attrs?.sloType ?? 'unknown'),
@@ -131,7 +144,8 @@ export function formatSearchSlo(slo: SearchServiceLevelObjective): SloSummary {
       timeframe: String(os.timeframe ?? '')
     })),
     createdAt: attrs?.createdAt ? new Date(attrs.createdAt * 1000).toISOString() : '',
-    modifiedAt: attrs?.modifiedAt ? new Date(attrs.modifiedAt * 1000).toISOString() : ''
+    modifiedAt: attrs?.modifiedAt ? new Date(attrs.modifiedAt * 1000).toISOString() : '',
+    url: id ? buildSloUrl(id, site) : ''
   }
 
   // Round-trip parity with formatSlo (issue #55) — search response omits monitorTags.
@@ -161,7 +175,8 @@ function buildSearchQuery(query?: string, tags?: string[]): string {
 export async function listSlos(
   api: v1.ServiceLevelObjectivesApi,
   params: { ids?: string[]; query?: string; tags?: string[]; limit?: number },
-  limits: LimitsConfig
+  limits: LimitsConfig,
+  site: string = 'datadoghq.com'
 ) {
   const effectiveLimit = params.limit ?? limits.defaultLimit
 
@@ -172,7 +187,7 @@ export async function listSlos(
       limit: effectiveLimit
     })
 
-    const slos = (response.data ?? []).map(formatSlo)
+    const slos = (response.data ?? []).map((s) => formatSlo(s, site))
     return { slos, total: slos.length }
   }
 
@@ -184,7 +199,7 @@ export async function listSlos(
   })
 
   const searchSlos = response.data?.attributes?.slos ?? []
-  const slos = searchSlos.map(formatSearchSlo)
+  const slos = searchSlos.map((s) => formatSearchSlo(s, site))
 
   return {
     slos,
@@ -192,10 +207,14 @@ export async function listSlos(
   }
 }
 
-export async function getSlo(api: v1.ServiceLevelObjectivesApi, id: string) {
+export async function getSlo(
+  api: v1.ServiceLevelObjectivesApi,
+  id: string,
+  site: string = 'datadoghq.com'
+) {
   const response = await api.getSLO({ sloId: id })
   return {
-    slo: response.data ? formatSlo(response.data) : null
+    slo: response.data ? formatSlo(response.data, site) : null
   }
 }
 
@@ -221,26 +240,28 @@ export function normalizeSloConfig(config: Record<string, unknown>): Record<stri
 
 export async function createSlo(
   api: v1.ServiceLevelObjectivesApi,
-  config: Record<string, unknown>
+  config: Record<string, unknown>,
+  site: string = 'datadoghq.com'
 ) {
   const body = normalizeSloConfig(config) as unknown as v1.ServiceLevelObjectiveRequest
   const response = await api.createSLO({ body })
   return {
     success: true,
-    slo: response.data?.[0] ? formatSlo(response.data[0]) : null
+    slo: response.data?.[0] ? formatSlo(response.data[0], site) : null
   }
 }
 
 export async function updateSlo(
   api: v1.ServiceLevelObjectivesApi,
   id: string,
-  config: Record<string, unknown>
+  config: Record<string, unknown>,
+  site: string = 'datadoghq.com'
 ) {
   const body = normalizeConfigKeys(config) as unknown as v1.ServiceLevelObjective
   const response = await api.updateSLO({ sloId: id, body })
   return {
     success: true,
-    slo: response.data?.[0] ? formatSlo(response.data[0]) : null
+    slo: response.data?.[0] ? formatSlo(response.data[0], site) : null
   }
 }
 
@@ -295,33 +316,33 @@ export function registerSlosTool(
   api: v1.ServiceLevelObjectivesApi,
   limits: LimitsConfig,
   readOnly: boolean = false,
-  _site: string = 'datadoghq.com'
+  site: string = 'datadoghq.com'
 ): void {
   server.tool(
     'slos',
-    'Manage Datadog Service Level Objectives. Actions: list (with SLI status & error budget), get, create, update, delete, history. SLO types: metric-based, monitor-based. Use for: reliability tracking, error budgets, SLA compliance, performance targets.',
+    'Manage Datadog Service Level Objectives. Actions: list (with SLI status & error budget), get, create, update, delete, history. SLO types: metric-based, monitor-based. Each list/get/create/update response includes a `url` field deep-linking to the Datadog UI. Use for: reliability tracking, error budgets, SLA compliance, performance targets.',
     InputSchema,
     async ({ action, id, ids, query, tags, limit, config, from, to }) => {
       try {
         checkReadOnly(action, readOnly)
         switch (action) {
           case 'list':
-            return toolResult(await listSlos(api, { ids, query, tags, limit }, limits))
+            return toolResult(await listSlos(api, { ids, query, tags, limit }, limits, site))
 
           case 'get': {
             const sloId = requireParam(id, 'id', 'get')
-            return toolResult(await getSlo(api, sloId))
+            return toolResult(await getSlo(api, sloId, site))
           }
 
           case 'create': {
             const sloConfig = requireParam(config, 'config', 'create')
-            return toolResult(await createSlo(api, sloConfig))
+            return toolResult(await createSlo(api, sloConfig, site))
           }
 
           case 'update': {
             const sloId = requireParam(id, 'id', 'update')
             const sloConfig = requireParam(config, 'config', 'update')
-            return toolResult(await updateSlo(api, sloId, sloConfig))
+            return toolResult(await updateSlo(api, sloId, sloConfig, site))
           }
 
           case 'delete': {

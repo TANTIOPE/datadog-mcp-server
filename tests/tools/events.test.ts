@@ -17,7 +17,8 @@ import {
   incidentsEventsV2,
   timeseriesEventsV2,
   computeDiagnostics,
-  UNINDEXED_ALERT_TAG_PREFIXES
+  UNINDEXED_ALERT_TAG_PREFIXES,
+  pickEventFields
 } from '../../src/tools/events.js'
 import type { LimitsConfig } from '../../src/config/schema.js'
 
@@ -1097,6 +1098,77 @@ describe('Events Tool', () => {
         ).rejects.toThrow(/EINVALID_TIMEZONE/)
         expect(hit).toBe(false)
       })
+    })
+  })
+
+  describe('pickEventFields (issue #49 field projection)', () => {
+    const fullEvent = {
+      id: 'evt-1',
+      title: 'High error rate',
+      message: 'Errors exceeded threshold',
+      timestamp: '2026-05-13T12:00:00.000Z',
+      priority: 'normal',
+      source: 'alert',
+      tags: ['env:production', 'service:api'],
+      alertType: 'error',
+      host: 'prod-1',
+      monitorId: 12345,
+      monitorInfo: undefined
+    }
+
+    it('returns the full event when fields is undefined', () => {
+      expect(pickEventFields(fullEvent, undefined)).toBe(fullEvent)
+    })
+
+    it('returns the full event when fields is an empty array', () => {
+      expect(pickEventFields(fullEvent, [])).toBe(fullEvent)
+    })
+
+    it('returns only the requested fields', () => {
+      const projection = pickEventFields(fullEvent, ['timestamp', 'title', 'monitorId'])
+      expect(projection).toEqual({
+        timestamp: '2026-05-13T12:00:00.000Z',
+        title: 'High error rate',
+        monitorId: 12345
+      })
+    })
+
+    it('silently ignores unknown field names for forward compatibility with future EventSummary additions', () => {
+      const projection = pickEventFields(fullEvent, ['title', 'doesNotExist', 'source'])
+      expect(projection).toEqual({
+        title: 'High error rate',
+        source: 'alert'
+      })
+    })
+
+    it('preserves tags array reference when requested', () => {
+      const projection = pickEventFields(fullEvent, ['tags'])
+      expect(projection.tags).toBe(fullEvent.tags)
+    })
+
+    it('projects monitorMetadata from enriched events when requested', () => {
+      const enrichedEvent = {
+        ...fullEvent,
+        monitorMetadata: {
+          id: 12345,
+          name: 'High error rate monitor',
+          type: 'metric alert',
+          message: 'Errors exceeded threshold',
+          tags: ['team:platform'],
+          options: {
+            thresholds: { critical: 100 },
+            notifyNoData: false,
+            escalationMessage: ''
+          }
+        }
+      }
+      const projection = pickEventFields(enrichedEvent, ['title', 'monitorMetadata'])
+      expect(projection).toEqual({
+        title: 'High error rate',
+        monitorMetadata: enrichedEvent.monitorMetadata
+      })
+      // Same-reference preservation — projection should not deep-clone the metadata.
+      expect(projection.monitorMetadata).toBe(enrichedEvent.monitorMetadata)
     })
   })
 })

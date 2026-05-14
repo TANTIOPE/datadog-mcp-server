@@ -115,7 +115,55 @@ const InputSchema = {
         'For histogram: controls hour/day bucketing (default: UTC). ' +
         'For search/aggregate/top/incidents read actions: adds sibling *Local ISO 8601 ' +
         'strings (e.g. timestampLocal) next to existing timestamps. Omit for byte-identical legacy shape.'
+    ),
+  // Projection — applied to search action only. Reduces response payload
+  // when callers only need a subset of fields. Unknown field names are silently ignored so
+  // older clients are not broken when the EventSummary shape evolves.
+  fields: z
+    .array(z.string())
+    .optional()
+    .describe(
+      'Search action only: return only these event fields. Allowed values: id, title, message, timestamp, priority, source, tags, alertType, host, monitorId, monitorInfo, monitorMetadata (only populated when enrich=true). Default: full event.'
     )
+}
+
+// Includes EnrichedEvent-only keys (monitorMetadata) so callers can project them
+// alongside EventSummaryV2 fields when enrich=true is set on the search action.
+const ALLOWED_EVENT_FIELDS = new Set<string>([
+  'id',
+  'title',
+  'message',
+  'timestamp',
+  'priority',
+  'source',
+  'tags',
+  'alertType',
+  'host',
+  'monitorId',
+  'monitorInfo',
+  'monitorMetadata'
+])
+
+/**
+ * Pick a subset of fields from an EventSummaryV2 or EnrichedEvent.
+ * Returns the full event when fields is undefined or empty.
+ * Unknown field names are ignored — projecting an empty subset is callers' responsibility.
+ */
+export function pickEventFields<T extends EventSummaryV2>(
+  event: T,
+  fields: readonly string[] | undefined
+): Partial<T> {
+  if (!fields || fields.length === 0) {
+    return event
+  }
+  const projection: Partial<T> = {}
+  for (const key of fields) {
+    if (ALLOWED_EVENT_FIELDS.has(key)) {
+      // Index signature is incompatible with declared field types, so cast through unknown.
+      ;(projection as Record<string, unknown>)[key] = event[key as keyof typeof event]
+    }
+  }
+  return projection
 }
 
 // v1 Event summary format
@@ -1942,7 +1990,8 @@ histogram: Bucket events by local hour_of_day / day_of_week / day_of_month in th
       maxEvents,
       transitionType,
       bucket_by,
-      timezone
+      timezone,
+      fields
     }) => {
       try {
         checkReadOnly(action, readOnly)
@@ -2005,10 +2054,21 @@ histogram: Bucket events by local hour_of_day / day_of_week / day_of_month in th
             // Phase 3: Optional enrichment
             if (enrich && result.events.length > 0) {
               const enrichedEvents = await enrichWithMonitorMetadata(result.events, monitorsApi)
-              return toolResult({ ...result, events: enrichedEvents })
+              // Field projection applies on top of enrichment too — enriched events carry
+              // additional keys not in EventSummaryV2 (monitorName, monitorPriority,
+              // monitorMessage); when `fields` is set, those extra keys are dropped along
+              // with the standard ones unless explicitly requested via the same name.
+              const projected = fields?.length
+                ? enrichedEvents.map((e) => pickEventFields(e, fields))
+                : enrichedEvents
+              return toolResult({ ...result, events: projected })
             }
 
-            return toolResult(result)
+            // Optional field projection to keep response payloads small.
+            const projectedEvents = fields?.length
+              ? result.events.map((e) => pickEventFields(e, fields))
+              : result.events
+            return toolResult({ ...result, events: projectedEvents })
           }
 
           case 'aggregate':
