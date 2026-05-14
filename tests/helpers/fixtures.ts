@@ -1478,6 +1478,362 @@ export const notebooks = {
   }
 }
 
+// Monitor history fixtures (v2 events search responses for monitors action=history)
+// Event shape matches Datadog's live API as captured in the design's Investigation log:
+//   attributes.attributes.monitor.transition.{source_state, destination_state, transition_type}
+//   attributes.attributes.monitor.{id, name, groups}
+//
+// Dispatch in tests/helpers/msw.ts keys off the @monitor.id:<N> filter:
+//   1001 → monitorHistoryAlertOnly
+//   1002 → monitorHistoryMixed
+//   1003 → monitorHistoryDynamicTitle (issue #53 regression — unique titles per event)
+//   1004 → monitorHistoryMultiPage (cursor "page2")
+//   1005 → monitorHistoryEmpty
+export const monitorHistoryFixtures = {
+  alertOnly: {
+    data: [
+      {
+        id: 'evt-mh-1001-001',
+        type: 'event',
+        attributes: {
+          timestamp: '2026-05-13T10:00:00.000Z',
+          tags: ['source:alert', 'monitor_id:1001'],
+          attributes: {
+            title: '[Triggered on {pod_name:foo}] Pod readiness production',
+            message: 'Pod readiness is below threshold',
+            monitor: {
+              id: 1001,
+              name: '[DO-1712] Pod readiness production',
+              groups: ['kube_namespace:production', 'pod_name:foo'],
+              transition: {
+                source_state: 'OK',
+                destination_state: 'Alert',
+                transition_type: 'alert'
+              }
+            }
+          }
+        }
+      }
+    ],
+    meta: {
+      page: {
+        after: null
+      }
+    }
+  },
+  mixed: {
+    data: [
+      {
+        id: 'evt-mh-1002-001',
+        type: 'event',
+        attributes: {
+          timestamp: '2026-05-13T09:00:00.000Z',
+          tags: ['source:alert', 'monitor_id:1002'],
+          attributes: {
+            title: '[Triggered on {host:prod-1}] Mixed monitor',
+            message: 'Threshold breached',
+            monitor: {
+              id: 1002,
+              name: 'Mixed monitor',
+              groups: ['host:prod-1'],
+              transition: {
+                source_state: 'OK',
+                destination_state: 'Alert',
+                transition_type: 'alert'
+              }
+            }
+          }
+        }
+      },
+      {
+        id: 'evt-mh-1002-002',
+        type: 'event',
+        attributes: {
+          timestamp: '2026-05-13T09:05:00.000Z',
+          tags: ['source:alert', 'monitor_id:1002'],
+          attributes: {
+            title: '[Renotify on {host:prod-1}] Mixed monitor',
+            message: 'Still firing',
+            monitor: {
+              id: 1002,
+              name: 'Mixed monitor',
+              groups: ['host:prod-1'],
+              transition: {
+                source_state: 'Alert',
+                destination_state: 'Alert',
+                transition_type: 'renotify'
+              }
+            }
+          }
+        }
+      },
+      {
+        id: 'evt-mh-1002-003',
+        type: 'event',
+        attributes: {
+          timestamp: '2026-05-13T09:10:00.000Z',
+          tags: ['source:alert', 'monitor_id:1002'],
+          attributes: {
+            title: '[Renotify on {host:prod-1}] Mixed monitor',
+            message: 'Still firing',
+            monitor: {
+              id: 1002,
+              name: 'Mixed monitor',
+              groups: ['host:prod-1'],
+              transition: {
+                source_state: 'Alert',
+                destination_state: 'Alert',
+                transition_type: 'renotify'
+              }
+            }
+          }
+        }
+      },
+      {
+        id: 'evt-mh-1002-004',
+        type: 'event',
+        attributes: {
+          timestamp: '2026-05-13T09:15:00.000Z',
+          tags: ['source:alert', 'monitor_id:1002'],
+          attributes: {
+            title: '[Recovered on {host:prod-1}] Mixed monitor',
+            message: 'Returned to OK',
+            monitor: {
+              id: 1002,
+              name: 'Mixed monitor',
+              groups: ['host:prod-1'],
+              transition: {
+                source_state: 'Alert',
+                destination_state: 'OK',
+                transition_type: 'alert recovery'
+              }
+            }
+          }
+        }
+      }
+    ],
+    meta: {
+      page: {
+        after: null
+      }
+    }
+  },
+  // Issue #53 regression fixture: an SLO burn-rate-style monitor that emits a
+  // different title on every event. Stale dedup-by-title logic collapses these
+  // to 1; the correct behavior is to count each real transition (5 total here:
+  // 3 alert + 2 alert recovery), and zero "renotify" rows are included so the
+  // default filter ['alert','alert recovery'] returns all 5.
+  dynamicTitle: {
+    data: [
+      {
+        id: 'evt-mh-1003-001',
+        type: 'event',
+        attributes: {
+          timestamp: '2026-05-13T08:00:00.000Z',
+          tags: ['source:alert', 'monitor_id:1003'],
+          attributes: {
+            title: 'SLO burn rates of 6.01 and 12.01 above threshold',
+            message: 'Burn rate exceeded',
+            monitor: {
+              id: 1003,
+              name: 'SLO burn-rate monitor',
+              groups: ['service:api'],
+              transition: {
+                source_state: 'OK',
+                destination_state: 'Alert',
+                transition_type: 'alert'
+              }
+            }
+          }
+        }
+      },
+      {
+        id: 'evt-mh-1003-002',
+        type: 'event',
+        attributes: {
+          timestamp: '2026-05-13T08:30:00.000Z',
+          tags: ['source:alert', 'monitor_id:1003'],
+          attributes: {
+            title: 'SLO recovered (burn rates back under threshold)',
+            message: 'Recovered',
+            monitor: {
+              id: 1003,
+              name: 'SLO burn-rate monitor',
+              groups: ['service:api'],
+              transition: {
+                source_state: 'Alert',
+                destination_state: 'OK',
+                transition_type: 'alert recovery'
+              }
+            }
+          }
+        }
+      },
+      {
+        id: 'evt-mh-1003-003',
+        type: 'event',
+        attributes: {
+          timestamp: '2026-05-13T09:00:00.000Z',
+          tags: ['source:alert', 'monitor_id:1003'],
+          attributes: {
+            title: 'SLO burn rates of 8.04 and 5.77 above threshold',
+            message: 'Burn rate exceeded',
+            monitor: {
+              id: 1003,
+              name: 'SLO burn-rate monitor',
+              groups: ['service:api'],
+              transition: {
+                source_state: 'OK',
+                destination_state: 'Alert',
+                transition_type: 'alert'
+              }
+            }
+          }
+        }
+      },
+      {
+        id: 'evt-mh-1003-004',
+        type: 'event',
+        attributes: {
+          timestamp: '2026-05-13T09:30:00.000Z',
+          tags: ['source:alert', 'monitor_id:1003'],
+          attributes: {
+            title: 'SLO recovered (burn rates back under threshold)',
+            message: 'Recovered',
+            monitor: {
+              id: 1003,
+              name: 'SLO burn-rate monitor',
+              groups: ['service:api'],
+              transition: {
+                source_state: 'Alert',
+                destination_state: 'OK',
+                transition_type: 'alert recovery'
+              }
+            }
+          }
+        }
+      },
+      {
+        id: 'evt-mh-1003-005',
+        type: 'event',
+        attributes: {
+          timestamp: '2026-05-13T10:00:00.000Z',
+          tags: ['source:alert', 'monitor_id:1003'],
+          attributes: {
+            title: 'SLO burn rates of 9.0 and 4.2 above threshold',
+            message: 'Burn rate exceeded',
+            monitor: {
+              id: 1003,
+              name: 'SLO burn-rate monitor',
+              groups: ['service:api'],
+              transition: {
+                source_state: 'OK',
+                destination_state: 'Alert',
+                transition_type: 'alert'
+              }
+            }
+          }
+        }
+      }
+    ],
+    meta: {
+      page: {
+        after: null
+      }
+    }
+  },
+  multiPage: {
+    page1: {
+      data: [
+        {
+          id: 'evt-mh-1004-001',
+          type: 'event',
+          attributes: {
+            timestamp: '2026-05-13T07:00:00.000Z',
+            tags: ['source:alert', 'monitor_id:1004'],
+            attributes: {
+              title: '[Triggered] Multi-page monitor first',
+              message: 'First page event',
+              monitor: {
+                id: 1004,
+                name: 'Multi-page monitor',
+                groups: ['env:production'],
+                transition: {
+                  source_state: 'OK',
+                  destination_state: 'Alert',
+                  transition_type: 'alert'
+                }
+              }
+            }
+          }
+        },
+        {
+          id: 'evt-mh-1004-002',
+          type: 'event',
+          attributes: {
+            timestamp: '2026-05-13T07:15:00.000Z',
+            tags: ['source:alert', 'monitor_id:1004'],
+            attributes: {
+              title: '[Recovered] Multi-page monitor first',
+              message: 'First page recovery',
+              monitor: {
+                id: 1004,
+                name: 'Multi-page monitor',
+                groups: ['env:production'],
+                transition: {
+                  source_state: 'Alert',
+                  destination_state: 'OK',
+                  transition_type: 'alert recovery'
+                }
+              }
+            }
+          }
+        }
+      ],
+      meta: {
+        page: {
+          after: 'page2'
+        }
+      }
+    },
+    page2: {
+      data: [
+        {
+          id: 'evt-mh-1004-003',
+          type: 'event',
+          attributes: {
+            timestamp: '2026-05-13T08:00:00.000Z',
+            tags: ['source:alert', 'monitor_id:1004'],
+            attributes: {
+              title: '[Triggered] Multi-page monitor second',
+              message: 'Second page event',
+              monitor: {
+                id: 1004,
+                name: 'Multi-page monitor',
+                groups: ['env:production'],
+                transition: {
+                  source_state: 'OK',
+                  destination_state: 'Alert',
+                  transition_type: 'alert'
+                }
+              }
+            }
+          }
+        }
+      ],
+      meta: {
+        page: {
+          after: null
+        }
+      }
+    }
+  },
+  empty: {
+    data: [],
+    meta: {}
+  }
+}
+
 // P4 Tools Fixtures
 
 // Tags fixtures

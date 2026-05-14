@@ -2,12 +2,14 @@
  * Tests for monitors.ts helper functions
  * Focus on normalizeMonitorConfig which is completely untested (lines 146-194)
  */
-import { describe, it, expect } from 'vitest'
+import type { v2 } from '@datadog/datadog-api-client'
 import {
   normalizeMonitorConfig,
   collectUnknownKeyWarnings,
   MonitorConfigSchema,
-  MonitorOptionsSchema
+  MonitorOptionsSchema,
+  formatMonitorTransition,
+  buildMonitorHistoryQuery
 } from '../../src/tools/monitors.js'
 
 describe('Monitors Helper Functions', () => {
@@ -784,5 +786,245 @@ describe('MonitorConfigSchema — top-level rejection', () => {
     if (!result.success) {
       expect(result.error.issues[0]?.path).toEqual(['options', 'notifyNoData'])
     }
+  })
+
+  describe('buildMonitorHistoryQuery', () => {
+    it('always emits source:alert @monitor.id:N as the base query (no clause when transitionType is omitted)', () => {
+      // Per design, buildMonitorHistoryQuery is a pure composer: the
+      // historyMonitor orchestrator owns the default ['alert', 'alert recovery'].
+      // When transitionType is undefined here, the helper emits only the base.
+      const query = buildMonitorHistoryQuery({ monitorId: 282774192 })
+      expect(query).toBe('source:alert @monitor.id:282774192')
+      expect(query).not.toContain('@monitor.transition.transition_type')
+      expect(query).not.toContain('@monitor.groups')
+    })
+
+    it('emits the default ["alert", "alert recovery"] clause when the orchestrator passes the default', () => {
+      // Mirrors design.md "Unit tests for helpers" — query with default
+      // transition types should produce the canonical fires + recoveries form.
+      const query = buildMonitorHistoryQuery({
+        monitorId: 282774192,
+        transitionType: ['alert', 'alert recovery']
+      })
+      expect(query).toBe(
+        'source:alert @monitor.id:282774192 @monitor.transition.transition_type:(alert OR "alert recovery")'
+      )
+    })
+
+    it('appends an OR-joined transition_type clause for multiple values with proper quoting', () => {
+      const query = buildMonitorHistoryQuery({
+        monitorId: 12345,
+        transitionType: ['alert', 'alert recovery', 'renotify']
+      })
+      expect(query).toBe(
+        'source:alert @monitor.id:12345 @monitor.transition.transition_type:(alert OR "alert recovery" OR renotify)'
+      )
+    })
+
+    it('emits a single-value transition_type clause without parentheses padding errors', () => {
+      const query = buildMonitorHistoryQuery({
+        monitorId: 42,
+        transitionType: ['alert']
+      })
+      expect(query).toBe('source:alert @monitor.id:42 @monitor.transition.transition_type:(alert)')
+    })
+
+    it('appends @monitor.groups:"..." when group is provided and quotes the value', () => {
+      const query = buildMonitorHistoryQuery({
+        monitorId: 282774192,
+        transitionType: ['alert'],
+        group: 'pod_name:cronjob-mover-29644980-jnvpj'
+      })
+      expect(query).toBe(
+        'source:alert @monitor.id:282774192 @monitor.transition.transition_type:(alert) @monitor.groups:"pod_name:cronjob-mover-29644980-jnvpj"'
+      )
+    })
+
+    it('treats empty transitionType array as undefined (no clause appended)', () => {
+      const query = buildMonitorHistoryQuery({
+        monitorId: 7,
+        transitionType: []
+      })
+      expect(query).toBe('source:alert @monitor.id:7')
+      expect(query).not.toContain('@monitor.transition.transition_type')
+    })
+
+    it('omits the group clause when group is undefined or empty', () => {
+      const noGroup = buildMonitorHistoryQuery({
+        monitorId: 7,
+        transitionType: ['alert']
+      })
+      expect(noGroup).not.toContain('@monitor.groups')
+
+      const emptyGroup = buildMonitorHistoryQuery({
+        monitorId: 7,
+        transitionType: ['alert'],
+        group: ''
+      })
+      expect(emptyGroup).not.toContain('@monitor.groups')
+    })
+  })
+
+  describe('formatMonitorTransition', () => {
+    it('extracts a typed transition from a v2 event with monitor.transition present', () => {
+      const event = {
+        id: 'evt-1',
+        attributes: {
+          timestamp: new Date('2026-05-13T23:24:00.000Z'),
+          attributes: {
+            timestamp: 1747178640000,
+            monitor: {
+              id: 282774192,
+              name: '[DO-1712] Pod readiness production',
+              groups: ['kube_namespace:production', 'pod_name:foo'],
+              transition: {
+                source_state: 'Alert',
+                destination_state: 'OK',
+                transition_type: 'alert recovery'
+              }
+            }
+          }
+        }
+      } as unknown as v2.EventResponse
+
+      const transition = formatMonitorTransition(event)
+
+      expect(transition).not.toBeNull()
+      expect(transition).toMatchObject({
+        timestamp: '2026-05-13T23:24:00.000Z',
+        monitorId: 282774192,
+        monitorName: '[DO-1712] Pod readiness production',
+        fromState: 'Alert',
+        toState: 'OK',
+        transitionType: 'alert recovery',
+        eventId: 'evt-1'
+      })
+      // groups is joined by ',' per design when multi-value
+      expect(transition?.group).toBe('kube_namespace:production,pod_name:foo')
+    })
+
+    it('returns null when the monitor.transition block is absent', () => {
+      const event = {
+        id: 'evt-2',
+        attributes: {
+          timestamp: new Date('2026-05-13T23:24:00.000Z'),
+          attributes: {
+            monitor: {
+              id: 282774192,
+              name: '[DO-1712] Pod readiness production',
+              groups: ['kube_namespace:production']
+              // no transition block
+            }
+          }
+        }
+      } as unknown as v2.EventResponse
+
+      expect(formatMonitorTransition(event)).toBeNull()
+    })
+
+    it('returns null when the outer attributes or inner monitor are missing', () => {
+      expect(formatMonitorTransition({} as v2.EventResponse)).toBeNull()
+      expect(formatMonitorTransition({ attributes: {} } as unknown as v2.EventResponse)).toBeNull()
+      expect(
+        formatMonitorTransition({
+          attributes: { attributes: {} }
+        } as unknown as v2.EventResponse)
+      ).toBeNull()
+    })
+
+    it('preserves group as null for non-multi-alert monitors (no groups array)', () => {
+      const event = {
+        id: 'evt-3',
+        attributes: {
+          timestamp: new Date('2026-05-13T23:24:00.000Z'),
+          attributes: {
+            monitor: {
+              id: 100,
+              name: 'Simple Monitor',
+              // no groups field
+              transition: {
+                source_state: 'OK',
+                destination_state: 'Alert',
+                transition_type: 'alert'
+              }
+            }
+          }
+        }
+      } as unknown as v2.EventResponse
+
+      const transition = formatMonitorTransition(event)
+      expect(transition).not.toBeNull()
+      expect(transition?.group).toBeNull()
+      expect(transition?.fromState).toBe('OK')
+      expect(transition?.toState).toBe('Alert')
+      expect(transition?.transitionType).toBe('alert')
+    })
+
+    it('preserves group as null when the groups array is empty', () => {
+      const event = {
+        id: 'evt-4',
+        attributes: {
+          timestamp: new Date('2026-05-13T23:24:00.000Z'),
+          attributes: {
+            monitor: {
+              id: 101,
+              name: 'Empty groups',
+              groups: [],
+              transition: {
+                source_state: 'OK',
+                destination_state: 'Alert',
+                transition_type: 'alert'
+              }
+            }
+          }
+        }
+      } as unknown as v2.EventResponse
+
+      expect(formatMonitorTransition(event)?.group).toBeNull()
+    })
+
+    it('falls back to "Monitor ${id}" when monitor name is missing', () => {
+      const event = {
+        id: 'evt-5',
+        attributes: {
+          timestamp: new Date('2026-05-13T23:24:00.000Z'),
+          attributes: {
+            monitor: {
+              id: 999,
+              transition: {
+                source_state: 'OK',
+                destination_state: 'Alert',
+                transition_type: 'alert'
+              }
+            }
+          }
+        }
+      } as unknown as v2.EventResponse
+
+      expect(formatMonitorTransition(event)?.monitorName).toBe('Monitor 999')
+    })
+
+    it('uses numeric timestamp at the inner attributes when the outer Date is absent', () => {
+      const event = {
+        id: 'evt-6',
+        attributes: {
+          // no outer timestamp Date
+          attributes: {
+            timestamp: 1747178640000,
+            monitor: {
+              id: 1,
+              name: 'X',
+              transition: {
+                source_state: 'OK',
+                destination_state: 'Alert',
+                transition_type: 'alert'
+              }
+            }
+          }
+        }
+      } as unknown as v2.EventResponse
+
+      expect(formatMonitorTransition(event)?.timestamp).toBe(new Date(1747178640000).toISOString())
+    })
   })
 })

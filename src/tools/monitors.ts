@@ -292,6 +292,224 @@ export function formatMonitorDetail(m: v1.Monitor, site: string = 'datadoghq.com
   return detail
 }
 
+// ============ Monitor State History (action=history) types and helpers ============
+
+/**
+ * Monitor transition types as exposed by Datadog's
+ * `@monitor.transition.transition_type` facet on v2 events.
+ *
+ * - 'alert' / 'warning' / 'no data' are forward transitions (OK/Warn → Alert, etc.)
+ * - '<state> recovery' transitions are returns to OK
+ * - 'renotify' is a repeated notification while the monitor is stuck in a non-OK
+ *   state — it is NOT a state transition and is excluded by default.
+ */
+export type TransitionType =
+  | 'alert'
+  | 'alert recovery'
+  | 'warning'
+  | 'warning recovery'
+  | 'no data'
+  | 'no data recovery'
+  | 'renotify'
+
+/** Datadog monitor state values used in `source_state` / `destination_state`. */
+export type MonitorState = 'Alert' | 'Warn' | 'OK' | 'No Data'
+
+/** A single state transition extracted from a v2 events `source:alert` payload. */
+export interface MonitorTransition {
+  /** ISO 8601 timestamp of the transition. */
+  timestamp: string
+  monitorId: number
+  monitorName: string
+  /** Joined `monitor.groups` array (comma-separated) or `null` when not multi-alert. */
+  group: string | null
+  fromState: MonitorState
+  toState: MonitorState
+  transitionType: TransitionType
+  /** Event ID for cross-reference with the events tool. */
+  eventId: string
+}
+
+/** Metadata describing the request and post-filter shape of a history call. */
+export interface MonitorHistoryMeta {
+  monitorId: number
+  query: string
+  from: string
+  to: string
+  transitionTypes: TransitionType[]
+  group: string | null
+  count: number
+  totalFetched: number
+  truncated: boolean
+  datadog_url: string
+}
+
+/** Full response shape for `monitors action=history`. */
+export interface MonitorHistoryResponse {
+  transitions: MonitorTransition[]
+  count: number
+  meta: MonitorHistoryMeta
+}
+
+/** Default transition_type filter applied by `monitors action=history`. */
+export const DEFAULT_HISTORY_TRANSITION_TYPES: readonly TransitionType[] = [
+  'alert',
+  'alert recovery'
+]
+
+/**
+ * Quote a value for inclusion in a Datadog event search query.
+ * Multi-word values (containing whitespace) and values containing characters
+ * other than a small safe set get wrapped in double quotes; single-word safe
+ * values stay unquoted to match the verbatim shape observed in the live
+ * investigation (see design.md "Investigation log").
+ */
+function quoteIfNeeded(value: string): string {
+  // Safe = letters, digits, underscore, hyphen, dot — Datadog accepts these unquoted.
+  return /^[A-Za-z0-9_.-]+$/.test(value) ? value : `"${value}"`
+}
+
+/**
+ * Compose the Datadog event search `filter.query` for `monitors action=history`.
+ *
+ * Always emits `source:alert @monitor.id:N`. When `transitionType` is a non-empty
+ * array, appends `@monitor.transition.transition_type:(a OR "b c" OR ...)` with
+ * multi-word values quoted. When `group` is non-empty, appends
+ * `@monitor.groups:"<group>"`.
+ *
+ * An empty `transitionType: []` is treated as undefined per design (no clause).
+ */
+export function buildMonitorHistoryQuery(params: {
+  monitorId: number
+  transitionType?: TransitionType[]
+  group?: string
+}): string {
+  const parts: string[] = ['source:alert', `@monitor.id:${params.monitorId}`]
+
+  const transitionTypes =
+    params.transitionType && params.transitionType.length > 0 ? params.transitionType : undefined
+
+  if (transitionTypes) {
+    const inner = transitionTypes.map(quoteIfNeeded).join(' OR ')
+    parts.push(`@monitor.transition.transition_type:(${inner})`)
+  }
+
+  if (params.group && params.group.length > 0) {
+    parts.push(`@monitor.groups:"${params.group}"`)
+  }
+
+  return parts.join(' ')
+}
+
+/**
+ * Shape of the `monitor.transition` block as observed in v2 event responses.
+ * The SDK exposes `MonitorType.additionalProperties` for unknown keys, but at
+ * runtime the deserializer keeps unknown keys directly on the object, so we
+ * read it via a narrow runtime cast.
+ */
+interface RawMonitorTransition {
+  source_state?: string
+  destination_state?: string
+  transition_type?: string
+}
+
+interface RawMonitorBlock {
+  id?: number
+  name?: string
+  groups?: unknown
+  transition?: RawMonitorTransition
+}
+
+function isMonitorState(value: unknown): value is MonitorState {
+  return value === 'Alert' || value === 'Warn' || value === 'OK' || value === 'No Data'
+}
+
+function isTransitionType(value: unknown): value is TransitionType {
+  return (
+    value === 'alert' ||
+    value === 'alert recovery' ||
+    value === 'warning' ||
+    value === 'warning recovery' ||
+    value === 'no data' ||
+    value === 'no data recovery' ||
+    value === 'renotify'
+  )
+}
+
+function extractTimestamp(outer: { timestamp?: unknown }, inner: { timestamp?: unknown }): string {
+  const outerTs = outer.timestamp
+  if (outerTs instanceof Date) {
+    return outerTs.toISOString()
+  }
+  if (typeof outerTs === 'string' && outerTs.length > 0) {
+    return new Date(outerTs).toISOString()
+  }
+  const innerTs = inner.timestamp
+  if (typeof innerTs === 'number' && Number.isFinite(innerTs)) {
+    return new Date(innerTs).toISOString()
+  }
+  if (typeof innerTs === 'string' && innerTs.length > 0) {
+    const parsed = Number.parseInt(innerTs, 10)
+    if (!Number.isNaN(parsed)) {
+      return new Date(parsed).toISOString()
+    }
+  }
+  return ''
+}
+
+/**
+ * Project a raw v2 `EventResponse` to a typed `MonitorTransition`.
+ *
+ * Returns `null` when the event lacks an `attributes.attributes.monitor.transition`
+ * block — for example renotify rows that slip past a stale filter, or non-monitor
+ * events. The caller is expected to drop nulls before counting.
+ */
+export function formatMonitorTransition(event: v2.EventResponse): MonitorTransition | null {
+  const outer = (event.attributes ?? {}) as { timestamp?: unknown; attributes?: unknown }
+  const inner = (outer.attributes ?? {}) as {
+    timestamp?: unknown
+    monitor?: unknown
+  }
+  const monitor = inner.monitor as RawMonitorBlock | undefined
+  const transition = monitor?.transition
+  if (!transition) {
+    return null
+  }
+
+  const fromState = isMonitorState(transition.source_state) ? transition.source_state : null
+  const toState = isMonitorState(transition.destination_state) ? transition.destination_state : null
+  const transitionType = isTransitionType(transition.transition_type)
+    ? transition.transition_type
+    : null
+
+  if (!fromState || !toState || !transitionType) {
+    return null
+  }
+
+  const groupsRaw = monitor.groups
+  const group =
+    Array.isArray(groupsRaw) && groupsRaw.length > 0
+      ? groupsRaw.map((g) => String(g)).join(',')
+      : null
+
+  const monitorId = typeof monitor.id === 'number' ? monitor.id : 0
+  const monitorName =
+    typeof monitor.name === 'string' && monitor.name.length > 0
+      ? monitor.name
+      : `Monitor ${monitorId}`
+
+  return {
+    timestamp: extractTimestamp(outer, inner),
+    monitorId,
+    monitorName,
+    group,
+    fromState,
+    toState,
+    transitionType,
+    eventId: String(event.id ?? '')
+  }
+}
+
 export async function listMonitors(
   api: v1.MonitorsApi,
   params: { name?: string; tags?: string[]; groupStates?: string[]; limit?: number },

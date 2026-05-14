@@ -3,6 +3,7 @@
  */
 import { http, HttpResponse } from 'msw'
 import { setupServer } from 'msw/node'
+import { monitorHistoryFixtures } from './fixtures.js'
 
 // Datadog API base URLs
 export const DD_API_V1 = 'https://api.datadoghq.com/api/v1'
@@ -188,6 +189,62 @@ export function createErrorHandlers(endpoint: string) {
     rateLimited: http.all(endpoint, () => errorResponse(429, 'Rate limit exceeded')),
     serverError: http.all(endpoint, () => errorResponse(500, 'Internal server error'))
   }
+}
+
+/**
+ * MSW handler for POST /api/v2/events/search that dispatches monitor-history
+ * fixtures based on the @monitor.id:<N> filter in the request body.
+ *
+ * Mapping:
+ *   1001 → monitorHistoryFixtures.alertOnly
+ *   1002 → monitorHistoryFixtures.mixed
+ *   1003 → monitorHistoryFixtures.dynamicTitle (issue #53 regression case)
+ *   1004 → monitorHistoryFixtures.multiPage — page1 first, page2 when
+ *          body.page.cursor === "page2"
+ *   1005 → monitorHistoryFixtures.empty
+ *
+ * Unknown monitor IDs return a 404 so tests fail loudly rather than
+ * silently masking a routing bug.
+ */
+export function monitorHistoryEventsSearchHandler() {
+  return http.post(endpoints.searchEvents, async ({ request }) => {
+    const body = (await request.json()) as {
+      filter?: { query?: string }
+      page?: { cursor?: string }
+    }
+    const query = body.filter?.query ?? ''
+    const cursor = body.page?.cursor
+
+    const match = /@monitor\.id:(\d+)/.exec(query)
+    if (!match) {
+      return errorResponse(
+        400,
+        `monitorHistoryEventsSearchHandler: no @monitor.id in query: ${query}`
+      )
+    }
+    const monitorId = match[1]
+
+    switch (monitorId) {
+      case '1001':
+        return jsonResponse(monitorHistoryFixtures.alertOnly)
+      case '1002':
+        return jsonResponse(monitorHistoryFixtures.mixed)
+      case '1003':
+        return jsonResponse(monitorHistoryFixtures.dynamicTitle)
+      case '1004':
+        if (cursor === 'page2') {
+          return jsonResponse(monitorHistoryFixtures.multiPage.page2)
+        }
+        return jsonResponse(monitorHistoryFixtures.multiPage.page1)
+      case '1005':
+        return jsonResponse(monitorHistoryFixtures.empty)
+      default:
+        return errorResponse(
+          404,
+          `monitorHistoryEventsSearchHandler: no fixture for @monitor.id:${monitorId}`
+        )
+    }
+  })
 }
 
 export { http, HttpResponse }
