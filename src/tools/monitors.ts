@@ -1371,6 +1371,10 @@ preview: Render a Datadog monitor message template against a context (read-only 
   - Inputs: either inline 'message' OR 'monitor_id' (or existing 'id'); plus optional 'context' { variables, conditionals }.
   - Supported syntax: {{variable.name}} substitution and conditional blocks {{#name}}...{{/name}} / {{^name}}...{{/name}}
     where name is one of: ${SUPPORTED_CONDITIONALS.join(', ')}.
+  - Also supports Datadog tag conditionals {{#is_match "tag" "val" ...}} (substring) and
+    {{#is_exact_match "tag" "val" ...}} (exact), plus their {{^...}} negations. The tag is resolved
+    against context.variables; multiple comparison values are OR'd; comparison is case-sensitive.
+    Evaluated tag conditionals are reported in 'tagConditionalsResolved'.
   - Missing variables render as {{undefined:name}} markers and are reported in 'variablesMissing'.
   - Loops ({{#each ...}}) and partials ({{> ...}}) return EUNSUPPORTED_TEMPLATE_SYNTAX.
   - Allowed under --read-only (no mutation; at most a getMonitor load).

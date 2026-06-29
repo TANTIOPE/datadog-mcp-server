@@ -3,25 +3,42 @@
  *
  * Supported syntax:
  *   - {{variable.name}}                         — variable substitution (dot-path lookup)
- *   - {{#is_alert}}...{{/is_alert}}            — positive conditional
- *   - {{^is_warning}}...{{/is_warning}}        — negated conditional
+ *   - {{#is_alert}}...{{/is_alert}}            — positive boolean conditional
+ *   - {{^is_warning}}...{{/is_warning}}        — negated boolean conditional
+ *   - {{#is_match "tag" "a" "b"}}...{{/is_match}}             — tag substring conditional
+ *   - {{#is_exact_match "tag" "v"}}...{{/is_exact_match}}     — tag exact-match conditional
+ *   - {{^is_match ...}} / {{^is_exact_match ...}}            — negated tag conditionals
  *
- * Supported conditionals (fixed set, see design.md §Data model — MonitorConditional):
+ * Supported boolean conditionals (fixed set, see design.md §Data model — MonitorConditional):
  *   is_alert, is_warning, is_no_data, is_recovery,
  *   is_alert_to_warning, is_warning_to_alert
+ *
+ * Tag conditionals (https://docs.datadoghq.com/monitors/notify/variables/):
+ *   - is_match: body renders when the value of `tag` CONTAINS any provided substring.
+ *   - is_exact_match: body renders when the value of `tag` EQUALS any provided string.
+ *     An empty comparison string ("") matches a missing/empty tag (Datadog's
+ *     "missing attribute" behavior).
+ *   - Both accept one or more comparison strings (OR semantics) and resolve their
+ *     `tag` against `context.variables` via the same dot-path lookup as variables.
+ *   - Comparison is CASE-SENSITIVE. Datadog does not document case behavior for these
+ *     conditionals, so the preview picks the predictable case-sensitive interpretation;
+ *     this is a known edge-case divergence from Datadog's server-side renderer.
  *
  * Unsupported (throws EUNSUPPORTED_TEMPLATE_SYNTAX):
  *   - {{#each ...}}     loops
  *   - {{> name}}        partials
  *   - any conditional name outside the supported set
+ *   - a tag conditional with no comparison value ({{#is_match "tag"}})
  *
  * Processing order:
  *   1. Resolve conditional blocks (depth-first; nested blocks fully resolved before parent).
+ *      Boolean conditionals use `context.conditionals`; tag conditionals are evaluated
+ *      against `context.variables`.
  *   2. Substitute remaining variables in the resulting literal text.
  *
  * Variables that are not present in `context.variables` render as
  * `{{undefined:name}}` and are reported in `variablesMissing`.
- * Missing conditionals default to `false`.
+ * Missing boolean conditionals default to `false`.
  */
 
 /** Fixed set of conditionals supported by Datadog monitor messages. */
@@ -41,11 +58,24 @@ export interface TemplateContext {
   conditionals?: Partial<Record<MonitorConditional, boolean>>
 }
 
+/** Datadog tag-variable conditional keywords (two-argument conditionals). */
+export type TagConditionalName = 'is_match' | 'is_exact_match'
+
+/** One evaluated tag conditional, reported back so callers see the routing decision. */
+export interface TagConditionalResolution {
+  name: TagConditionalName
+  negated: boolean
+  variable: string
+  comparisons: readonly string[]
+  matched: boolean
+}
+
 export interface PreviewResult {
   rendered: string
   variablesUsed: string[]
   variablesMissing: string[]
   conditionalsResolved: Record<string, boolean>
+  tagConditionalsResolved: TagConditionalResolution[]
 }
 
 const SUPPORTED_SET: ReadonlySet<string> = new Set(SUPPORTED_CONDITIONALS)
@@ -112,8 +142,59 @@ function lookupVariable(path: string, variables: Record<string, unknown>): strin
 type Token =
   | { kind: 'literal'; text: string }
   | { kind: 'block'; conditional: MonitorConditional; negated: boolean; children: Token[] }
+  | {
+      kind: 'tagBlock'
+      conditional: TagConditionalName
+      negated: boolean
+      variable: string
+      comparisons: string[]
+      children: Token[]
+    }
 
 const TAG_REGEX = /\{\{\s*([#^/>])?\s*([^}]*?)\s*\}\}/g // NOSONAR S5852: bounded template input, polynomial backtracking
+
+/** Recognizes the head of a tag conditional, e.g. `is_match "a" "b"`. */
+const TAG_CONDITIONAL_HEAD = /^(is_match|is_exact_match)\b/
+
+/** Extracts each double-quoted argument from a tag-conditional body. */
+const QUOTED_ARG_REGEX = /"([^"]*)"/g // NOSONAR S5852: bounded template input, no nested quantifier
+
+/**
+ * Parse a tag-conditional opener body (e.g. `is_match "tag.name" "db" "database"`)
+ * into its keyword, variable, and comparison strings.
+ *
+ * Returns `null` when the body is not a tag conditional at all (so the caller can
+ * fall through to the existing loop/unknown-conditional handling). Throws
+ * EUNSUPPORTED_TEMPLATE_SYNTAX when it looks like a tag conditional but is malformed
+ * (missing variable or no comparison value).
+ */
+function parseTagConditionalHead(
+  body: string,
+  prefix: string
+): { conditional: TagConditionalName; variable: string; comparisons: string[] } | null {
+  const headMatch = TAG_CONDITIONAL_HEAD.exec(body)
+  if (!headMatch?.[1]) {
+    return null
+  }
+  const conditional = headMatch[1] as TagConditionalName
+
+  const args: string[] = []
+  QUOTED_ARG_REGEX.lastIndex = 0
+  let arg: RegExpExecArray | null
+  while ((arg = QUOTED_ARG_REGEX.exec(body)) !== null) {
+    args.push(arg[1] ?? '')
+  }
+
+  const [variable, ...comparisons] = args
+  if (variable === undefined || variable === '' || comparisons.length === 0) {
+    throw unsupportedSyntaxError(
+      `${conditional} requires a quoted tag and at least one quoted comparison value ` +
+        `(found {{${prefix}${body}}})`
+    )
+  }
+
+  return { conditional, variable, comparisons }
+}
 
 /**
  * Parse the raw template into a tree of literal text and conditional blocks.
@@ -124,9 +205,18 @@ const TAG_REGEX = /\{\{\s*([#^/>])?\s*([^}]*?)\s*\}\}/g // NOSONAR S5852: bounde
  * are substituted in a later pass.
  */
 function parseBlocks(template: string): Token[] {
+  type Closer =
+    | { kind: 'boolean'; conditional: MonitorConditional; negated: boolean }
+    | {
+        kind: 'tag'
+        conditional: TagConditionalName
+        negated: boolean
+        variable: string
+        comparisons: string[]
+      }
   type Frame = {
     children: Token[]
-    closer?: { conditional: MonitorConditional; negated: boolean }
+    closer?: Closer
   }
 
   const stack: Frame[] = [{ children: [] }]
@@ -152,17 +242,36 @@ function parseBlocks(template: string): Token[] {
     }
 
     if (prefix === '#' || prefix === '^') {
-      // Reject loops outright.
-      if (name.startsWith('each') || /\s/.test(name)) {
+      // Two-argument tag conditionals (is_match / is_exact_match) carry internal
+      // whitespace; detect and parse them BEFORE the loop/whitespace rejection so
+      // they are no longer misclassified as Handlebars loops.
+      const tagHead = parseTagConditionalHead(name, prefix)
+      if (tagHead) {
+        stack.push({
+          children: [],
+          closer: {
+            kind: 'tag',
+            conditional: tagHead.conditional,
+            negated: prefix === '^',
+            variable: tagHead.variable,
+            comparisons: tagHead.comparisons
+          }
+        })
+      } else if (name.startsWith('each') || /\s/.test(name)) {
+        // Reject loops outright.
         throw unsupportedSyntaxError(`loops are not supported (found {{${prefix}${name}}})`)
-      }
-      if (!SUPPORTED_SET.has(name)) {
+      } else if (!SUPPORTED_SET.has(name)) {
         throw unsupportedSyntaxError(`unknown conditional '${name}' in {{${prefix}${name}}}`)
+      } else {
+        stack.push({
+          children: [],
+          closer: {
+            kind: 'boolean',
+            conditional: name as MonitorConditional,
+            negated: prefix === '^'
+          }
+        })
       }
-      stack.push({
-        children: [],
-        closer: { conditional: name as MonitorConditional, negated: prefix === '^' }
-      })
     } else if (prefix === '/') {
       const frame = stack.pop()
       if (!frame || !frame.closer) {
@@ -177,12 +286,23 @@ function parseBlocks(template: string): Token[] {
       if (!parent) {
         throw unsupportedSyntaxError('block stack underflow while closing tag')
       }
-      parent.children.push({
-        kind: 'block',
-        conditional: frame.closer.conditional,
-        negated: frame.closer.negated,
-        children: frame.children
-      })
+      if (frame.closer.kind === 'tag') {
+        parent.children.push({
+          kind: 'tagBlock',
+          conditional: frame.closer.conditional,
+          negated: frame.closer.negated,
+          variable: frame.closer.variable,
+          comparisons: frame.closer.comparisons,
+          children: frame.children
+        })
+      } else {
+        parent.children.push({
+          kind: 'block',
+          conditional: frame.closer.conditional,
+          negated: frame.closer.negated,
+          children: frame.children
+        })
+      }
     } else {
       // Plain variable tag — preserve verbatim for the variable-substitution pass.
       const top = stack[stack.length - 1]
@@ -215,32 +335,82 @@ function parseBlocks(template: string): Token[] {
 }
 
 /**
+ * Evaluate a tag conditional against the resolved value of its tag variable.
+ *
+ *   - is_match:       the value CONTAINS any provided comparison substring.
+ *   - is_exact_match: the value EQUALS any provided comparison string. An empty
+ *                     comparison ("") matches a missing/empty tag.
+ *
+ * Comparison is case-sensitive (see module JSDoc). A missing tag resolves to the
+ * empty string for comparison purposes.
+ */
+function evaluateTagConditional(
+  name: TagConditionalName,
+  variable: string,
+  comparisons: readonly string[],
+  variables: Record<string, unknown>
+): boolean {
+  const resolvedValue = lookupVariable(variable, variables)
+  const value = resolvedValue ?? ''
+  if (name === 'is_exact_match') {
+    return comparisons.some((comparison) => value === comparison)
+  }
+  // is_match — substring containment.
+  return comparisons.some((comparison) => value.includes(comparison))
+}
+
+/** Mutable accumulators threaded through the render walk. */
+interface RenderSink {
+  conditionals: Partial<Record<MonitorConditional, boolean>>
+  variables: Record<string, unknown>
+  resolved: Record<string, boolean>
+  tagResolved: TagConditionalResolution[]
+}
+
+/**
  * Walk the parsed token tree, evaluate conditionals, and emit the literal
  * (still containing variable tags) text for the variable-substitution pass.
  *
  * Records every conditional we encounter — even ones in dropped branches —
- * so callers see the full resolution map.
+ * so callers see the full resolution map (boolean conditionals) and the list of
+ * evaluated tag conditionals.
  */
-function renderBlocks(
-  tokens: readonly Token[],
-  conditionals: Partial<Record<MonitorConditional, boolean>>,
-  resolved: Record<string, boolean>
-): string {
+function renderBlocks(tokens: readonly Token[], sink: RenderSink): string {
   let out = ''
   for (const token of tokens) {
     if (token.kind === 'literal') {
       out += token.text
       continue
     }
-    const flag = conditionals[token.conditional] ?? false
-    resolved[token.conditional] = flag
-    const include = token.negated ? !flag : flag
+
+    let include: boolean
+    if (token.kind === 'tagBlock') {
+      const matched = evaluateTagConditional(
+        token.conditional,
+        token.variable,
+        token.comparisons,
+        sink.variables
+      )
+      sink.tagResolved.push({
+        name: token.conditional,
+        negated: token.negated,
+        variable: token.variable,
+        comparisons: token.comparisons,
+        matched
+      })
+      include = token.negated ? !matched : matched
+    } else {
+      const flag = sink.conditionals[token.conditional] ?? false
+      sink.resolved[token.conditional] = flag
+      include = token.negated ? !flag : flag
+    }
+
     if (include) {
-      out += renderBlocks(token.children, conditionals, resolved)
+      out += renderBlocks(token.children, sink)
     } else {
       // Even in a dropped branch, descend so nested conditionals are recorded
-      // in `conditionalsResolved`. Discard the rendered output.
-      renderBlocks(token.children, conditionals, resolved)
+      // in `conditionalsResolved` / `tagConditionalsResolved`. Discard the output.
+      renderBlocks(token.children, sink)
     }
   }
   return out
@@ -288,13 +458,20 @@ export function renderMonitorTemplate(template: string, context: TemplateContext
 
   const tree = parseBlocks(template)
   const conditionalsResolved: Record<string, boolean> = {}
-  const afterConditionals = renderBlocks(tree, conditionals, conditionalsResolved)
+  const tagConditionalsResolved: TagConditionalResolution[] = []
+  const afterConditionals = renderBlocks(tree, {
+    conditionals,
+    variables,
+    resolved: conditionalsResolved,
+    tagResolved: tagConditionalsResolved
+  })
   const { rendered, used, missing } = substituteVariables(afterConditionals, variables)
 
   return {
     rendered,
     variablesUsed: used,
     variablesMissing: missing,
-    conditionalsResolved
+    conditionalsResolved,
+    tagConditionalsResolved
   }
 }

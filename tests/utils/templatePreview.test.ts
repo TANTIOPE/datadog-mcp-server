@@ -303,7 +303,8 @@ describe('renderMonitorTemplate', () => {
         rendered: 'plain text',
         variablesUsed: [],
         variablesMissing: [],
-        conditionalsResolved: {}
+        conditionalsResolved: {},
+        tagConditionalsResolved: []
       })
     })
 
@@ -319,6 +320,124 @@ describe('renderMonitorTemplate', () => {
         is_warning: false,
         is_no_data: false
       })
+    })
+  })
+
+  describe('tag conditionals — is_match / is_exact_match', () => {
+    it('renders {{#is_match}} when the tag value contains the substring', () => {
+      const result = renderMonitorTemplate(
+        '{{#is_match "host.role.name" "db"}}@db-team{{/is_match}}',
+        { variables: { 'host.role.name': 'primary-db-01' } }
+      )
+
+      expect(result.rendered).toBe('@db-team')
+      expect(result.tagConditionalsResolved).toEqual([
+        {
+          name: 'is_match',
+          negated: false,
+          variable: 'host.role.name',
+          comparisons: ['db'],
+          matched: true
+        }
+      ])
+    })
+
+    it('drops {{#is_match}} when the tag value does not contain the substring', () => {
+      const result = renderMonitorTemplate('a{{#is_match "service" "api"}}X{{/is_match}}b', {
+        variables: { service: 'worker' }
+      })
+
+      expect(result.rendered).toBe('ab')
+      expect(result.tagConditionalsResolved[0]?.matched).toBe(false)
+    })
+
+    it('renders {{#is_exact_match}} only on an exact value match', () => {
+      const hit = renderMonitorTemplate(
+        '{{#is_exact_match "host.name" "production"}}P{{/is_exact_match}}',
+        { variables: { 'host.name': 'production' } }
+      )
+      expect(hit.rendered).toBe('P')
+
+      const miss = renderMonitorTemplate(
+        '{{#is_exact_match "host.name" "production"}}P{{/is_exact_match}}',
+        { variables: { 'host.name': 'production-eu' } }
+      )
+      expect(miss.rendered).toBe('')
+      expect(miss.tagConditionalsResolved[0]?.matched).toBe(false)
+    })
+
+    it('matches when any of multiple comparison values matches (OR semantics)', () => {
+      const result = renderMonitorTemplate(
+        '{{#is_match "host.role.name" "db" "database"}}DB{{/is_match}}',
+        { variables: { 'host.role.name': 'database-cluster' } }
+      )
+
+      expect(result.rendered).toBe('DB')
+      expect(result.tagConditionalsResolved[0]?.comparisons).toEqual(['db', 'database'])
+    })
+
+    it('inverts {{^is_match}} (renders when the substring is absent)', () => {
+      const result = renderMonitorTemplate(
+        '{{^is_match "host.role.name" "db"}}@slack{{/is_match}}',
+        { variables: { 'host.role.name': 'web-frontend' } }
+      )
+
+      expect(result.rendered).toBe('@slack')
+      expect(result.tagConditionalsResolved[0]).toMatchObject({
+        name: 'is_match',
+        negated: true,
+        matched: false
+      })
+    })
+
+    it('inverts {{^is_exact_match}} (renders when the value differs)', () => {
+      const result = renderMonitorTemplate(
+        '{{^is_exact_match "env" "prod"}}non-prod{{/is_exact_match}}',
+        { variables: { env: 'staging' } }
+      )
+
+      expect(result.rendered).toBe('non-prod')
+    })
+
+    it('treats an empty-string exact match as matching a missing tag', () => {
+      const result = renderMonitorTemplate(
+        '{{#is_exact_match "host.datacenter" ""}}no-dc{{/is_exact_match}}',
+        { variables: {} }
+      )
+
+      expect(result.rendered).toBe('no-dc')
+      expect(result.tagConditionalsResolved[0]?.matched).toBe(true)
+    })
+
+    it('resolves the issue repro — tag conditional nested in {{#is_alert}}', () => {
+      const tpl =
+        '@slack-alerts\n{{#is_alert}}{{#is_exact_match "kube_deployment.name" "my-service"}}@slack-team-a{{/is_exact_match}}{{#is_match "kube_deployment.name" "batch-"}}@slack-team-b{{/is_match}}{{/is_alert}}'
+      const result = renderMonitorTemplate(tpl, {
+        variables: { 'kube_deployment.name': 'my-service' },
+        conditionals: { is_alert: true }
+      })
+
+      expect(result.rendered).toBe('@slack-alerts\n@slack-team-a')
+      expect(result.conditionalsResolved).toEqual({ is_alert: true })
+      expect(result.tagConditionalsResolved).toHaveLength(2)
+    })
+
+    it('records tag conditionals evaluated inside a dropped boolean branch', () => {
+      const result = renderMonitorTemplate(
+        '{{#is_alert}}{{#is_match "svc" "api"}}X{{/is_match}}{{/is_alert}}',
+        { variables: { svc: 'api-gateway' }, conditionals: { is_alert: false } }
+      )
+
+      expect(result.rendered).toBe('')
+      // The outer block is dropped, but the nested tag conditional is still recorded.
+      expect(result.tagConditionalsResolved).toHaveLength(1)
+      expect(result.tagConditionalsResolved[0]?.matched).toBe(true)
+    })
+
+    it('throws EUNSUPPORTED_TEMPLATE_SYNTAX for a tag conditional with no comparison value', () => {
+      expect(() => renderMonitorTemplate('{{#is_match "host.name"}}x{{/is_match}}', {})).toThrow(
+        /EUNSUPPORTED_TEMPLATE_SYNTAX/
+      )
     })
   })
 })
