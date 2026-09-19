@@ -11,6 +11,7 @@ export interface DatadogClients {
   eventsV1: v1.EventsApi
   eventsV2: v2.EventsApi
   incidents: v2.IncidentsApi
+  onCall: v2.OnCallApi
   downtimes: v2.DowntimesApi
   hosts: v1.HostsApi
   slo: v1.ServiceLevelObjectivesApi
@@ -62,6 +63,7 @@ export function createDatadogClients(config: DatadogConfig): DatadogClients {
     eventsV1: new v1.EventsApi(configuration),
     eventsV2: new v2.EventsApi(configuration),
     incidents: new v2.IncidentsApi(configuration),
+    onCall: new v2.OnCallApi(configuration),
     downtimes: new v2.DowntimesApi(configuration),
     hosts: new v1.HostsApi(configuration),
     slo: new v1.ServiceLevelObjectivesApi(configuration),

@@ -93,6 +93,11 @@ export const endpoints = {
   updateIncident: (id: string) => `${DD_API_V2}/incidents/${id}`,
   deleteIncident: (id: string) => `${DD_API_V2}/incidents/${id}`,
 
+  // On-Call
+  getOnCallSchedule: (id: string) => `${DD_API_V2}/on-call/schedules/${id}`,
+  getScheduleResponder: (id: string) => `${DD_API_V2}/on-call/schedules/${id}/on-call`,
+  getTeamResponders: (id: string) => `${DD_API_V2}/on-call/teams/${id}/on-call`,
+
   // P2 Tools - Synthetics
   listSyntheticsTests: `${DD_API_V1}/synthetics/tests`,
   getApiTest: (publicId: string) => `${DD_API_V1}/synthetics/tests/api/${publicId}`,

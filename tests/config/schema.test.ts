@@ -172,6 +172,7 @@ describe('Config Schema', () => {
         'traces',
         'events',
         'incidents',
+        'on_call',
         'slos',
         'synthetics',
         'hosts',
@@ -188,8 +189,8 @@ describe('Config Schema', () => {
       ])
     })
 
-    it('should have 20 tools', () => {
-      expect(ALL_TOOLS).toHaveLength(20)
+    it('should have 21 tools', () => {
+      expect(ALL_TOOLS).toHaveLength(21)
     })
   })
 })

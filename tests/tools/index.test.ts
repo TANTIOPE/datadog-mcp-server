@@ -12,6 +12,7 @@ vi.mock('../../src/tools/metrics.js', () => ({ registerMetricsTool: vi.fn() }))
 vi.mock('../../src/tools/traces.js', () => ({ registerTracesTool: vi.fn() }))
 vi.mock('../../src/tools/events.js', () => ({ registerEventsTool: vi.fn() }))
 vi.mock('../../src/tools/incidents.js', () => ({ registerIncidentsTool: vi.fn() }))
+vi.mock('../../src/tools/on_call.js', () => ({ registerOnCallTool: vi.fn() }))
 vi.mock('../../src/tools/slos.js', () => ({ registerSlosTool: vi.fn() }))
 vi.mock('../../src/tools/synthetics.js', () => ({ registerSyntheticsTool: vi.fn() }))
 vi.mock('../../src/tools/hosts.js', () => ({ registerHostsTool: vi.fn() }))
@@ -36,6 +37,7 @@ import { registerMetricsTool } from '../../src/tools/metrics.js'
 import { registerTracesTool } from '../../src/tools/traces.js'
 import { registerEventsTool } from '../../src/tools/events.js'
 import { registerIncidentsTool } from '../../src/tools/incidents.js'
+import { registerOnCallTool } from '../../src/tools/on_call.js'
 import { registerSlosTool } from '../../src/tools/slos.js'
 import { registerSyntheticsTool } from '../../src/tools/synthetics.js'
 import { registerHostsTool } from '../../src/tools/hosts.js'
@@ -79,6 +81,7 @@ describe('Tool Registration', () => {
       eventsV1: {} as unknown,
       eventsV2: {} as unknown,
       incidents: {} as unknown,
+      onCall: {} as unknown,
       slo: {} as unknown,
       synthetics: {} as unknown,
       hosts: {} as unknown,
@@ -173,6 +176,7 @@ describe('Tool Registration', () => {
       false,
       'datadoghq.com'
     )
+    expect(registerOnCallTool).toHaveBeenCalledWith(mockServer, mockClients.onCall)
     expect(registerSlosTool).toHaveBeenCalledWith(
       mockServer,
       mockClients.slo,
@@ -394,6 +398,7 @@ describe('Tool Registration', () => {
       'traces',
       'events',
       'incidents',
+      'on_call',
       'slos',
       'synthetics',
       'hosts',
@@ -426,6 +431,7 @@ describe('Tool Registration', () => {
     expect(registerTracesTool).not.toHaveBeenCalled()
     expect(registerEventsTool).not.toHaveBeenCalled()
     expect(registerIncidentsTool).not.toHaveBeenCalled()
+    expect(registerOnCallTool).not.toHaveBeenCalled()
     expect(registerSlosTool).not.toHaveBeenCalled()
     expect(registerSyntheticsTool).not.toHaveBeenCalled()
     expect(registerHostsTool).not.toHaveBeenCalled()

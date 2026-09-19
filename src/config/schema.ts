@@ -9,6 +9,7 @@ export const ALL_TOOLS = [
   'traces',
   'events',
   'incidents',
+  'on_call',
   'slos',
   'synthetics',
   'hosts',
