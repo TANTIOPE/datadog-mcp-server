@@ -209,6 +209,9 @@ env:
 | `incidents` | create | Incidents | Create an incident | `incident_write` |
 | `incidents` | update | Incidents | Update an incident | `incident_write` |
 | `incidents` | delete | Incidents | Delete an incident | `incident_write` |
+| `on_call` | get_schedule | On-Call | Get schedule configuration by ID, optionally including teams, layers, members, and users | `on_call_read` |
+| `on_call` | schedule_responder | On-Call | Get the on-call user for a schedule now or at an RFC 3339 timestamp | `on_call_read` |
+| `on_call` | team_responders | On-Call | Get current responders and escalations for a team | `on_call_read` |
 | `slos` | list | SLOs | List SLOs. Each item exposes `query`, `monitorIds`, `monitorTags`, `groups`, and a UI `url` so round-trips (get → edit → update) preserve definition fields. | `slos_read` |
 | `slos` | get | SLOs | Get SLO by ID (same projection as `list`). | `slos_read` |
 | `slos` | create | SLOs | Create an SLO | `slos_write` |
@@ -284,6 +287,7 @@ A handful of patterns worth knowing about — the AI can discover the rest from 
 - **Validate before create.** `monitors create` with `dry_run: true` calls `/api/v1/monitor/validate` instead of persisting. Allowed in `--read-only` mode.
 - **Monitor template preview.** `monitors preview` renders a notification against a `context` payload — variable substitution + Datadog's six documented conditionals (`is_alert`, `is_warning`, `is_no_data`, `is_recovery`, `is_alert_to_warning`, `is_warning_to_alert`) + the tag conditionals `{{#is_match "tag" "val"}}` (substring) and `{{#is_exact_match "tag" "val"}}` (exact), with `^` negations and OR'd multiple comparison values (resolved against `context.variables`; case-sensitive). `{{#each}}` and partials throw `EUNSUPPORTED_TEMPLATE_SYNTAX`.
 - **SLO round-trip.** `slos get` projects `query`, `monitorIds`, `monitorTags`, `groups`, and a UI `url` so you can edit and feed back into `slos update` without dropping definition fields.
+- **On-Call schedule discovery.** Datadog's public On-Call API can fetch a schedule by ID and resolve schedule or team responders, but does not currently expose an endpoint to list all On-Call schedules. Use `on_call get_schedule` when the schedule ID is known, or `on_call team_responders` when starting from a team ID.
 - **Cross-correlation.** `logs(sample:"diverse")` → pull `dd.trace_id` → `traces(query:"trace_id:<id>")` → `metrics(query:"p95:trace.express.request{service:...}")` (root metric without `.duration` for percentiles).
 
 ## Deep links

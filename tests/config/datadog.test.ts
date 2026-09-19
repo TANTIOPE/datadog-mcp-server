@@ -42,6 +42,7 @@ vi.mock('@datadog/datadog-api-client', () => {
       MetricsApi: MockApi,
       EventsApi: MockApi,
       IncidentsApi: MockApi,
+      OnCallApi: MockApi,
       DowntimesApi: MockApi,
       RUMApi: MockApi,
       SecurityMonitoringApi: MockApi,
@@ -90,6 +91,7 @@ describe('Datadog Client Creation', () => {
       expect(clients.metricsV2).toBeDefined()
       expect(clients.eventsV2).toBeDefined()
       expect(clients.incidents).toBeDefined()
+      expect(clients.onCall).toBeDefined()
       expect(clients.downtimes).toBeDefined()
       expect(clients.rum).toBeDefined()
       expect(clients.security).toBeDefined()

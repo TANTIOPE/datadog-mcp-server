@@ -9,6 +9,7 @@ import { registerMetricsTool } from './metrics.js'
 import { registerTracesTool } from './traces.js'
 import { registerEventsTool } from './events.js'
 import { registerIncidentsTool } from './incidents.js'
+import { registerOnCallTool } from './on_call.js'
 import { registerSlosTool } from './slos.js'
 import { registerSyntheticsTool } from './synthetics.js'
 import { registerHostsTool } from './hosts.js'
@@ -70,6 +71,7 @@ export function registerAllTools(
       site
     )
   if (enabled('incidents')) registerIncidentsTool(server, clients.incidents, limits, readOnly, site)
+  if (enabled('on_call')) registerOnCallTool(server, clients.onCall)
   if (enabled('slos')) registerSlosTool(server, clients.slo, limits, readOnly, site)
   if (enabled('synthetics'))
     registerSyntheticsTool(server, clients.synthetics, limits, readOnly, site)
